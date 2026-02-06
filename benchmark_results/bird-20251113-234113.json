@@ -1,0 +1,570 @@
+[
+  {
+    "dataset": "bird",
+    "index": 88,
+    "question_id": 1166,
+    "db_id": "thrombosis_prediction",
+    "question": "What are the symptoms observed by the youngest patient to ever did a medical examination? Identify their diagnosis.",
+    "gold_sql": "SELECT T2.Symptoms, T1.Diagnosis FROM Patient AS T1 INNER JOIN Examination AS T2 ON T1.ID = T2.ID WHERE NOT T2.Symptoms IS NULL ORDER BY T1.Birthday DESC NULLS LAST LIMIT 1",
+    "predicted_sql": "",
+    "exact_match": false,
+    "execution_match": null,
+    "analyzer_match": false,
+    "error": "Query is syntactically valid but not fully correct because date_part('year', AGE(...)) truncates ages and may misidentify the absolute youngest; replace the year-based comparison with a precise age measure (e.g., (\"Examination Date\"::date - birthday::date) in days or compare AGE(...) intervals) and ensure the join uses the patient foreign key. Also simplify the MIN calculation with a CTE or ORDER BY ... LIMIT 1 to avoid full-table re-evaluation and consider indexing date/birthday columns to speed the lookup.",
+    "execution_error": "Predicted SQL is empty, skipping execution",
+    "gold_execution_results": null,
+    "predicted_execution_results": null,
+    "db_name": "passarinho",
+    "metadata": {
+      "latency_ms": 97479,
+      "tokens_in": null,
+      "tokens_out": null,
+      "model_name": null
+    },
+    "agent_trace": {
+      "status": "REJECTED",
+      "sql": null,
+      "error": "Query is syntactically valid but not fully correct because date_part('year', AGE(...)) truncates ages and may misidentify the absolute youngest; replace the year-based comparison with a precise age measure (e.g., (\"Examination Date\"::date - birthday::date) in days or compare AGE(...) intervals) and ensure the join uses the patient foreign key. Also simplify the MIN calculation with a CTE or ORDER BY ... LIMIT 1 to avoid full-table re-evaluation and consider indexing date/birthday columns to speed the lookup.",
+      "plan": null,
+      "feedback": null,
+      "attempts": 1,
+      "all_queries": [
+        "SELECT T1.symptoms, T2.diagnosis FROM examination AS T1 INNER JOIN patient AS T2 ON T1.id = T2.id WHERE T1.\"Examination Date\" IS NOT NULL AND T2.birthday IS NOT NULL AND date_part('year', AGE(T1.\"Examination Date\", T2.birthday)) = ( SELECT MIN(date_part('year', AGE(E.\"Examination Date\", P.birthday))) FROM examination AS E INNER JOIN patient AS P ON E.id = P.id WHERE E.\"Examination Date\" IS NOT NULL AND P.birthday IS NOT NULL )"
+      ],
+      "interpreter_output": {
+        "clarified_question": "Find the symptoms recorded for the patient(s) who were the youngest at the time of any recorded medical examination. Return the symptoms observed in the examination(s) that achieve the minimum age-at-examination and the corresponding diagnosis for that patient.",
+        "sub_questions": [],
+        "explicit_intent": "Expected output shape: one or more rows with two columns: (symptoms, diagnosis). SQL pattern to compute answer: 1) Compute age_at_exam for each examination: age_at_exam = difference in years between examination date and patient birth_date (adjust for month/day). Example (SQLite): (CAST(strftime('%Y', e.exam_date) AS INTEGER) - CAST(strftime('%Y', p.birth_date) AS INTEGER) - CASE WHEN strftime('%m-%d', e.exam_date) < strftime('%m-%d', p.birth_date) THEN 1 ELSE 0 END). 2) Find the global minimum age_at_exam across all examination records with non-null exam_date and birth_date. 3) Return all examination rows where age_at_exam = min_age with their symptoms and the patient's diagnosis: SELECT e.symptoms, p.diagnosis FROM examinations e JOIN patients p ON e.patient_id = p.patient_id WHERE <age_at_exam formula> = (SELECT MIN(<age_at_exam formula>) FROM examinations JOIN patients ...). Do NOT GROUP BY. If multiple examinations or patients tie for the same minimum age, return all matching rows. If exam_date or birth_date are missing for some records, exclude those records (or explicitly state if you prefer to use CURRENT_DATE instead).",
+        "ambiguities_resolved": [
+          "Interpreted 'youngest patient to ever did a medical examination' as the patient(s) with the minimum age at the time of any recorded medical examination (age computed at exam date), not the currently youngest patient or the youngest at their first/last exam unless specified.",
+          "Age computation clarified: age_at_exam is computed using exam_date and birth_date with year/month/day adjustment. If exam_date is missing, assume those records are excluded; if you want to use CURRENT_DATE instead, specify.",
+          "Output shape clarified: return rows with columns (symptoms, diagnosis). If diagnosis is stored per-examination rather than per-patient, replace p.diagnosis with e.diagnosis in the SELECT and join.",
+          "Tie behavior clarified: if multiple examinations/patients share the same minimum age, return all matching rows.",
+          "Temporal scope: did NOT assume 'most recent' — the query uses all historical examination records to find the global minimum age_at_exam."
+        ]
+      },
+      "mapper_output": "Relevant tables (selected & why)\n- examination — PRIMARY table for this question because it contains the examination date and the recorded symptoms. The sample_row shows an exam record and the exam-level diagnosis column is present, so this table is required to identify the exam(s) that achieve the minimum age-at-examination.\n- patient — REQUIRED to compute age at examination because patient.birthday (date of birth) is stored here. The patient table also has a patient-level diagnosis column; this is the diagnosis that most naturally corresponds to “the diagnosis for that patient.”\n- laboratory — examined but not required for this query. It is related to patient (has id -> patient.id) and contains lab results, but the question only asks for symptoms and the patient diagnosis at the time of the youngest exam so laboratory is not needed. I included it only to confirm foreign-key relationships in the schema.\n\nKey columns (which map to the question)\n- examination:\n  - id — links the exam row to the patient (foreign key to patient.id).\n  - Examination Date (type = date) — the date of the medical exam; used to compute age-at-examination.\n  - symptoms (type = text) — the text field containing recorded symptoms (this is the PRIMARY answer field).\n  - diagnosis (type = text) — an exam-level diagnosis; present if you want diagnosis recorded for that exam (alternate to patient-level diagnosis).\n- patient:\n  - id (primary key) — joins to examination.id.\n  - birthday (type = date) — patient date of birth; required to compute age at the exam.\n  - diagnosis (type = text) — patient-level diagnosis (the prompt asks for “the corresponding diagnosis for that patient” — this is the natural mapping).\n\nDate format & column types (from sample_row)\n- examination.\"Examination Date\" is stored as a DATE (sample: \"1997-05-27\"). Use DATE arithmetic / AGE functions to compute age.\n- patient.birthday is stored as a DATE (sample: \"1934-02-13\").\n- symptoms is TEXT (sample: \"AMI\").\n- diagnosis appears both in patient (sample: \"RA susp.\") and in examination (sample: \"MCTD, AMI\") as TEXT.\n\nBecause both date columns are DATE types, compute age in years using date functions (examples: AGE(examination.\"Examination Date\", patient.birthday) and extract years via date_part('year', AGE(...)) or integer_truncation). Do NOT treat dates as YYYYMM strings — use date arithmetic.\n\nSample data (from sample_row)\n- examination sample_row: { id: 14872, \"Examination Date\": \"1997-05-27\", symptoms: \"AMI\", diagnosis: \"MCTD, AMI\" }\n- patient sample_row: { id: 2110, birthday: \"1934-02-13\", diagnosis: \"RA susp.\" }\n\nRelationships\n- examination.id -> patient.id (foreign key shown in schema). This means examinations are stored with the same id value as the patient they belong to. One patient can have many examination rows (patient is the entity; examination rows are events).\n- laboratory.id -> patient.id (not needed for this query but shown in schema).\n\nWhich diagnosis column to use (important)\n- patient.diagnosis is a patient-level diagnosis (recommended if the prompt’s “diagnosis for that patient” refers to the patient’s diagnosis).\n- examination.diagnosis is exam-level and may differ from patient.diagnosis. If the intent is to report the diagnosis recorded on that specific exam, use examination.diagnosis instead.\n- PRIMARY recommendation: return patient.diagnosis alongside the exam symptoms (and optionally include examination.diagnosis if you want the exam-specific diagnosis too). I will treat patient.diagnosis as the “corresponding diagnosis for that patient” unless you instruct otherwise.\n\nQuery shape & cardinality warnings\n- This query requires joining examination (base table of exam events) to patient to compute age. Because a patient can have multiple exams, joining patient -> examination increases row count (one row per exam). That is desirable here because we must evaluate each exam’s age.\n- WARNING: If you instead join other tables (e.g., laboratory), that may further multiply rows (one exam might match many lab rows) and distort the minimum-age selection unless you aggregate appropriately. Avoid extra joins unless needed.\n- This question cannot be answered from a single table alone — you must join examination to patient to compute age.\n\nEdge cases and validation notes\n- Exclude rows with NULL in either examination.\"Examination Date\" or patient.birthday when computing age.\n- Use AGE() or date_part to compute integer years. Decide whether to use exact fractional years or integer-truncated years; typical interpretation is integer age in years at exam: date_part('year', AGE(\"Examination Date\", birthday)).\n- There may be ties: multiple examinations (possibly for the same or different patients) could share the global minimum age-at-examination. Return all examinations that achieve that minimum, and include the patient diagnosis (and patient id) to identify the patient(s).\n- Confirmed columns exist: examination.symptoms and patient.birthday are present.\n\nSuggested approach for the SQL generator (conceptual)\n1. Join examination to patient ON examination.id = patient.id.\n2. Filter out rows where Examination Date or birthday is NULL.\n3. Compute age_at_exam = date_part('year', AGE(examination.\"Examination Date\", patient.birthday)) (or use exact days/365.25 if fractional precision needed).\n4. Find the global minimum age_at_exam across all exam rows.\n5. Return all examination rows whose age_at_exam = that minimum, selecting examination.symptoms and patient.diagnosis (and optionally patient.id and examination.diagnosis for disambiguation).\n\nExample result columns to return\n- patient.id (to identify the patient)\n- examination.\"Examination Date\" (optional, for context)\n- computed age_at_exam\n- examination.symptoms (PRIMARY requested field)\n- patient.diagnosis (the requested “corresponding diagnosis for that patient”)\n- (optional) examination.diagnosis (if you want the exam-specific diagnosis too)\n\nIf you want, I can now produce the exact SQL that implements the above logic (using patient.diagnosis or examination.diagnosis as you prefer). Which diagnosis column should I output (patient.diagnosis, examination.diagnosis, or both)?",
+      "generator_output": {
+        "reasoning_steps": [
+          "Join examination (T1) to patient (T2) on T1.id = T2.id to evaluate every exam with its patient's birth date.",
+          "Exclude rows with NULL exam date or NULL birthday to avoid invalid age calculations.",
+          "Compute age_at_exam as integer years using date_part('year', AGE(T1.\"Examination Date\", T2.birthday)).",
+          "Find the global minimum age_at_exam via a scalar subquery over the same joined tables.",
+          "Return all examination rows whose age_at_exam equals that minimum, selecting T1.symptoms and T2.diagnosis."
+        ],
+        "sub_queries": [],
+        "confidence": 0.93,
+        "sql_query": "SELECT T1.symptoms, T2.diagnosis\nFROM examination AS T1\nINNER JOIN patient AS T2 ON T1.id = T2.id\nWHERE T1.\"Examination Date\" IS NOT NULL\n  AND T2.birthday IS NOT NULL\n  AND date_part('year', AGE(T1.\"Examination Date\", T2.birthday)) = (\n    SELECT MIN(date_part('year', AGE(E.\"Examination Date\", P.birthday)))\n    FROM examination AS E\n    INNER JOIN patient AS P ON E.id = P.id\n    WHERE E.\"Examination Date\" IS NOT NULL\n      AND P.birthday IS NOT NULL\n  );"
+      },
+      "validator_output": {
+        "is_valid": false,
+        "is_optimal": false,
+        "syntax_errors": [],
+        "semantic_issues": [
+          "Using date_part('year', AGE(...)) truncates ages to whole years and can misidentify the absolute youngest patient; use exact interval or day-based comparison instead.",
+          "The query assumes examination.id = patient.id is the correct FK relationship; if 'id' is ambiguous (examination primary key vs patient id FK) the join may be incorrect."
+        ],
+        "efficiency_score": 0.8,
+        "efficiency_issues": [
+          "Sequential scans on patient and examination (no index usage for birthday or \"Examination Date\").",
+          "Filtering with date_part/AGE forces per-row function evaluation and prevents index use.",
+          "The scalar subquery is executed as an InitPlan that scans joined tables; using a CTE or ORDER BY ... LIMIT 1 would avoid re-evaluating the aggregate."
+        ],
+        "refinement_feedback": "Query is syntactically valid but not fully correct because date_part('year', AGE(...)) truncates ages and may misidentify the absolute youngest; replace the year-based comparison with a precise age measure (e.g., (\"Examination Date\"::date - birthday::date) in days or compare AGE(...) intervals) and ensure the join uses the patient foreign key. Also simplify the MIN calculation with a CTE or ORDER BY ... LIMIT 1 to avoid full-table re-evaluation and consider indexing date/birthday columns to speed the lookup."
+      },
+      "trace": {
+        "pipeline": "new",
+        "db_name": "passarinho",
+        "start_ts": "2025-11-14T02:41:13.965949+00:00",
+        "end_ts": "2025-11-14T02:42:51.232016+00:00",
+        "latency_ms": 97266,
+        "steps": [
+          {
+            "name": "interpreter",
+            "timing_ms": 24679,
+            "input_summary": {
+              "raw_question": "What are the symptoms observed by the youngest patient to ever did a medical examination? Identify their diagnosis."
+            },
+            "output_summary": {
+              "clarified_question": "Find the symptoms recorded for the patient(s) who were the youngest at the time of any recorded medical examination. Return the symptoms observed in the examination(s) that achieve the minimum age-at-",
+              "intent": "Expected output shape: one or more rows with two columns: (symptoms, diagnosis). SQL pattern to compute answer: 1) Compute age_at_exam for each examination: age_at_exam = difference in years between examination date and patient birth_date (adjust for month/day). Example (SQLite): (CAST(strftime('%Y'",
+              "sub_questions_count": 0
+            },
+            "error": null
+          },
+          {
+            "name": "mapper",
+            "timing_ms": 26464,
+            "input_summary": {
+              "clarified_question": "Find the symptoms recorded for the patient(s) who were the youngest at the time of any recorded medical examination. Return the symptoms observed in the examination(s) that achieve the minimum age-at-",
+              "all_tables_count": 75
+            },
+            "output_summary": {
+              "output_length": 6177,
+              "output_preview": "Relevant tables (selected & why)\n- examination — PRIMARY table for this question because it contains the examination date and the recorded symptoms. The sample_row shows an exam record and the exam-level diagnosis column is present, so this table is required to identify the exam(s) that achieve the "
+            },
+            "error": null
+          },
+          {
+            "name": "generator",
+            "timing_ms": 15190,
+            "input_summary": {
+              "clarified_question": "Find the symptoms recorded for the patient(s) who were the youngest at the time of any recorded medical examination. Return the symptoms observed in the examination(s) that achieve the minimum age-at-",
+              "attempt": 1
+            },
+            "output_summary": {
+              "sql_length": 459,
+              "reasoning_steps_count": 5,
+              "confidence": 0.93
+            },
+            "error": null
+          },
+          {
+            "name": "validator",
+            "timing_ms": 30629,
+            "input_summary": {
+              "sql_length": 430,
+              "attempt": 1
+            },
+            "output_summary": {
+              "is_valid": false,
+              "is_optimal": false,
+              "efficiency_score": 0.8,
+              "syntax_error_count": 0,
+              "semantic_issue_count": 2
+            },
+            "error": null
+          }
+        ],
+        "tools": [
+          {
+            "agent": "mapper",
+            "tool": "get_table_info",
+            "args_redacted": [
+              "examination",
+              "patient",
+              "laboratory"
+            ],
+            "result_preview": "Retrieved info for 3 tables",
+            "timing_ms": 98,
+            "error": null
+          }
+        ],
+        "generator": {
+          "sql_query": "SELECT T1.symptoms, T2.diagnosis FROM examination AS T1 INNER JOIN patient AS T2 ON T1.id = T2.id WHERE T1.\"Examination Date\" IS NOT NULL AND T2.birthday IS NOT NULL AND date_part('year', AGE(T1.\"Examination Date\", T2.birthday)) = ( SELECT MIN(date_part('year', AGE(E.\"Examination Date\", P.birthday))) FROM examination AS E INNER JOIN patient AS P ON E.id = P.id WHERE E.\"Examination Date\" IS NOT NULL AND P.birthday IS NOT NULL )",
+          "reasoning_steps": [
+            "Join examination (T1) to patient (T2) on T1.id = T2.id to evaluate every exam with its patient's birth date.",
+            "Exclude rows with NULL exam date or NULL birthday to avoid invalid age calculations.",
+            "Compute age_at_exam as integer years using date_part('year', AGE(T1.\"Examination Date\", T2.birthday)).",
+            "Find the global minimum age_at_exam via a scalar subquery over the same joined tables.",
+            "Return all examination rows whose age_at_exam equals that minimum, selecting T1.symptoms and T2.diagnosis."
+          ],
+          "confidence": 0.93
+        },
+        "mapper": {
+          "all_tables_count": 75,
+          "selected_tables": [
+            "examination",
+            "patient",
+            "laboratory"
+          ]
+        }
+      }
+    },
+    "analyzer_output": {
+      "analyzer_match": false,
+      "approved": false,
+      "failure_step": "generator",
+      "failure_reason": "The predicted output did not deliver any executable SQL (Predicted SQL is empty) and the generator-produced SQL in the trace contained semantic flaws. Specifically: 1) The pipeline shows a generator SQL that uses date_part('year', AGE(...)) which truncates ages to whole years and can misidentify the absolute youngest patient; 2) The generator assumed a join ON T1.id = T2.id which is ambiguous and likely incorrect for an examination→patient foreign-key relationship; 3) The benchmark-level ‘Predicted SQL’ is empty, causing execution to be skipped. These issues mean the predicted result misses critical data and produces no answer, so business impact is not preserved. The earliest substantive error is in the generator’s SQL logic (incorrect age calculation and join assumptions), and a subsequent system/pipeline failure resulted in an empty predicted SQL being executed (or not executed).",
+      "query_issues": "- Predicted SQL is empty (execution skipped) — critical failure.\n- When present, the generated SQL computes age with date_part('year', AGE(...)), truncating ages and risking misidentification of the absolute youngest patient.\n- The join uses examination.id = patient.id which is ambiguous (examination.primary key vs patient.primary key); should join using the examination FK to patient (e.g., examination.patient_id = patient.id).\n- The generated query relies on a MIN over a truncated-year age measure instead of a precise interval or day-based comparison, changing filtering logic and potentially the returned rows.\n- Efficiency/validation: scalar subquery recalculates expensive per-row functions; no defensive checks to ensure predicted SQL is non-empty before execution.",
+      "root_cause": "Primary root cause: Generator produced semantically incorrect SQL by (a) using a year-truncating age calculation and (b) assuming an incorrect join key. Secondary/systemic root cause: the pipeline allowed an empty predicted SQL to be presented for execution (or failed to surface generator output), leading to no results. Overall this stems from incorrect SQL-construction logic in the generator and insufficient runtime/validator safeguards to catch empty or semantically incorrect output.",
+      "suggestions": [
+        "Improve the generator: compute age precisely (compare dates in days or use AGE(...) intervals directly and compare intervals) and use the correct FK join (examination.patient_id = patient.id) rather than assuming id equality; prefer ORDER BY age_days ASC LIMIT 1 or a CTE for MIN age to avoid truncation issues.",
+        "Strengthen the validator: add semantic checks to detect unsafe age computations (e.g., detecting date_part('year', AGE(...)) usage) and ensure the predicted SQL is non-empty before attempting execution; fail fast with clear diagnostics when issues are found.",
+        "Pipeline safeguards: prevent returning or executing empty SQL. If generator output is empty or missing, fail with a clear error and include the generator’s intermediate SQL for debugging; record and surface execution errors to the generator/validator for correction.",
+        "Add automated testcases and examples: include tests targeting edge cases for 'youngest at exam' (ties, birthday/exam same-day, infants measured in days) to ensure generator logic uses precise age comparison and correct join keys.",
+        "Improve mapping/interpretation prompts: require explicit confirmation of foreign-key relationships (e.g., which column links examination→patient) and require age calculation specification (years vs days vs interval) in the interpreter output so generator uses correct formulas."
+      ]
+    }
+  },
+  {
+    "dataset": "bird",
+    "index": 143,
+    "question_id": 1057,
+    "db_id": "european_football_2",
+    "question": "Calculate the average home team goal in the 2010/2011 season in the country of Poland.",
+    "gold_sql": "SELECT CAST(SUM(t2.home_team_goal) AS REAL) / NULLIF(COUNT(t2.id), 0) FROM Country AS t1 INNER JOIN Match AS t2 ON t1.id = t2.country_id WHERE t1.name = 'Poland' AND t2.season = '2010/2011'",
+    "predicted_sql": "SELECT AVG(T1.\"home_team_goal\") FROM match AS T1 INNER JOIN country AS T2 ON T1.\"country_id\" = T2.\"id\" WHERE T1.\"season\" = '2010/2011' AND T2.\"name\" = 'Poland'",
+    "exact_match": false,
+    "execution_match": true,
+    "analyzer_match": true,
+    "error": null,
+    "execution_error": null,
+    "gold_execution_results": [
+      {
+        "?column?": 1.5041666666666667
+      }
+    ],
+    "predicted_execution_results": [
+      {
+        "avg": 1.5041666666666667
+      }
+    ],
+    "db_name": "passarinho",
+    "metadata": {
+      "latency_ms": 72310,
+      "tokens_in": null,
+      "tokens_out": null,
+      "model_name": null
+    },
+    "agent_trace": {
+      "status": "GENERATED",
+      "sql": "SELECT AVG(T1.\"home_team_goal\") FROM match AS T1 INNER JOIN country AS T2 ON T1.\"country_id\" = T2.\"id\" WHERE T1.\"season\" = '2010/2011' AND T2.\"name\" = 'Poland'",
+      "error": null,
+      "plan": "Return a single scalar: the average (mean) of the home team goals per match for matches that occurred in the 2010/2011 season in the country Poland. Expected output shape: one row, one column (scalar). SQL pattern to use: SELECT AVG(home_team_goal) AS avg_home_goals FROM matches WHERE season = '2010/2011' AND country = 'Poland'; If the database stores season as a start year instead of 'YYYY/YYYY', use: SELECT AVG(home_team_goal) FROM matches WHERE season_start_year = 2010 AND country = 'Poland'; Aggregation: AVG(home_team_goal). Do NOT GROUP BY (this is one scalar for the season).",
+      "feedback": "Query is syntactically and semantically correct and returns the requested scalar average, but it is not optimal due to sequential scans and a costly nested-loop join. Add an index on match(season) and on match(country_id) or a composite index (season, country_id), or filter by the country_id directly to avoid the join and reduce execution cost.",
+      "attempts": 1,
+      "all_queries": [
+        "SELECT AVG(T1.\"home_team_goal\") FROM match AS T1 INNER JOIN country AS T2 ON T1.\"country_id\" = T2.\"id\" WHERE T1.\"season\" = '2010/2011' AND T2.\"name\" = 'Poland'"
+      ],
+      "interpreter_output": {
+        "clarified_question": "Compute the average number of goals scored by the home team per match for all matches in the 2010/2011 season in Poland. Return a single scalar value (one number).",
+        "sub_questions": [],
+        "explicit_intent": "Return a single scalar: the average (mean) of the home team goals per match for matches that occurred in the 2010/2011 season in the country Poland. Expected output shape: one row, one column (scalar). SQL pattern to use: SELECT AVG(home_team_goal) AS avg_home_goals FROM matches WHERE season = '2010/2011' AND country = 'Poland'; If the database stores season as a start year instead of 'YYYY/YYYY', use: SELECT AVG(home_team_goal) FROM matches WHERE season_start_year = 2010 AND country = 'Poland'; Aggregation: AVG(home_team_goal). Do NOT GROUP BY (this is one scalar for the season).",
+        "ambiguities_resolved": [
+          "Interpreted 'average home team goal' as the mean goals scored by the home team per match (AVG(home_team_goal)).",
+          "Interpreted '2010/2011 season' as the season identifier '2010/2011'; if the DB stores seasons as a start year, use season_start_year = 2010.",
+          "Interpreted 'in the country of Poland' as filtering matches where the match-level country column equals 'Poland' (e.g., country = 'Poland' or country_name = 'Poland').",
+          "Assumed table name 'matches' and column name 'home_team_goal' for home goals; if names differ, substitute the correct table/column names.",
+          "Output shape: single scalar value (one row, one column). No monthly or per-team grouping is applied."
+        ]
+      },
+      "mapper_output": "Relevant tables (selected and why)\n- match — PRIMARY choice. The question is about goals by the home team per match and season filtering; the match table contains home_team_goal, season, and a country_id. Because match contains both the metric (home_team_goal) and the season column, this single table can answer the question without extra joins in most cases.\n- country — selected to resolve the human-readable country name \"Poland\" (match.country_id → country.id). Using country allows filtering by country.name = 'Poland' rather than requiring knowledge of numeric country ids.\n- league — OPTIONAL fallback. league has country_id and is linked from match via match.league_id. Use this only if match.country_id is missing for some rows; otherwise not required.\n\nKey columns (which map to question concepts)\n- match.home_team_goal (bigint, nullable) — PRIMARY metric column: number of goals scored by the home team in a match. This is the value to average.\n- match.season (text, nullable) — season identifier stored as a string like \"2008/2009\". Use exact string equality to filter for \"2010/2011\".\n- match.country_id (bigint, nullable) — FK to country.id. Use to restrict matches to those played in Poland.\n- country.id (bigint, PK) and country.name (text) — use country.name = 'Poland' to find the numeric id or join on country.id.\n- match.league_id (bigint) and league.country_id (bigint) — only needed if you prefer to find Poland via league -> country (fallback).\n\nDate format & column types\n- season column format: sample_row shows season = \"2008/2009\" (text). So season uses \"YYYY/YYYY\" string format. Filtering for the 2010/2011 season should use string comparison WHERE match.season = '2010/2011'.\n- date column: match.date is text in timestamp-like format (sample: \"2008-08-17 00:00:00\"). Not required for this task.\n- home_team_goal is numeric (bigint). It is nullable; average should exclude NULLs (i.e., AVG over non-null home_team_goal).\n- country.name is text (e.g., \"Belgium\").\n\nSample data (from sample_row)\n- match.sample_row: { season: \"2008/2009\", home_team_goal: 1, away_team_goal: 1, date: \"2008-08-17 00:00:00\", country_id: 1, league_id: 1 }\n- country.sample_row: { id: 1, name: \"Belgium\" }\n- league.sample_row: { id: 1, country_id: 1, name: \"Belgium Jupiler League\" }\n\nRelationships\n- match.country_id → country.id (use to join match to country)\n- match.league_id → league.id and league.country_id → country.id (alternative path: match → league → country)\n\nValue insights / encodings\n- season values are strings like \"2008/2009\". Use equality to \"2010/2011\".\n- country.name is stored as full country name strings (e.g., \"Belgium\"), so filtering on \"Poland\" is appropriate.\n- home_team_goal is an integer count of goals; use numeric average. Be mindful of NULLs.\n\nCardinality warnings / join guidance\n- Recommended: This query can be answered using only the match table plus a join to country to map the name \"Poland\". Primary query pattern: aggregate over match rows WHERE match.season = '2010/2011' AND match.country_id corresponds to Poland.\n- WARNING: Joining match to country on match.country_id will filter out any match rows that have NULL country_id. If you expect some matches to have NULL match.country_id but their league indicates Poland, consider joining through league (match.league_id → league.id → league.country_id → country.id). That join (match → league → country) may change which matches are included compared to direct match.country_id filtering. If match.country_id is populated reliably, using match.country_id → country avoids unnecessary joins and preserves cardinality.\n- If you join to country, use a LEFT JOIN only if you want to keep matches with NULL country_id (but then you cannot filter by country.name = 'Poland' reliably). For strict filtering to Poland, use an INNER JOIN or WHERE country.name = 'Poland' after joining.\n\nValidation notes\n- match contains the requested metric home_team_goal and season column; these exist and match sample formats.\n- country contains name values; \"Poland\" should be matched as country.name = 'Poland'.\n- If you prefer avoiding joins, you could first look up the country.id for Poland and then filter match.country_id = <Poland id>.\n\nImportant notes for SQL generation\n- PRIMARY approach: AVG(home_team_goal) computed over rows in match where season = '2010/2011' and match.country_id maps to country.name = 'Poland'.\n- Exclude NULL home_team_goal from average (AVG in SQL does this by default).\n- Example filtering patterns (for the SQL generator):\n  - Preferred (simple, uses join to map name):\n    JOIN country ON match.country_id = country.id\n    WHERE country.name = 'Poland' AND match.season = '2010/2011'\n  - Alternative (if match.country_id may be missing but league is populated):\n    JOIN league ON match.league_id = league.id\n    JOIN country ON league.country_id = country.id\n    WHERE country.name = 'Poland' AND match.season = '2010/2011'\n\nPrimary/best matches summary\n- PRIMARY table: match (contains home_team_goal and season; best single-table source).\n- Use country to resolve \"Poland\" (match.country_id → country.id).\n- league is a fallback to determine country when match.country_id is NULL.\n\nThis information should allow the SQL Generator to produce a single-scalar result: the average number of home-team goals per match for matches in season \"2010/2011\" in Poland.",
+      "generator_output": {
+        "reasoning_steps": [
+          "Identified that the match table contains the metric (home_team_goal) and the season column, and country table contains the country name 'Poland'.",
+          "Filter matches to season = '2010/2011' and to matches played in Poland by joining match.country_id to country.id and filtering country.name = 'Poland'.",
+          "Compute the arithmetic mean using AVG over T1.\"home_team_goal\"; AVG in SQL excludes NULLs by default, so no extra NULL handling is required.",
+          "Return a single scalar value (one-row, one-column) with no GROUP BY or LIMIT."
+        ],
+        "sub_queries": [],
+        "confidence": 0.9,
+        "sql_query": "SELECT AVG(T1.\"home_team_goal\")\nFROM match AS T1\nINNER JOIN country AS T2 ON T1.\"country_id\" = T2.\"id\"\nWHERE T1.\"season\" = '2010/2011' AND T2.\"name\" = 'Poland'"
+      },
+      "validator_output": {
+        "is_valid": true,
+        "is_optimal": false,
+        "syntax_errors": [],
+        "semantic_issues": [],
+        "efficiency_score": 0.75,
+        "efficiency_issues": [
+          "Sequential scan on table \"match\" for filter season indicating missing or unused index",
+          "Seq scan on table \"country\" for name filter (small table but could benefit from index if it grows)",
+          "Nested Loop join with higher total cost; join performance would improve with indexes or by filtering by country_id directly"
+        ],
+        "refinement_feedback": "Query is syntactically and semantically correct and returns the requested scalar average, but it is not optimal due to sequential scans and a costly nested-loop join. Add an index on match(season) and on match(country_id) or a composite index (season, country_id), or filter by the country_id directly to avoid the join and reduce execution cost."
+      },
+      "trace": {
+        "pipeline": "new",
+        "db_name": "passarinho",
+        "start_ts": "2025-11-14T02:41:13.967508+00:00",
+        "end_ts": "2025-11-14T02:42:26.180841+00:00",
+        "latency_ms": 72213,
+        "steps": [
+          {
+            "name": "interpreter",
+            "timing_ms": 11269,
+            "input_summary": {
+              "raw_question": "Calculate the average home team goal in the 2010/2011 season in the country of Poland."
+            },
+            "output_summary": {
+              "clarified_question": "Compute the average number of goals scored by the home team per match for all matches in the 2010/2011 season in Poland. Return a single scalar value (one number).",
+              "intent": "Return a single scalar: the average (mean) of the home team goals per match for matches that occurred in the 2010/2011 season in the country Poland. Expected output shape: one row, one column (scalar). SQL pattern to use: SELECT AVG(home_team_goal) AS avg_home_goals FROM matches WHERE season = '2010",
+              "sub_questions_count": 0
+            },
+            "error": null
+          },
+          {
+            "name": "mapper",
+            "timing_ms": 24288,
+            "input_summary": {
+              "clarified_question": "Compute the average number of goals scored by the home team per match for all matches in the 2010/2011 season in Poland. Return a single scalar value (one number).",
+              "all_tables_count": 75
+            },
+            "output_summary": {
+              "output_length": 5381,
+              "output_preview": "Relevant tables (selected and why)\n- match — PRIMARY choice. The question is about goals by the home team per match and season filtering; the match table contains home_team_goal, season, and a country_id. Because match contains both the metric (home_team_goal) and the season column, this single tabl"
+            },
+            "error": null
+          },
+          {
+            "name": "generator",
+            "timing_ms": 12351,
+            "input_summary": {
+              "clarified_question": "Compute the average number of goals scored by the home team per match for all matches in the 2010/2011 season in Poland. Return a single scalar value (one number).",
+              "attempt": 1
+            },
+            "output_summary": {
+              "sql_length": 159,
+              "reasoning_steps_count": 4,
+              "confidence": 0.9
+            },
+            "error": null
+          },
+          {
+            "name": "validator",
+            "timing_ms": 24046,
+            "input_summary": {
+              "sql_length": 159,
+              "attempt": 1
+            },
+            "output_summary": {
+              "is_valid": true,
+              "is_optimal": false,
+              "efficiency_score": 0.75,
+              "syntax_error_count": 0,
+              "semantic_issue_count": 0
+            },
+            "error": null
+          }
+        ],
+        "tools": [
+          {
+            "agent": "mapper",
+            "tool": "get_table_info",
+            "args_redacted": [
+              "match",
+              "league",
+              "season",
+              "country"
+            ],
+            "result_preview": "Retrieved info for 4 tables",
+            "timing_ms": 118,
+            "error": null
+          }
+        ],
+        "generator": {
+          "sql_query": "SELECT AVG(T1.\"home_team_goal\") FROM match AS T1 INNER JOIN country AS T2 ON T1.\"country_id\" = T2.\"id\" WHERE T1.\"season\" = '2010/2011' AND T2.\"name\" = 'Poland'",
+          "reasoning_steps": [
+            "Identified that the match table contains the metric (home_team_goal) and the season column, and country table contains the country name 'Poland'.",
+            "Filter matches to season = '2010/2011' and to matches played in Poland by joining match.country_id to country.id and filtering country.name = 'Poland'.",
+            "Compute the arithmetic mean using AVG over T1.\"home_team_goal\"; AVG in SQL excludes NULLs by default, so no extra NULL handling is required.",
+            "Return a single scalar value (one-row, one-column) with no GROUP BY or LIMIT."
+          ],
+          "confidence": 0.9
+        },
+        "mapper": {
+          "all_tables_count": 75,
+          "selected_tables": [
+            "match",
+            "league",
+            "season",
+            "country"
+          ]
+        }
+      }
+    },
+    "analyzer_output": {
+      "analyzer_match": true,
+      "approved": true,
+      "failure_step": "none",
+      "failure_reason": "Result is correct - rule-based match (EM or RM) confirms correctness",
+      "query_issues": "No issues found - query matches expected results",
+      "root_cause": "Result is correct - validated by exact match or execution match",
+      "suggestions": []
+    }
+  },
+  {
+    "dataset": "bird",
+    "index": 202,
+    "question_id": 896,
+    "db_id": "formula_1",
+    "question": "Calculate the percentage whereby Hamilton was not at the 1st track of the the f1 circuit since 2010.",
+    "gold_sql": "SELECT CAST(COUNT(CASE WHEN T2.position <> 1 THEN T2.position END) AS REAL) * 100 / NULLIF(COUNT(T2.driverStandingsId), 0) FROM races AS T1 INNER JOIN driverStandings AS T2 ON T2.raceId = T1.raceId INNER JOIN drivers AS T3 ON T3.driverId = T2.driverId WHERE T3.surname = 'Hamilton' AND T1.year >= 2010",
+    "predicted_sql": "SELECT 100.0 * SUM(CASE WHEN T1.\"grid\" <> 1 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0) FROM results AS T1 INNER JOIN drivers AS T2 ON T1.\"driverid\" = T2.\"driverid\" INNER JOIN races AS T3 ON T1.\"raceid\" = T3.\"raceid\" WHERE T2.\"driverref\" = 'hamilton' AND T3.\"year\" >= 2010 AND T1.\"grid\" IS NOT NULL",
+    "exact_match": false,
+    "execution_match": false,
+    "analyzer_match": false,
+    "error": null,
+    "execution_error": null,
+    "gold_execution_results": [
+      {
+        "?column?": 73.2394366197183
+      }
+    ],
+    "predicted_execution_results": [
+      {
+        "?column?": 66.90140845070422
+      }
+    ],
+    "db_name": "passarinho",
+    "metadata": {
+      "latency_ms": 97857,
+      "tokens_in": null,
+      "tokens_out": null,
+      "model_name": null
+    },
+    "agent_trace": {
+      "status": "GENERATED",
+      "sql": "SELECT 100.0 * SUM(CASE WHEN T1.\"grid\" <> 1 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0) FROM results AS T1 INNER JOIN drivers AS T2 ON T1.\"driverid\" = T2.\"driverid\" INNER JOIN races AS T3 ON T1.\"raceid\" = T3.\"raceid\" WHERE T2.\"driverref\" = 'hamilton' AND T3.\"year\" >= 2010 AND T1.\"grid\" IS NOT NULL",
+      "error": null,
+      "plan": "Return a single scalar percentage = (count of Hamilton race entries since 2010 where starting/grid position <> 1) / (count of Hamilton race entries since 2010) * 100. Expected output shape: one row, one column (percentage as numeric). SQL pattern examples: \n- If race entries are in table `results` with columns (`driver_name`, `grid` or `starting_position`, `race_date` or `race_season`):\n  SELECT 100.0 * SUM(CASE WHEN grid <> 1 THEN 1 ELSE 0 END) / COUNT(*) AS pct_not_pole\n  FROM results\n  WHERE driver_name = 'Lewis Hamilton' AND (race_date >= '2010-01-01' OR race_season >= 2010);\n- If qualifying table stores pole info: use qualifying.position or qualifying.grid similarly.\nDo NOT GROUP BY (caller asked for a single overall percentage). Use year filtering by race_date or race_season >= 2010. Use exact equality for driver name 'Lewis Hamilton' unless dataset uses driver_id (then filter driver_id = <Hamilton_id>).\n",
+      "feedback": "Query is syntactically valid and returns the requested percentage but is not optimal due to a full scan of results and repeated nested-loop index scans. Improve performance by resolving Hamilton's driverid first (use a subquery or parameter) so you can filter results.driverid directly and leverage an index, or add appropriate indexes on results(driverid) and races(year). Optionally, use COUNT(*) FILTER (WHERE grid <> 1) for a clearer aggregation.",
+      "attempts": 1,
+      "all_queries": [
+        "SELECT 100.0 * SUM(CASE WHEN T1.\"grid\" <> 1 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0) FROM results AS T1 INNER JOIN drivers AS T2 ON T1.\"driverid\" = T2.\"driverid\" INNER JOIN races AS T3 ON T1.\"raceid\" = T3.\"raceid\" WHERE T2.\"driverref\" = 'hamilton' AND T3.\"year\" >= 2010 AND T1.\"grid\" IS NOT NULL"
+      ],
+      "interpreter_output": {
+        "clarified_question": "Since 2010, what percentage of races in which Lewis Hamilton participated did he NOT start the race from grid position 1 (i.e., was not on pole position)?",
+        "sub_questions": [],
+        "explicit_intent": "Return a single scalar percentage = (count of Hamilton race entries since 2010 where starting/grid position <> 1) / (count of Hamilton race entries since 2010) * 100. Expected output shape: one row, one column (percentage as numeric). SQL pattern examples: \n- If race entries are in table `results` with columns (`driver_name`, `grid` or `starting_position`, `race_date` or `race_season`):\n  SELECT 100.0 * SUM(CASE WHEN grid <> 1 THEN 1 ELSE 0 END) / COUNT(*) AS pct_not_pole\n  FROM results\n  WHERE driver_name = 'Lewis Hamilton' AND (race_date >= '2010-01-01' OR race_season >= 2010);\n- If qualifying table stores pole info: use qualifying.position or qualifying.grid similarly.\nDo NOT GROUP BY (caller asked for a single overall percentage). Use year filtering by race_date or race_season >= 2010. Use exact equality for driver name 'Lewis Hamilton' unless dataset uses driver_id (then filter driver_id = <Hamilton_id>).\n",
+        "ambiguities_resolved": [
+          "Interpreted 'Hamilton' as Lewis Hamilton (the F1 driver).",
+          "Interpreted '1st track of the f1 circuit' as starting the race from grid position 1 (pole position) rather than 'first race of the season' or 'first circuit on calendar'.",
+          "Temporal scope: 'since 2010' means include races from 2010-01-01 up to the latest date in the data. Implement as race_season >= 2010 or race_date >= '2010-01-01'.",
+          "Output shape: single scalar percentage (one row, one column).",
+          "Assumed data columns: common column names could be `grid`, `starting_position`, or `position` in `results` or `qualifying` tables; if the dataset uses different column names (e.g., driver_id, race_id), adjust filters/joins accordingly.",
+          "Assumed presence of entries only for races the driver participated in; if dataset includes races where the driver did not participate, filter to rows where Hamilton has a valid entry (driver_name = 'Lewis Hamilton' or driver_id = <id>)."
+        ]
+      },
+      "mapper_output": "Selected tables (3) and why they were chosen\n- drivers — selected because it identifies Lewis Hamilton (exact driver-related table). The sample_row shows driverref = \"hamilton\", forename = \"Lewis\", surname = \"Hamilton\" so we can reliably filter the driver (exact name/driverref match).\n- results — selected because it contains race participation rows and the starting grid column (grid). This is the primary table that indicates whether a driver started on pole (grid = 1) for a race.\n- races — selected to restrict to years (year column). The question asks \"Since 2010\", so we need the race year to filter results.raceid → races.year >= 2010.\n\nKey columns (which map to question concepts)\n- drivers.driverid (bigint, PK) — use to identify Lewis Hamilton. Also drivers.driverref / drivers.forename / drivers.surname are available for matching; sample_row shows driverref = \"hamilton\".\n- results.driverid (bigint, FK → drivers.driverid) — identifies which driver the result row is for.\n- results.raceid (bigint, FK → races.raceid) — links the result row to the race (for year filtering).\n- results.grid (bigint, nullable) — starting grid position. grid = 1 means pole position. This is the PRIMARY metric column for \"was NOT on pole\".\n- races.year (bigint) — use to filter races since 2010 (e.g., races.year >= 2010).\n\nColumn types & date format notes\n- races.year is stored as a numeric (bigint). Use numeric comparison (e.g., races.year >= 2010). This is simpler than parsing dates.\n- races.date exists and is a DATE type as well (if you prefer date-based filtering), but year is available directly as a bigint.\n- results.grid is bigint (integer). 1 = pole. The column is nullable — see Value/Cleaning notes below.\n- drivers.driverref is text (sample value \"hamilton\"), forename/surname are text.\n\nSample data (from sample_row)\n- drivers sample_row: { driverid: 1, driverref: \"hamilton\", forename: \"Lewis\", surname: \"Hamilton\", dob: \"1985-01-07\", ... }\n  - Confirms driverref \"hamilton\" maps to Lewis Hamilton; driverid = 1 in the sample.\n- results sample_row: { resultid: 23, raceid: 19, driverid: 8, grid: 2, position: 1, ... }\n  - Illustrates grid is an integer (2 here).\n- races sample_row: { raceid: 2, year: 2009, name: \"Malaysian Grand Prix\", date: \"2009-04-05\", ... }\n  - Confirms races.year exists and is numeric.\n\nRelationships (foreign keys)\n- results.driverid → drivers.driverid (connects result rows to a driver)\n- results.raceid → races.raceid (connects result rows to the race and its year)\nThese are the exact joins needed: results JOIN drivers ON results.driverid = drivers.driverid JOIN races ON results.raceid = races.raceid.\n\nValue insights and cleaning caveats\n- grid semantics: grid = 1 means pole position. To count \"NOT on pole\", check grid != 1.\n- grid is nullable (nullable = true). Rows with NULL grid may represent missing data (or non-starts). Recommendation: exclude rows where grid IS NULL from both numerator and denominator, unless you explicitly want to treat unknown grid as \"not on pole\". State your assumption (see Validation Notes).\n- Participation definition: a race \"in which Lewis Hamilton participated\" is represented by result rows with his driverid. Using results rows for that driver and year >= 2010 is the intended interpretation. Note: if there are entries in other tables for entries that never produced a results row (very rare in this dataset), those would be excluded — this is probably correct since results indicates actual participation/entry.\n\nCardinality & join warnings\n- This query can be answered using only results joined to races and drivers — no additional joins required.\n- WARNING (join/cardinality): Joining drivers → results will restrict the dataset to only races where that driver has a results row (this is desired since we want races he participated in). Joining races for year filtering also restricts to races in the chosen years (desired). No unexpected duplication should occur because results is the per-driver-per-race table (one row per driver per race).\n- If you instead joined to qualifying or other tables you might change cardinality / exclude races (not necessary here).\n\nValidation notes & assumptions to make explicit for SQL generation\n- Confirmed columns exist: drivers.driverid/driverref/forename/surname; results.grid/driverid/raceid; races.year/raceid are present.\n- Use driverref = 'hamilton' or forename='Lewis' AND surname='Hamilton' to find his driverid. Sample_row shows driverref = \"hamilton\" and driverid = 1, so filtering by driverref is convenient and robust.\n- \"Since 2010\" — I will assume inclusive (i.e., include year = 2010 and later). If you meant strictly after 2010, use races.year > 2010 instead.\n\nRecommended query logic (summary for the SQL generator)\n- Step 1: identify Lewis Hamilton's driverid (e.g., WHERE driverref = 'hamilton' OR forename = 'Lewis' AND surname = 'Hamilton').\n- Step 2: join results to races and filter races.year >= 2010.\n- Step 3: exclude rows with results.grid IS NULL (unless you want a different interpretation).\n- Step 4: compute total_races = COUNT(*) of Hamilton's results rows after filtering; non_pole_races = COUNT(*) WHERE grid <> 1; percentage = 100.0 * non_pole_races / total_races.\n\nImportant notes to ensure accurate SQL\n- Use numeric filter on races.year (bigint), e.g., races.year >= 2010.\n- Exclude grid IS NULL to avoid counting unknown starts as not-on-pole (document this assumption).\n- Use driverref = 'hamilton' (lowercase in sample) or join on driverid found from drivers to be safe.\n- This is a straightforward aggregation on results with joins to drivers and races; no additional tables needed.\n\nIf you want, I can now generate the exact SQL (using the assumptions above: include 2010, exclude NULL grids, match driverref = 'hamilton').",
+      "generator_output": {
+        "reasoning_steps": [
+          "Identify Lewis Hamilton using drivers.driverref = 'hamilton' to get his results rows.",
+          "Use results table (T1) for participation and starting grid (T1.\"grid\").",
+          "Join races (T3) to restrict to races with T3.\"year\" >= 2010 (inclusive).",
+          "Exclude rows where T1.\"grid\" IS NULL to avoid counting unknown starting positions.",
+          "Compute percentage as 100 * SUM(CASE WHEN T1.\"grid\" <> 1 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0) to return a single scalar percent."
+        ],
+        "sub_queries": [],
+        "confidence": 0.9,
+        "sql_query": "SELECT 100.0 * SUM(CASE WHEN T1.\"grid\" <> 1 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0)\nFROM results AS T1\nINNER JOIN drivers AS T2 ON T1.\"driverid\" = T2.\"driverid\"\nINNER JOIN races AS T3 ON T1.\"raceid\" = T3.\"raceid\"\nWHERE T2.\"driverref\" = 'hamilton' AND T3.\"year\" >= 2010 AND T1.\"grid\" IS NOT NULL"
+      },
+      "validator_output": {
+        "is_valid": true,
+        "is_optimal": false,
+        "syntax_errors": [],
+        "semantic_issues": [],
+        "efficiency_score": 0.6,
+        "efficiency_issues": [
+          "Sequential scan on results (filter grid IS NOT NULL) indicates lack of index usage for driverid-based filtering",
+          "Nested Loop with repeated Index Scan on races (index scanned ~191 times) increases cost",
+          "Driver filter uses drivers.driverref causing a hash join and full scan of results instead of filtering by a constant driverid"
+        ],
+        "refinement_feedback": "Query is syntactically valid and returns the requested percentage but is not optimal due to a full scan of results and repeated nested-loop index scans. Improve performance by resolving Hamilton's driverid first (use a subquery or parameter) so you can filter results.driverid directly and leverage an index, or add appropriate indexes on results(driverid) and races(year). Optionally, use COUNT(*) FILTER (WHERE grid <> 1) for a clearer aggregation."
+      },
+      "trace": {
+        "pipeline": "new",
+        "db_name": "passarinho",
+        "start_ts": "2025-11-14T02:41:13.968463+00:00",
+        "end_ts": "2025-11-14T02:42:51.815588+00:00",
+        "latency_ms": 97847,
+        "steps": [
+          {
+            "name": "interpreter",
+            "timing_ms": 17382,
+            "input_summary": {
+              "raw_question": "Calculate the percentage whereby Hamilton was not at the 1st track of the the f1 circuit since 2010."
+            },
+            "output_summary": {
+              "clarified_question": "Since 2010, what percentage of races in which Lewis Hamilton participated did he NOT start the race from grid position 1 (i.e., was not on pole position)?",
+              "intent": "Return a single scalar percentage = (count of Hamilton race entries since 2010 where starting/grid position <> 1) / (count of Hamilton race entries since 2010) * 100. Expected output shape: one row, one column (percentage as numeric). SQL pattern examples: \n- If race entries are in table `results` w",
+              "sub_questions_count": 0
+            },
+            "error": null
+          },
+          {
+            "name": "mapper",
+            "timing_ms": 35189,
+            "input_summary": {
+              "clarified_question": "Since 2010, what percentage of races in which Lewis Hamilton participated did he NOT start the race from grid position 1 (i.e., was not on pole position)?",
+              "all_tables_count": 75
+            },
+            "output_summary": {
+              "output_length": 5795,
+              "output_preview": "Selected tables (3) and why they were chosen\n- drivers — selected because it identifies Lewis Hamilton (exact driver-related table). The sample_row shows driverref = \"hamilton\", forename = \"Lewis\", surname = \"Hamilton\" so we can reliably filter the driver (exact name/driverref match).\n- results — se"
+            },
+            "error": null
+          },
+          {
+            "name": "generator",
+            "timing_ms": 16313,
+            "input_summary": {
+              "clarified_question": "Since 2010, what percentage of races in which Lewis Hamilton participated did he NOT start the race from grid position 1 (i.e., was not on pole position)?",
+              "attempt": 1
+            },
+            "output_summary": {
+              "sql_length": 295,
+              "reasoning_steps_count": 5,
+              "confidence": 0.9
+            },
+            "error": null
+          },
+          {
+            "name": "validator",
+            "timing_ms": 28768,
+            "input_summary": {
+              "sql_length": 295,
+              "attempt": 1
+            },
+            "output_summary": {
+              "is_valid": true,
+              "is_optimal": false,
+              "efficiency_score": 0.6,
+              "syntax_error_count": 0,
+              "semantic_issue_count": 0
+            },
+            "error": null
+          }
+        ],
+        "tools": [
+          {
+            "agent": "mapper",
+            "tool": "get_table_info",
+            "args_redacted": [
+              "drivers",
+              "results",
+              "races"
+            ],
+            "result_preview": "Retrieved info for 3 tables",
+            "timing_ms": 100,
+            "error": null
+          }
+        ],
+        "generator": {
+          "sql_query": "SELECT 100.0 * SUM(CASE WHEN T1.\"grid\" <> 1 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0) FROM results AS T1 INNER JOIN drivers AS T2 ON T1.\"driverid\" = T2.\"driverid\" INNER JOIN races AS T3 ON T1.\"raceid\" = T3.\"raceid\" WHERE T2.\"driverref\" = 'hamilton' AND T3.\"year\" >= 2010 AND T1.\"grid\" IS NOT NULL",
+          "reasoning_steps": [
+            "Identify Lewis Hamilton using drivers.driverref = 'hamilton' to get his results rows.",
+            "Use results table (T1) for participation and starting grid (T1.\"grid\").",
+            "Join races (T3) to restrict to races with T3.\"year\" >= 2010 (inclusive).",
+            "Exclude rows where T1.\"grid\" IS NULL to avoid counting unknown starting positions.",
+            "Compute percentage as 100 * SUM(CASE WHEN T1.\"grid\" <> 1 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0) to return a single scalar percent."
+          ],
+          "confidence": 0.9
+        },
+        "mapper": {
+          "all_tables_count": 75,
+          "selected_tables": [
+            "drivers",
+            "results",
+            "races"
+          ]
+        }
+      }
+    },
+    "analyzer_output": {
+      "analyzer_match": false,
+      "approved": false,
+      "failure_step": "mapper",
+      "failure_reason": "Predicted SQL computes a different metric and population than the gold SQL. The predicted query measures the share of Hamilton's race entries where results.grid <> 1 (starting grid not pole) and excludes NULL grid values, using the results table. The gold SQL uses driverStandings.position <> 1 from driverStandings (and counts driverStandingsId) joined to races — a different table/field and therefore a different denominator/population. This table/column mismatch and different NULL-handling produces materially different percentages (~73.24% vs ~66.90%).",
+      "query_issues": "1) Wrong primary table/column: predicted uses results.grid while gold uses driverStandings.position — these represent different metrics/populations.\n2) Denominator mismatch: predicted uses COUNT(*) after excluding NULL grid rows; gold uses COUNT(driverStandingsId) which may include rows omitted by the predicted query.\n3) NULL handling: predicted excludes rows with NULL grid (AND T1.grid IS NOT NULL), changing the denominator; gold does not explicitly exclude NULLs from driverStandings.position.\n4) Slightly different driver filter: predicted filters drivers.driverref='hamilton' vs gold filters drivers.surname='Hamilton' (likely equivalent here but a potential mapping difference).\n5) Aggregation logic differs (SUM(CASE WHEN grid<>1 THEN 1 ELSE 0 END)/COUNT(*) vs CAST(COUNT(CASE WHEN position<>1 THEN position END) AS REAL)/COUNT(driverStandingsId)).",
+      "root_cause": "Mapper/ontology mismatch: the system mapped the concept 'was not at the 1st track' to the results.grid column (starting grid) instead of to the field used in the gold query (driverStandings.position). This led the generator to produce a query over a different table with different null/row characteristics, producing a different numeric answer.",
+      "suggestions": [
+        "Improve the mapper to prefer the same table/column semantics as authoritative gold patterns (add heuristics that prefer driverStandings.position when question phrasing matches 'position' at race-level), and to surface multiple candidate mappings when ambiguous.",
+        "Have the interpreter ask a clarification when the phrasing is ambiguous (e.g., whether '1st track' means pole position (grid) vs finishing position vs championship standing) or compute and return both plausible metrics with labels.",
+        "Enhance the validator to run quick execution-level sanity checks comparing key counts/denominators (e.g., total rows used) against alternative plausible queries and flag >~2% divergence for review.",
+        "Improve generator to preserve null-handling semantics consistent with mapped gold queries (e.g., avoid excluding NULLs unless explicitly required) and to explicitly document the denominator being used in the result (add alias/comment)."
+      ]
+    }
+  }
+]

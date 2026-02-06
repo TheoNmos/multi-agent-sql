@@ -1,0 +1,2348 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title data-i18n="page.title">Sistema Multiagente Text-to-SQL</title>
+  <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      padding: 30px;
+    }
+
+    h1 {
+      color: #333;
+      margin-bottom: 30px;
+      font-size: 2em;
+    }
+
+    .header-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 15px;
+      margin-bottom: 30px;
+    }
+
+    .header-bar h1 {
+      margin-bottom: 0;
+      flex: 1;
+    }
+
+    .lang-toggle {
+      background: transparent;
+      color: #667eea;
+      border: 2px solid #667eea;
+      padding: 8px 12px;
+      border-radius: 999px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      white-space: nowrap;
+    }
+
+    .lang-toggle:hover {
+      background: #667eea;
+      color: white;
+    }
+
+    .section {
+      margin-bottom: 40px;
+      padding: 20px;
+      background: #f8f9fa;
+      border-radius: 8px;
+    }
+
+    .section h2 {
+      color: #555;
+      margin-bottom: 15px;
+      font-size: 1.3em;
+    }
+
+    .form-group {
+      margin-bottom: 15px;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 5px;
+      color: #333;
+      font-weight: 500;
+    }
+
+    input[type="text"],
+    input[type="password"],
+    textarea,
+    select {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      font-size: 14px;
+      font-family: inherit;
+    }
+
+    textarea {
+      resize: vertical;
+      min-height: 80px;
+    }
+
+    button {
+      background: #667eea;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      transition: background 0.3s;
+    }
+
+    button:hover {
+      background: #5568d3;
+    }
+
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+
+    .connections-list {
+      margin-top: 15px;
+    }
+
+    .connection-item {
+      background: white;
+      padding: 12px;
+      margin-bottom: 8px;
+      border-radius: 6px;
+      border: 1px solid #ddd;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .connection-info {
+      flex: 1;
+    }
+
+    .connection-name {
+      font-weight: 500;
+      color: #333;
+    }
+
+    .connection-db {
+      font-size: 0.9em;
+      color: #666;
+      margin-top: 4px;
+    }
+
+    .status-container {
+      margin-top: 20px;
+    }
+
+    .status-steps {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 10px;
+      margin-top: 15px;
+    }
+
+    .step-card {
+      background: white;
+      padding: 15px;
+      border-radius: 6px;
+      border: 2px solid #ddd;
+      text-align: center;
+    }
+
+    .step-card.waiting {
+      border-color: #ccc;
+      background: #f8f9fa;
+    }
+
+    .step-card.running {
+      border-color: #667eea;
+      background: #e8ebff;
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+
+    .step-card.done {
+      border-color: #28a745;
+      background: #d4edda;
+    }
+
+    .step-card.error {
+      border-color: #dc3545;
+      background: #f8d7da;
+    }
+
+    @keyframes pulse {
+
+      0%,
+      100% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: 0.7;
+      }
+    }
+
+    .step-name {
+      font-weight: 500;
+      margin-bottom: 5px;
+      text-transform: capitalize;
+    }
+
+    .step-status {
+      font-size: 0.85em;
+      color: #666;
+    }
+
+    .sql-display {
+      margin-top: 20px;
+      background: #282c34;
+      color: #abb2bf;
+      padding: 15px;
+      border-radius: 6px;
+      font-family: "Courier New", monospace;
+      font-size: 13px;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+
+    .results-table {
+      margin-top: 20px;
+      width: 100%;
+      border-collapse: collapse;
+      background: white;
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    .results-table th {
+      background: #667eea;
+      color: white;
+      padding: 12px;
+      text-align: left;
+      font-weight: 500;
+    }
+
+    .results-table td {
+      padding: 10px 12px;
+      border-bottom: 1px solid #eee;
+    }
+
+    .results-table tr:hover {
+      background: #f8f9fa;
+    }
+
+    .error-message {
+      background: #f8d7da;
+      color: #721c24;
+      padding: 12px;
+      border-radius: 6px;
+      margin-top: 15px;
+      border: 1px solid #f5c6cb;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 20px;
+      color: #666;
+    }
+
+    .session-item {
+      background: white;
+      padding: 12px;
+      margin-bottom: 8px;
+      border-radius: 6px;
+      border: 2px solid #ddd;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .session-item:hover {
+      border-color: #667eea;
+      background: #f8f9fa;
+    }
+
+    .session-item.active {
+      border-color: #667eea;
+      background: #e8ebff;
+    }
+
+    .session-name {
+      font-weight: 500;
+      color: #333;
+      margin-bottom: 4px;
+    }
+
+    .session-meta {
+      font-size: 0.85em;
+      color: #666;
+    }
+
+    .execution-item {
+      background: white;
+      padding: 15px;
+      margin-bottom: 10px;
+      border-radius: 6px;
+      border: 1px solid #ddd;
+    }
+
+    .execution-query {
+      font-weight: 500;
+      color: #333;
+      margin-bottom: 8px;
+    }
+
+    .execution-status {
+      font-size: 0.9em;
+      color: #666;
+    }
+
+    /* Tab Navigation */
+    .tabs {
+      display: flex;
+      border-bottom: 2px solid #ddd;
+      margin-bottom: 30px;
+    }
+
+    .tab {
+      padding: 12px 24px;
+      background: transparent;
+      border: none;
+      border-bottom: 3px solid transparent;
+      cursor: pointer;
+      font-size: 16px;
+      font-weight: 500;
+      color: #666;
+      transition: all 0.3s;
+    }
+
+    .tab:hover {
+      color: #667eea;
+      background: #f8f9fa;
+    }
+
+    .tab.active {
+      color: #667eea;
+      border-bottom-color: #667eea;
+    }
+
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    /* Benchmark Styles */
+    .question-card {
+      background: white;
+      padding: 15px;
+      margin-bottom: 10px;
+      border-radius: 6px;
+      border: 2px solid #ddd;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .question-card:hover {
+      border-color: #667eea;
+      box-shadow: 0 2px 8px rgba(102, 126, 234, 0.2);
+    }
+
+    .question-card.selected {
+      border-color: #667eea;
+      background: #e8ebff;
+    }
+
+    .question-card input[type="checkbox"] {
+      margin-right: 10px;
+      width: auto;
+    }
+
+    .question-header {
+      display: flex;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .question-id {
+      font-weight: 600;
+      color: #667eea;
+      margin-right: 10px;
+    }
+
+    .question-difficulty {
+      font-size: 0.85em;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: #f0f0f0;
+      color: #666;
+    }
+
+    .question-difficulty.simple {
+      background: #d4edda;
+      color: #155724;
+    }
+
+    .question-difficulty.moderate {
+      background: #fff3cd;
+      color: #856404;
+    }
+
+    .question-difficulty.challenging {
+      background: #f8d7da;
+      color: #721c24;
+    }
+
+    .question-text {
+      color: #333;
+      line-height: 1.5;
+    }
+
+    .questions-list-container {
+      max-height: 500px;
+      overflow-y: auto;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      padding: 10px;
+      background: white;
+    }
+
+    .questions-list-container::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    .questions-list-container::-webkit-scrollbar-track {
+      background: #f1f1f1;
+      border-radius: 4px;
+    }
+
+    .questions-list-container::-webkit-scrollbar-thumb {
+      background: #667eea;
+      border-radius: 4px;
+    }
+
+    .questions-list-container::-webkit-scrollbar-thumb:hover {
+      background: #5568d3;
+    }
+
+    .results-summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
+      margin-bottom: 20px;
+    }
+
+    .summary-card {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      border: 2px solid #ddd;
+      text-align: center;
+    }
+
+    .summary-card h3 {
+      font-size: 0.9em;
+      color: #666;
+      margin-bottom: 10px;
+      text-transform: uppercase;
+    }
+
+    .summary-card .value {
+      font-size: 2em;
+      font-weight: bold;
+      color: #667eea;
+    }
+
+    .summary-card .rate {
+      font-size: 1.2em;
+      color: #28a745;
+    }
+
+    .result-item {
+      background: white;
+      padding: 20px;
+      margin-bottom: 15px;
+      border-radius: 8px;
+      border: 2px solid #ddd;
+    }
+
+    .result-item.expanded {
+      border-color: #667eea;
+    }
+
+    .result-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: pointer;
+    }
+
+    .result-status {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .status-badge {
+      padding: 4px 12px;
+      border-radius: 12px;
+      font-size: 0.85em;
+      font-weight: 500;
+    }
+
+    .status-badge.pass {
+      background: #d4edda;
+      color: #155724;
+    }
+
+    .status-badge.fail {
+      background: #f8d7da;
+      color: #721c24;
+    }
+
+    .status-badge.partial {
+      background: #fff3cd;
+      color: #856404;
+    }
+
+    .sql-comparison {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 15px;
+      margin-top: 15px;
+    }
+
+    .sql-panel {
+      background: #282c34;
+      color: #abb2bf;
+      padding: 15px;
+      border-radius: 6px;
+      font-family: "Courier New", monospace;
+      font-size: 13px;
+      overflow-x: auto;
+    }
+
+    .sql-panel h4 {
+      color: #abb2bf;
+      margin-bottom: 10px;
+      font-size: 0.9em;
+    }
+
+    .sql-panel pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+
+    .execution-results {
+      margin-top: 15px;
+    }
+
+    .execution-results h4 {
+      margin-bottom: 10px;
+      color: #333;
+    }
+
+    .analyzer-output {
+      margin-top: 15px;
+      padding: 15px;
+      background: #f8f9fa;
+      border-radius: 6px;
+      border-left: 4px solid #667eea;
+    }
+
+    .analyzer-output h4 {
+      margin-top: 0;
+      color: #667eea;
+    }
+
+    .progress-bar {
+      width: 100%;
+      height: 8px;
+      background: #e0e0e0;
+      border-radius: 4px;
+      overflow: hidden;
+      margin-top: 5px;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: #28a745;
+      transition: width 0.3s;
+    }
+
+    /* Collapsible Agent Output Styles */
+    .agent-output {
+      margin-top: 20px;
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    .agent-output-header {
+      padding: 15px;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      user-select: none;
+      transition: background-color 0.2s;
+    }
+
+    .agent-output-header:hover {
+      background-color: rgba(0, 0, 0, 0.05);
+    }
+
+    .agent-output-header h4 {
+      margin: 0;
+      flex: 1;
+    }
+
+    .collapse-icon {
+      font-size: 1.2em;
+      transition: transform 0.3s;
+      color: #666;
+    }
+
+    .collapse-icon.collapsed {
+      transform: rotate(-90deg);
+    }
+
+    .agent-output-content {
+      padding: 0 15px 15px 15px;
+      transition: max-height 0.3s ease-out, padding 0.3s ease-out, opacity 0.2s;
+      overflow: hidden;
+      max-height: 5000px;
+      opacity: 1;
+    }
+
+    .agent-output-content.collapsed {
+      max-height: 0;
+      padding: 0 15px;
+      opacity: 0;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <div class="header-bar">
+      <h1 data-i18n="header.title">🔍 Agente SQL - Interface de Consulta em Linguagem Natural</h1>
+      <button class="lang-toggle" type="button" onclick="toggleLanguage()" id="lang-toggle-btn"
+        aria-label="Toggle UI language">
+        <span id="lang-toggle-text">PT (BR) → EN</span>
+      </button>
+    </div>
+
+    <!-- Tab Navigation -->
+    <div class="tabs">
+      <button class="tab active" onclick="switchTab('query')" data-i18n="tabs.query">Consulta</button>
+      <button class="tab" onclick="switchTab('benchmarks')" data-i18n="tabs.benchmarks">Benchmarks</button>
+    </div>
+
+    <!-- Query Tab Content -->
+    <div id="query-tab" class="tab-content active">
+      <!-- Connection String Section -->
+      <div class="section">
+        <h2 data-i18n="connections.add_title">Adicionar Conexão PostgreSQL</h2>
+        <form hx-post="/api/connections" hx-target="#connections-list" hx-swap="beforeend"
+          hx-on::after-request="this.reset(); refreshConnectionDropdown()">
+          <div class="form-group">
+            <label for="connection_string" data-i18n="connections.connection_string_label">String de Conexão:</label>
+            <input type="text" id="connection_string" name="connection_string"
+              placeholder="postgresql://user:password@host:port/database"
+              data-i18n-placeholder="connections.connection_string_placeholder" required />
+          </div>
+          <div class="form-group">
+            <label for="database_name" data-i18n="connections.database_name_label">Nome do Banco de Dados:</label>
+            <input type="text" id="database_name" name="database_name" placeholder="nome_do_banco"
+              data-i18n-placeholder="connections.database_name_placeholder" required />
+          </div>
+          <button type="submit" data-i18n="connections.add_button">Adicionar Conexão</button>
+        </form>
+
+        <div class="connections-list" id="connections-list">
+          {% for conn in connections %}
+          <div class="connection-item" id="conn-{{ conn.id }}">
+            <div class="connection-info">
+              <div class="connection-name">{{ conn.connection_string }}</div>
+              <div class="connection-db"><span data-i18n="connection.database_label">Banco de Dados</span>: {{
+                conn.database_name }}</div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <!-- Sessions Section -->
+      <div class="section">
+        <h2 data-i18n="sessions.title">Sessões</h2>
+        <button onclick="createNewSession()" style="margin-bottom: 15px" data-i18n="sessions.new_button">+ Nova
+          Sessão</button>
+        <div id="sessions-list">
+          {% for session in sessions %}
+          <div class="session-item" data-session-id="{{ session.id }}" onclick="selectSession('{{ session.id }}')">
+            <div class="session-name" data-i18n-empty="sessions.unnamed">{{ session.name or '' }}</div>
+            <div class="session-uuid" style="font-family: monospace; font-size: 0.75em; color: #999; margin-top: 2px">
+              {{ session.id }}
+            </div>
+            <div class="session-meta">
+              {{ session.execution_ids|length }} <span data-i18n="sessions.queries_word">consultas</span> • <span
+                data-i18n="sessions.updated_word">Atualizado</span>
+              {% if session.updated_at %}
+              {{ session.updated_at.strftime('%d/%m/%Y %H:%M') }}
+              {% else %}
+              <span data-i18n="sessions.never">Nunca</span>
+              {% endif %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <!-- Query Section -->
+      <div class="section">
+        <h2 data-i18n="query.title">Executar Consulta em Linguagem Natural</h2>
+        <form id="query-form" hx-post="/api/queries" hx-swap="none" hx-on::after-request="handleQueryResponse(event)">
+          <div class="form-group">
+            <label for="connection_id" data-i18n="query.select_connection_label">Selecionar Conexão:</label>
+            <select id="connection_id" name="connection_id" required>
+              <option value="" data-i18n="query.select_connection_placeholder">-- Selecione uma conexão --</option>
+              {% for conn in connections %}
+              <option value="{{ conn.id }}">{{ conn.connection_string }} ({{ conn.database_name }})</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="user_query" data-i18n="query.user_query_label">Consulta em Linguagem Natural:</label>
+            <textarea id="user_query" name="user_query"
+              placeholder="ex: Quanto o cliente 6 consumiu no total entre agosto e novembro de 2013?"
+              data-i18n-placeholder="query.user_query_placeholder" required></textarea>
+          </div>
+          <div class="form-group">
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer">
+              <input type="checkbox" id="run_analyzer" name="run_analyzer" value="true" />
+              <span data-i18n="query.run_analyzer_label">Executar analisador após a execução da consulta</span>
+            </label>
+          </div>
+          <input type="hidden" id="session_id" name="session_id" value="" />
+          <button type="submit" data-i18n="query.run_button">Executar Consulta</button>
+          <div style="margin-top: 10px; font-size: 0.9em; color: #666">
+            <span id="session-info" data-i18n="sessions.none_selected_info">Nenhuma sessão selecionada - será criada uma
+              nova sessão</span>
+          </div>
+        </form>
+
+        <div id="query-status"></div>
+        <div id="executions-list"></div>
+      </div>
+    </div>
+
+    <!-- Benchmarks Tab Content -->
+    <div id="benchmarks-tab" class="tab-content">
+      <!-- Dataset Selection -->
+      <div class="section">
+        <h2 data-i18n="benchmarks.datasets_title">Datasets de Benchmark</h2>
+        <div class="form-group">
+          <label for="benchmark-dataset" data-i18n="benchmarks.select_dataset_label">Selecionar Dataset:</label>
+          <select id="benchmark-dataset" onchange="loadDataset()">
+            <option value="" data-i18n="benchmarks.select_dataset_placeholder">-- Selecione um dataset --</option>
+            <option value="bird">BIRD</option>
+            <option value="livraria">Livraria</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Question Selection -->
+      <div class="section" id="questions-section" style="display: none">
+        <h2 data-i18n="benchmarks.select_questions_title">Selecionar Questões</h2>
+        <div style="margin-bottom: 15px">
+          <button onclick="selectAllQuestions()" data-i18n="benchmarks.select_all">Selecionar Todas</button>
+          <button onclick="deselectAllQuestions()" style="margin-left: 10px"
+            data-i18n="benchmarks.deselect_all">Desselecionar Todas</button>
+          <span id="selection-count" style="margin-left: 15px; color: #666"></span>
+        </div>
+        <div class="questions-list-container">
+          <div id="questions-list"></div>
+        </div>
+      </div>
+
+      <!-- Run Benchmark -->
+      <div class="section" id="run-section" style="display: none">
+        <h2 data-i18n="benchmarks.run_title">Executar Benchmark</h2>
+        <form id="benchmark-form" onsubmit="runBenchmark(event)">
+          <div class="form-group">
+            <label for="benchmark-connection" data-i18n="benchmarks.select_connection_label">Selecionar Conexão:</label>
+            <select id="benchmark-connection" required>
+              <option value="" data-i18n="query.select_connection_placeholder">-- Selecione uma conexão --</option>
+              {% for conn in connections %}
+              <option value="{{ conn.id }}">{{ conn.connection_string }} ({{ conn.database_name }})</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="form-group">
+            <label>
+              <input type="checkbox" id="benchmark-run-analyzer" name="run_analyzer" value="true" checked />
+              <span data-i18n="benchmarks.run_analyzer_label">Executar Analisador (AM - Analyzer Match)</span>
+            </label>
+            <small style="display: block; color: #666; margin-top: 5px">
+              <span data-i18n="benchmarks.run_analyzer_help">EM e RM são sempre calculados. O analisador executa apenas
+                se ambos EM e RM forem False.</span>
+            </small>
+          </div>
+          <button type="submit" id="run-benchmark-btn" data-i18n="benchmarks.run_button">Executar Benchmark</button>
+        </form>
+        <div id="benchmark-progress" style="display: none; margin-top: 15px">
+          <p data-i18n="benchmarks.running_message">Executando benchmark... Isso pode levar um tempo.</p>
+          <div class="progress-bar">
+            <div class="progress-fill" id="progress-fill" style="width: 0%"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Results Display -->
+      <div class="section" id="results-section" style="display: none">
+        <h2 data-i18n="benchmarks.results_title">Resultados do Benchmark</h2>
+        <div id="results-summary"></div>
+        <div id="results-list"></div>
+      </div>
+
+      <!-- Results History -->
+      <div class="section">
+        <h2 data-i18n="benchmarks.history_title">Resultados Anteriores</h2>
+        <button onclick="loadResultsHistory()" style="margin-bottom: 15px" data-i18n="common.refresh">Atualizar</button>
+        <div id="results-history"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // -----------------------
+    // UI language (PT-BR / EN)
+    // -----------------------
+    const UI_LANG_STORAGE_KEY = "uiLang";
+    const SUPPORTED_UI_LANGS = ["pt-BR", "en-US"];
+
+    const I18N = {
+      "pt-BR": {
+        "page.title": "Sistema Multiagente Text-to-SQL",
+        "header.title": "🔍 Agente SQL - Interface de Consulta em Linguagem Natural",
+        "tabs.query": "Consulta",
+        "tabs.benchmarks": "Benchmarks",
+        "connections.add_title": "Adicionar Conexão PostgreSQL",
+        "connections.connection_string_label": "String de Conexão:",
+        "connections.connection_string_placeholder": "postgresql://user:password@host:port/database",
+        "connections.database_name_label": "Nome do Banco de Dados:",
+        "connections.database_name_placeholder": "nome_do_banco",
+        "connections.add_button": "Adicionar Conexão",
+        "connection.database_label": "Banco de Dados",
+        "connection.test_button": "Testar Conexão",
+        "sessions.title": "Sessões",
+        "sessions.new_button": "+ Nova Sessão",
+        "sessions.unnamed": "Sessão Sem Nome",
+        "sessions.queries_word": "consultas",
+        "sessions.updated_word": "Atualizado",
+        "sessions.never": "Nunca",
+        "sessions.none_selected_info": "Nenhuma sessão selecionada - será criada uma nova sessão",
+        "sessions.using_session": "Usando sessão: {name} ({id}...)",
+        "sessions.using_session_fallback": "Usando sessão: {id}...",
+        "sessions.no_queries": "Ainda não há consultas nesta sessão.",
+        "sessions.session_queries_title": "Consultas da Sessão",
+        "query.title": "Executar Consulta em Linguagem Natural",
+        "query.select_connection_label": "Selecionar Conexão:",
+        "query.select_connection_placeholder": "-- Selecione uma conexão --",
+        "query.user_query_label": "Consulta em Linguagem Natural:",
+        "query.user_query_placeholder": "ex: Quanto o cliente 6 consumiu no total entre agosto e novembro de 2013?",
+        "query.run_analyzer_label": "Executar analisador após a execução da consulta",
+        "query.run_button": "Executar Consulta",
+        "query.status_title": "Status de Execução da Consulta",
+        "query.initializing": "Inicializando...",
+        "status.status": "Status",
+        "status.current_step": "Etapa Atual",
+        "steps.interpreter": "Interpretador",
+        "steps.mapper": "Mapeador",
+        "steps.generator": "Gerador",
+        "steps.validator": "Validador",
+        "output.interpreter.title": "Saída do Interpretador",
+        "output.interpreter.clarified": "Questão Esclarecida",
+        "output.interpreter.intent": "Intenção Explícita",
+        "output.interpreter.ambiguities": "Ambiguidades Resolvidas",
+        "output.mapper.title": "Saída do Mapeador",
+        "output.generator.title": "Saída do Gerador",
+        "output.generator.reasoning": "Etapas de Raciocínio",
+        "output.generator.confidence": "Confiança",
+        "output.validator.title": "Saída do Validador",
+        "output.validator.valid": "Válido",
+        "output.validator.optimal": "Ótimo",
+        "output.validator.efficiency": "Eficiência",
+        "output.validator.feedback": "Feedback",
+        "output.validator.syntax_errors": "Erros de Sintaxe",
+        "output.validator.semantic_issues": "Problemas Semânticos",
+        "output.analyzer.title": "Saída do Analisador",
+        "output.analyzer.approved_yes": "✅ Aprovado",
+        "output.analyzer.approved_no": "❌ Precisa de Análise",
+        "output.analyzer.status": "Status",
+        "output.analyzer.status_ok": "✅ Resultado está correto",
+        "output.analyzer.status_fail": "❌ Falha detectada",
+        "output.analyzer.failure_step": "Etapa da Falha",
+        "output.analyzer.failure_reason": "Motivo da Falha",
+        "output.analyzer.query_issues": "Problemas na Consulta",
+        "output.analyzer.root_cause": "Causa Raiz",
+        "output.analyzer.suggestions": "Sugestões",
+        "sql.generated": "SQL Gerado",
+        "error.label": "Erro",
+        "results.query_title": "Resultados da Consulta",
+        "results.none": "Nenhum resultado retornado.",
+        "benchmarks.datasets_title": "Datasets de Benchmark",
+        "benchmarks.select_dataset_label": "Selecionar Dataset:",
+        "benchmarks.select_dataset_placeholder": "-- Selecione um dataset --",
+        "benchmarks.select_questions_title": "Selecionar Questões",
+        "benchmarks.select_all": "Selecionar Todas",
+        "benchmarks.deselect_all": "Desselecionar Todas",
+        "benchmarks.run_title": "Executar Benchmark",
+        "benchmarks.select_connection_label": "Selecionar Conexão:",
+        "benchmarks.run_analyzer_label": "Executar Analisador (AM - Analyzer Match)",
+        "benchmarks.run_analyzer_help":
+          "EM e RM são sempre calculados. O analisador executa apenas se ambos EM e RM forem False.",
+        "benchmarks.run_button": "Executar Benchmark",
+        "benchmarks.running_message": "Executando benchmark... Isso pode levar um tempo.",
+        "benchmarks.results_title": "Resultados do Benchmark",
+        "benchmarks.history_title": "Resultados Anteriores",
+        "common.refresh": "Atualizar",
+        "benchmarks.validation.select_dataset_first": "Por favor, selecione um dataset primeiro",
+        "benchmarks.validation.select_at_least_one": "Por favor, selecione pelo menos uma questão",
+        "benchmarks.validation.select_connection": "Por favor, selecione uma conexão",
+        "benchmarks.timeout": "Tempo esgotado aguardando resultados do benchmark. Verifique o histórico de resultados mais tarde.",
+        "benchmarks.summary.total_questions": "Total de Questões",
+        "benchmarks.summary.errors": "Erros",
+        "benchmarks.summary.exact_match": "Exact Match (EM)",
+        "benchmarks.summary.result_match": "Result Match (RM)",
+        "benchmarks.summary.analyzer_match": "Analyzer Match (AM)",
+        "benchmarks.result.question": "Questão",
+        "benchmarks.sql.gold": "SQL Gold",
+        "benchmarks.sql.predicted": "SQL Previsto",
+        "benchmarks.execution_results": "Resultados da Execução",
+        "benchmarks.execution_results.gold": "Resultados Gold",
+        "benchmarks.execution_results.predicted": "Resultados Previstos",
+        "benchmarks.error.system": "Erro do Sistema",
+        "benchmarks.error.execution": "Erro de Execução",
+        "benchmarks.analyzer_match": "Analyzer Match (AM)",
+        "benchmarks.passed": "✓ Passou",
+        "benchmarks.failed": "✗ Falhou",
+        "benchmarks.approved": "Aprovado",
+        "common.yes": "Sim",
+        "common.no": "Não",
+        "common.reason": "Motivo",
+        "common.na": "N/A",
+        "benchmarks.query_issues": "Problemas na Consulta",
+        "benchmarks.root_cause": "Causa Raiz",
+        "benchmarks.suggestions": "Sugestões",
+        "difficulty.simple": "simples",
+        "difficulty.moderate": "moderada",
+        "difficulty.challenging": "desafiadora",
+        "selection.count": "{count} {question_word} {selected_word}",
+        "selection.question_singular": "questão",
+        "selection.question_plural": "questões",
+        "selection.selected_singular": "selecionada",
+        "selection.selected_plural": "selecionadas",
+        "sessions.create_prompt": "Digite o nome da sessão (opcional):",
+        "sessions.create_default": "Nova Sessão",
+        "connections.refresh_error": "Erro ao atualizar conexões:",
+        "sessions.load_error": "Erro ao carregar sessões:",
+        "executions.load_error": "Erro ao carregar execuções:",
+        "status.check_error": "Erro ao verificar status:",
+        "dataset.load_error": "Erro ao carregar dataset: {msg}",
+        "benchmarks.run_error": "Erro ao executar benchmark: {msg}",
+        "benchmarks.check_results_error": "Erro ao verificar resultados:",
+        "benchmarks.load_history_error": "Erro ao carregar histórico de resultados:",
+        "benchmarks.load_file_error": "Erro ao carregar arquivo de resultado: {msg}",
+      },
+      "en-US": {
+        "page.title": "Multi-agent Text-to-SQL System",
+        "header.title": "🔍 SQL Agent — Natural Language Query UI",
+        "tabs.query": "Query",
+        "tabs.benchmarks": "Benchmarks",
+        "connections.add_title": "Add PostgreSQL Connection",
+        "connections.connection_string_label": "Connection string:",
+        "connections.connection_string_placeholder": "postgresql://user:password@host:port/database",
+        "connections.database_name_label": "Database name:",
+        "connections.database_name_placeholder": "database_name",
+        "connections.add_button": "Add connection",
+        "connection.database_label": "Database",
+        "connection.test_button": "Test connection",
+        "sessions.title": "Sessions",
+        "sessions.new_button": "+ New session",
+        "sessions.unnamed": "Unnamed session",
+        "sessions.queries_word": "queries",
+        "sessions.updated_word": "Updated",
+        "sessions.never": "Never",
+        "sessions.none_selected_info": "No session selected — a new session will be created",
+        "sessions.using_session": "Using session: {name} ({id}...)",
+        "sessions.using_session_fallback": "Using session: {id}...",
+        "sessions.no_queries": "There are no queries in this session yet.",
+        "sessions.session_queries_title": "Session queries",
+        "query.title": "Run a natural language query",
+        "query.select_connection_label": "Select connection:",
+        "query.select_connection_placeholder": "-- Select a connection --",
+        "query.user_query_label": "Natural language query:",
+        "query.user_query_placeholder": "e.g., How much did customer 6 spend in total between Aug and Nov 2013?",
+        "query.run_analyzer_label": "Run analyzer after executing the query",
+        "query.run_button": "Run query",
+        "query.status_title": "Query execution status",
+        "query.initializing": "Initializing...",
+        "status.status": "Status",
+        "status.current_step": "Current step",
+        "steps.interpreter": "Interpreter",
+        "steps.mapper": "Mapper",
+        "steps.generator": "Generator",
+        "steps.validator": "Validator",
+        "output.interpreter.title": "Interpreter output",
+        "output.interpreter.clarified": "Clarified question",
+        "output.interpreter.intent": "Explicit intent",
+        "output.interpreter.ambiguities": "Resolved ambiguities",
+        "output.mapper.title": "Mapper output",
+        "output.generator.title": "Generator output",
+        "output.generator.reasoning": "Reasoning steps",
+        "output.generator.confidence": "Confidence",
+        "output.validator.title": "Validator output",
+        "output.validator.valid": "Valid",
+        "output.validator.optimal": "Optimal",
+        "output.validator.efficiency": "Efficiency",
+        "output.validator.feedback": "Feedback",
+        "output.validator.syntax_errors": "Syntax errors",
+        "output.validator.semantic_issues": "Semantic issues",
+        "output.analyzer.title": "Analyzer output",
+        "output.analyzer.approved_yes": "✅ Approved",
+        "output.analyzer.approved_no": "❌ Needs review",
+        "output.analyzer.status": "Status",
+        "output.analyzer.status_ok": "✅ Result looks correct",
+        "output.analyzer.status_fail": "❌ Failure detected",
+        "output.analyzer.failure_step": "Failure step",
+        "output.analyzer.failure_reason": "Failure reason",
+        "output.analyzer.query_issues": "Query issues",
+        "output.analyzer.root_cause": "Root cause",
+        "output.analyzer.suggestions": "Suggestions",
+        "sql.generated": "Generated SQL",
+        "error.label": "Error",
+        "results.query_title": "Query results",
+        "results.none": "No results returned.",
+        "benchmarks.datasets_title": "Benchmark datasets",
+        "benchmarks.select_dataset_label": "Select dataset:",
+        "benchmarks.select_dataset_placeholder": "-- Select a dataset --",
+        "benchmarks.select_questions_title": "Select questions",
+        "benchmarks.select_all": "Select all",
+        "benchmarks.deselect_all": "Deselect all",
+        "benchmarks.run_title": "Run benchmark",
+        "benchmarks.select_connection_label": "Select connection:",
+        "benchmarks.run_analyzer_label": "Run analyzer (AM — Analyzer Match)",
+        "benchmarks.run_analyzer_help":
+          "EM and RM are always computed. The analyzer runs only if both EM and RM are False.",
+        "benchmarks.run_button": "Run benchmark",
+        "benchmarks.running_message": "Running benchmark… this may take a while.",
+        "benchmarks.results_title": "Benchmark results",
+        "benchmarks.history_title": "Previous results",
+        "common.refresh": "Refresh",
+        "benchmarks.validation.select_dataset_first": "Please select a dataset first",
+        "benchmarks.validation.select_at_least_one": "Please select at least one question",
+        "benchmarks.validation.select_connection": "Please select a connection",
+        "benchmarks.timeout":
+          "Timed out waiting for benchmark results. Please check the results history later.",
+        "benchmarks.summary.total_questions": "Total questions",
+        "benchmarks.summary.errors": "Errors",
+        "benchmarks.summary.exact_match": "Exact Match (EM)",
+        "benchmarks.summary.result_match": "Result Match (RM)",
+        "benchmarks.summary.analyzer_match": "Analyzer Match (AM)",
+        "benchmarks.result.question": "Question",
+        "benchmarks.sql.gold": "Gold SQL",
+        "benchmarks.sql.predicted": "Predicted SQL",
+        "benchmarks.execution_results": "Execution results",
+        "benchmarks.execution_results.gold": "Gold results",
+        "benchmarks.execution_results.predicted": "Predicted results",
+        "benchmarks.error.system": "System error",
+        "benchmarks.error.execution": "Execution error",
+        "benchmarks.analyzer_match": "Analyzer Match (AM)",
+        "benchmarks.passed": "✓ Passed",
+        "benchmarks.failed": "✗ Failed",
+        "benchmarks.approved": "Approved",
+        "common.yes": "Yes",
+        "common.no": "No",
+        "common.reason": "Reason",
+        "common.na": "N/A",
+        "benchmarks.query_issues": "Query issues",
+        "benchmarks.root_cause": "Root cause",
+        "benchmarks.suggestions": "Suggestions",
+        "difficulty.simple": "simple",
+        "difficulty.moderate": "moderate",
+        "difficulty.challenging": "challenging",
+        "selection.count": "{count} {question_word} {selected_word}",
+        "selection.question_singular": "question",
+        "selection.question_plural": "questions",
+        "selection.selected_singular": "selected",
+        "selection.selected_plural": "selected",
+        "sessions.create_prompt": "Enter session name (optional):",
+        "sessions.create_default": "New session",
+        "connections.refresh_error": "Error refreshing connections:",
+        "sessions.load_error": "Error loading sessions:",
+        "executions.load_error": "Error loading executions:",
+        "status.check_error": "Error checking status:",
+        "dataset.load_error": "Error loading dataset: {msg}",
+        "benchmarks.run_error": "Error running benchmark: {msg}",
+        "benchmarks.check_results_error": "Error checking results:",
+        "benchmarks.load_history_error": "Error loading results history:",
+        "benchmarks.load_file_error": "Error loading result file: {msg}",
+      },
+    };
+
+    let currentUiLang = "pt-BR";
+    function getUiLang() {
+      const stored = localStorage.getItem(UI_LANG_STORAGE_KEY);
+      if (stored && SUPPORTED_UI_LANGS.includes(stored)) return stored;
+      return "pt-BR";
+    }
+
+    function setUiLang(lang) {
+      currentUiLang = SUPPORTED_UI_LANGS.includes(lang) ? lang : "pt-BR";
+      localStorage.setItem(UI_LANG_STORAGE_KEY, currentUiLang);
+      document.documentElement.setAttribute("lang", currentUiLang);
+      applyTranslations(document);
+      updateLanguageToggleLabel();
+    }
+
+    function toggleLanguage() {
+      setUiLang(currentUiLang === "pt-BR" ? "en-US" : "pt-BR");
+      // Re-render dynamic bits that depend on locale (dates/plurals)
+      loadSessions();
+      if (currentSessionId) loadSessionExecutions(currentSessionId);
+      loadResultsHistory();
+      updateSelectionCount();
+    }
+
+    function updateLanguageToggleLabel() {
+      const btn = document.getElementById("lang-toggle-btn");
+      const textSpan = document.getElementById("lang-toggle-text");
+      if (!btn) return;
+      const label = currentUiLang === "pt-BR" ? "PT (BR) → EN" : "EN → PT (BR)";
+      if (textSpan) {
+        textSpan.textContent = label;
+      } else {
+        btn.textContent = label;
+      }
+      btn.setAttribute("aria-label", currentUiLang === "pt-BR" ? "Switch UI language to English" : "Mudar idioma da UI para Português (Brasil)");
+    }
+
+    function t(key, vars = {}) {
+      const dict = I18N[currentUiLang] || I18N["pt-BR"];
+      const template = dict[key] ?? I18N["pt-BR"][key] ?? key;
+      return String(template).replace(/\{(\w+)\}/g, (_, k) => (vars[k] !== undefined ? String(vars[k]) : `{${k}}`));
+    }
+
+    function applyTranslations(root = document) {
+      // text nodes
+      root.querySelectorAll("[data-i18n]").forEach((el) => {
+        const key = el.getAttribute("data-i18n");
+        if (!key) return;
+        el.textContent = t(key);
+      });
+
+      // placeholders
+      root.querySelectorAll("[data-i18n-placeholder]").forEach((el) => {
+        const key = el.getAttribute("data-i18n-placeholder");
+        if (!key) return;
+        el.setAttribute("placeholder", t(key));
+      });
+
+      // empty fallbacks (only set when the element has no content)
+      root.querySelectorAll("[data-i18n-empty]").forEach((el) => {
+        const key = el.getAttribute("data-i18n-empty");
+        if (!key) return;
+        if (!el.textContent || el.textContent.trim() === "") {
+          el.textContent = t(key);
+        }
+      });
+    }
+
+    let currentSessionId = null;
+    const activePolling = new Set(); // Track which executions are being polled
+
+    // Restore state on page load
+    window.addEventListener("DOMContentLoaded", function () {
+      // Init UI language + translate static DOM
+      setUiLang(getUiLang());
+
+      // Load all sessions
+      loadSessions();
+
+      // Don't auto-select - let user choose or create new
+      updateSessionInfo(null);
+    });
+
+    // Ensure HTMX-inserted content is translated too
+    document.body.addEventListener("htmx:afterSwap", (e) => {
+      applyTranslations(e.target || document);
+    });
+
+    function createNewSession() {
+      const name = prompt(t("sessions.create_prompt"), t("sessions.create_default"));
+      if (name === null) return; // User cancelled
+
+      fetch("/api/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: `name=${encodeURIComponent(name || t("sessions.create_default"))}`,
+      })
+        .then((response) => response.json())
+        .then((data) => {
+          loadSessions();
+          selectSession(data.session_id);
+        })
+        .catch((error) => console.error(t("sessions.load_error"), error));
+    }
+
+    function loadSessions() {
+      fetch("/api/sessions")
+        .then((response) => response.json())
+        .then((sessions) => {
+          const container = document.getElementById("sessions-list");
+          container.innerHTML = sessions
+            .map(
+              (s) => `
+                        <div class="session-item ${s.id === currentSessionId ? "active" : ""}"
+                             data-session-id="${s.id}"
+                             onclick="selectSession('${s.id}')">
+                            <div class="session-name">${s.name || t("sessions.unnamed")}</div>
+                            <div class="session-uuid" style="font-family: monospace; font-size: 0.75em; color: #999; margin-top: 2px;">${s.id
+                }</div>
+                            <div class="session-meta">${s.execution_count} ${t("sessions.queries_word")} • ${t("sessions.updated_word")} ${new Date(
+                  s.updated_at
+                ).toLocaleString(currentUiLang)}</div>
+                        </div>
+                    `
+            )
+            .join("");
+        })
+        .catch((error) => console.error(t("sessions.load_error"), error));
+    }
+
+    function selectSession(sessionId) {
+      currentSessionId = sessionId;
+      document.getElementById("session_id").value = sessionId;
+
+      // Update active state
+      document.querySelectorAll(".session-item").forEach((item) => {
+        if (item.dataset.sessionId === sessionId) {
+          item.classList.add("active");
+        } else {
+          item.classList.remove("active");
+        }
+      });
+
+      // Update session info text
+      updateSessionInfo(sessionId);
+
+      // Clear current status display
+      document.getElementById("query-status").innerHTML = "";
+
+      // Load executions for this session
+      loadSessionExecutions(sessionId);
+    }
+
+    function updateSessionInfo(sessionId) {
+      const sessionInfo = document.getElementById("session-info");
+      if (sessionId) {
+        // Find session name
+        fetch("/api/sessions")
+          .then((response) => response.json())
+          .then((sessions) => {
+            const session = sessions.find((s) => s.id === sessionId);
+            if (session) {
+              sessionInfo.textContent = t("sessions.using_session", {
+                name: session.name || t("sessions.unnamed"),
+                id: session.id.substring(0, 8),
+              });
+              sessionInfo.style.color = "#667eea";
+            }
+          })
+          .catch(() => {
+            sessionInfo.textContent = t("sessions.using_session_fallback", { id: sessionId.substring(0, 8) });
+            sessionInfo.style.color = "#667eea";
+          });
+      } else {
+        sessionInfo.textContent = t("sessions.none_selected_info");
+        sessionInfo.style.color = "#666";
+      }
+    }
+
+    function loadSessionExecutions(sessionId) {
+      fetch(`/api/sessions/${sessionId}/executions`)
+        .then((response) => response.json())
+        .then((executions) => {
+          const container = document.getElementById("executions-list");
+          if (executions.length === 0) {
+            container.innerHTML =
+              `<p style="color: #666; margin-top: 15px;">${t("sessions.no_queries")}</p>`;
+            document.getElementById("query-status").innerHTML = "";
+            return;
+          }
+
+          container.innerHTML = `<h3 style="margin-top: 20px;">${t("sessions.session_queries_title")}</h3>`;
+
+          // Find the most recent execution (first one since they're sorted by created_at desc)
+          const latestExecution = executions[0];
+
+          // Show status for the latest execution
+          if (latestExecution) {
+            displayExecutionStatus(latestExecution);
+
+            // Auto-poll if running (only if not already polling)
+            if (
+              (latestExecution.status === "running" || latestExecution.status === "pending") &&
+              !activePolling.has(latestExecution.id)
+            ) {
+              pollStatus(latestExecution.id);
+            }
+          }
+
+          // Display all executions in the list
+          executions.forEach((exec) => {
+            const execDiv = document.createElement("div");
+            execDiv.className = "execution-item";
+            execDiv.style.cursor = "pointer";
+            execDiv.onclick = () => displayExecutionStatus(exec);
+            execDiv.innerHTML = `
+                            <div class="execution-query">${exec.user_query}</div>
+                            <div class="execution-status">${t("status.status")}: ${exec.status} ${exec.current_step ? `(${exec.current_step})` : ""
+              }</div>
+                            ${exec.sql_query
+                ? `<div style="margin-top: 8px; font-family: monospace; font-size: 0.85em; color: #666;">${exec.sql_query.substring(
+                  0,
+                  100
+                )}${exec.sql_query.length > 100 ? "..." : ""}</div>`
+                : ""
+              }
+                        `;
+            container.appendChild(execDiv);
+          });
+        })
+        .catch((error) => console.error(t("executions.load_error"), error));
+    }
+
+    function displayExecutionStatus(execution) {
+      // Stop any existing polling
+      activePolling.clear();
+
+      // Clear and setup status display
+      const statusDiv = document.getElementById("query-status");
+      statusDiv.innerHTML = `
+                <div class="status-container" id="status-container">
+                    <h3>${t("query.status_title")}</h3>
+                    <div id="status-content"></div>
+                </div>
+            `;
+
+      // Display current state
+      const statusData = {
+        id: execution.id,
+        status: execution.status,
+        current_step: execution.current_step,
+        step_status: execution.step_status || {},
+        sql_query: execution.sql_query,
+        error: execution.error,
+        interpreter_output: execution.interpreter_output,
+        mapper_output: execution.mapper_output,
+        generator_output: execution.generator_output,
+        validator_output: execution.validator_output,
+        analyzer_output: execution.analyzer_output,
+      };
+
+      updateStatusDisplay(statusData);
+
+      // If completed, fetch full results
+      if (execution.status === "completed") {
+        fetch(`/api/queries/${execution.id}`)
+          .then((response) => response.json())
+          .then((fullData) => {
+            displayResults(fullData);
+          });
+      }
+
+      // Start polling if still running
+      if ((execution.status === "running" || execution.status === "pending") && !activePolling.has(execution.id)) {
+        pollStatus(execution.id);
+      }
+    }
+
+    // Refresh connection dropdown after adding a new connection
+    function refreshConnectionDropdown() {
+      fetch("/api/connections")
+        .then((response) => response.json())
+        .then((connections) => {
+          const select = document.getElementById("connection_id");
+          // Clear existing options except the first one
+          select.innerHTML = `<option value="">${t("query.select_connection_placeholder")}</option>`;
+          connections.forEach((conn) => {
+            const option = document.createElement("option");
+            option.value = conn.id;
+            option.textContent = `${conn.connection_string} (${conn.database_name})`;
+            select.appendChild(option);
+          });
+        })
+        .catch((error) => console.error(t("connections.refresh_error"), error));
+    }
+
+    // Handle query form submission response
+    function handleQueryResponse(event) {
+      if (event.detail.xhr.status === 200) {
+        const response = JSON.parse(event.detail.xhr.responseText);
+        if (response.execution_id && response.session_id) {
+          // Update session selection if a new session was created
+          if (response.session_id !== currentSessionId) {
+            // Reload sessions list to include the new one
+            loadSessions();
+            selectSession(response.session_id);
+          } else {
+            // Refresh current session to show new execution
+            loadSessionExecutions(currentSessionId);
+          }
+
+          // Start polling for status updates (only if not already polling)
+          if (!activePolling.has(response.execution_id)) {
+            const statusDiv = document.getElementById("query-status");
+            statusDiv.innerHTML = `
+                            <div class="status-container" id="status-container">
+                                <h3>${t("query.status_title")}</h3>
+                                <div class="loading">${t("query.initializing")}</div>
+                                <div id="status-content" class="hidden"></div>
+                            </div>
+                        `;
+            pollStatus(response.execution_id);
+          }
+        }
+      }
+    }
+
+    function pollStatus(executionId) {
+      // Prevent multiple polling instances for the same execution
+      if (activePolling.has(executionId)) {
+        return;
+      }
+      activePolling.add(executionId);
+
+      // Ensure status container exists
+      let statusContainer = document.getElementById("status-container");
+      if (!statusContainer) {
+        const statusDiv = document.getElementById("query-status");
+        statusDiv.innerHTML = `
+                    <div class="status-container" id="status-container">
+                        <h3>${t("query.status_title")}</h3>
+                        <div id="status-content"></div>
+                    </div>
+                `;
+      }
+
+      const statusContent = document.getElementById("status-content");
+      const loading = document.querySelector(".loading");
+
+      fetch(`/api/queries/${executionId}/status`)
+        .then((response) => response.json())
+        .then((data) => {
+          if (loading) loading.classList.add("hidden");
+          if (statusContent) statusContent.classList.remove("hidden");
+
+          // Update status display
+          updateStatusDisplay(data);
+
+          // Continue polling if not completed or error
+          if (data.status === "pending" || data.status === "running") {
+            setTimeout(() => {
+              activePolling.delete(executionId);
+              pollStatus(executionId);
+            }, 3000); // Poll every 3 seconds instead of 1
+          } else {
+            // Stop polling when completed or error
+            activePolling.delete(executionId);
+            if (data.status === "completed") {
+              // Fetch full results
+              fetch(`/api/queries/${executionId}`)
+                .then((response) => response.json())
+                .then((fullData) => {
+                  displayResults(fullData);
+                });
+            }
+          }
+        })
+        .catch((error) => {
+          console.error(t("status.check_error"), error);
+          activePolling.delete(executionId);
+          // Only retry if status is still pending/running, with longer delay
+          setTimeout(() => {
+            if (!activePolling.has(executionId)) {
+              pollStatus(executionId);
+            }
+          }, 5000); // 5 second delay on error
+        });
+    }
+
+    function displayExecutionState(execution) {
+      // Ensure status container exists
+      let statusContainer = document.getElementById("status-container");
+      if (!statusContainer) {
+        const statusDiv = document.getElementById("query-status");
+        statusDiv.innerHTML = `
+                    <div class="status-container" id="status-container">
+                        <h3>${t("query.status_title")}</h3>
+                        <div id="status-content"></div>
+                    </div>
+                `;
+      }
+
+      const statusContent = document.getElementById("status-content");
+      if (statusContent) {
+        updateStatusDisplay(execution);
+        if (execution.status === "completed" && execution.query_result) {
+          displayResults(execution);
+        }
+      }
+    }
+
+    function updateStatusDisplay(data) {
+      const statusContent = document.getElementById("status-content");
+
+      const steps = ["interpreter", "mapper", "generator", "validator"];
+      const stepNames = {
+        interpreter: t("steps.interpreter"),
+        mapper: t("steps.mapper"),
+        generator: t("steps.generator"),
+        validator: t("steps.validator"),
+      };
+
+      let stepsHtml = '<div class="status-steps">';
+      steps.forEach((step) => {
+        const status = data.step_status[step] || "waiting";
+        const isCurrent = data.current_step === step && data.status === "running";
+        const stepClass = isCurrent ? "running" : status;
+
+        stepsHtml += `
+                    <div class="step-card ${stepClass}">
+                        <div class="step-name">${stepNames[step]}</div>
+                        <div class="step-status">${status}</div>
+                    </div>
+                `;
+      });
+      stepsHtml += "</div>";
+
+      let html = `
+                <div>
+                    <p><strong>${t("status.status")}:</strong> <span style="text-transform: capitalize;">${data.status}</span></p>
+                    ${data.current_step
+          ? `<p><strong>${t("status.current_step")}:</strong> ${stepNames[data.current_step] || data.current_step}</p>`
+          : ""
+        }
+                    ${stepsHtml}
+                </div>
+            `;
+
+      // Display Interpreter Output
+      if (data.interpreter_output) {
+        const interp = data.interpreter_output;
+        const outputId = "interpreter-output";
+        html += `
+                    <div class="agent-output" style="background: #f8f9fa; border-left: 4px solid #667eea;">
+                        <div class="agent-output-header" onclick="toggleAgentOutput('${outputId}')">
+                            <h4 style="margin: 0; color: #667eea;">${t("output.interpreter.title")}</h4>
+                            <span class="collapse-icon collapsed" id="${outputId}-icon">▼</span>
+                        </div>
+                        <div class="agent-output-content collapsed" id="${outputId}">
+                            <div style="margin-top: 10px;">
+                                <strong>${t("output.interpreter.clarified")}:</strong>
+                                <p style="margin: 5px 0; padding: 8px; background: white; border-radius: 4px;">${escapeHtml(
+          interp.clarified_question || "N/A"
+        )}</p>
+                            </div>
+                            ${interp.explicit_intent
+            ? `
+                                <div style="margin-top: 10px;">
+                                    <strong>${t("output.interpreter.intent")}:</strong>
+                                    <p style="margin: 5px 0; padding: 8px; background: white; border-radius: 4px; white-space: pre-wrap;">${escapeHtml(
+              interp.explicit_intent
+            )}</p>
+                                </div>
+                            `
+            : ""
+          }
+                            ${interp.ambiguities_resolved && interp.ambiguities_resolved.length > 0
+            ? `
+                                <div style="margin-top: 10px;">
+                                    <strong>${t("output.interpreter.ambiguities")}:</strong>
+                                    <ul style="margin: 5px 0; padding-left: 20px;">
+                                        ${interp.ambiguities_resolved.map((a) => `<li>${escapeHtml(a)}</li>`).join("")}
+                                    </ul>
+                                </div>
+                            `
+            : ""
+          }
+                        </div>
+                    </div>
+                `;
+      }
+
+      // Display Mapper Output
+      if (data.mapper_output) {
+        const outputId = "mapper-output";
+        html += `
+                    <div class="agent-output" style="background: #f8f9fa; border-left: 4px solid #28a745;">
+                        <div class="agent-output-header" onclick="toggleAgentOutput('${outputId}')">
+                            <h4 style="margin: 0; color: #28a745;">${t("output.mapper.title")}</h4>
+                            <span class="collapse-icon collapsed" id="${outputId}-icon">▼</span>
+                        </div>
+                        <div class="agent-output-content collapsed" id="${outputId}">
+                            <div style="margin-top: 10px; padding: 8px; background: white; border-radius: 4px; white-space: pre-wrap; max-height: 300px; overflow-y: auto;">${escapeHtml(
+          data.mapper_output
+        )}</div>
+                        </div>
+                    </div>
+                `;
+      }
+
+      // Display Generator Output
+      if (data.generator_output) {
+        const gen = data.generator_output;
+        const outputId = "generator-output";
+        html += `
+                    <div class="agent-output" style="background: #f8f9fa; border-left: 4px solid #ffc107;">
+                        <div class="agent-output-header" onclick="toggleAgentOutput('${outputId}')">
+                            <h4 style="margin: 0; color: #ffc107;">${t("output.generator.title")}</h4>
+                            <span class="collapse-icon collapsed" id="${outputId}-icon">▼</span>
+                        </div>
+                        <div class="agent-output-content collapsed" id="${outputId}">
+                            ${gen.reasoning_steps && gen.reasoning_steps.length > 0
+            ? `
+                                <div style="margin-top: 10px;">
+                                    <strong>${t("output.generator.reasoning")}:</strong>
+                                    <ol style="margin: 5px 0; padding-left: 20px;">
+                                        ${gen.reasoning_steps
+              .map((step, idx) => `<li style="margin-bottom: 5px;">${escapeHtml(step)}</li>`)
+              .join("")}
+                                    </ol>
+                                </div>
+                            `
+            : ""
+          }
+                            ${gen.confidence !== undefined
+            ? `
+                                <div style="margin-top: 10px;">
+                                    <strong>${t("output.generator.confidence")}:</strong> ${(gen.confidence * 100).toFixed(1)}%
+                                </div>
+                            `
+            : ""
+          }
+                        </div>
+                    </div>
+                `;
+      }
+
+      // Display Validator Output
+      if (data.validator_output) {
+        const val = data.validator_output;
+        const outputId = "validator-output";
+        html += `
+                    <div class="agent-output" style="background: #f8f9fa; border-left: 4px solid #17a2b8;">
+                        <div class="agent-output-header" onclick="toggleAgentOutput('${outputId}')">
+                            <h4 style="margin: 0; color: #17a2b8;">${t("output.validator.title")}</h4>
+                            <span class="collapse-icon collapsed" id="${outputId}-icon">▼</span>
+                        </div>
+                        <div class="agent-output-content collapsed" id="${outputId}">
+                            <div style="margin-top: 10px;">
+                                <strong>${t("output.validator.valid")}:</strong> ${val.is_valid ? `✅ ${t("common.yes")}` : `❌ ${t("common.no")}`} |
+                                <strong>${t("output.validator.optimal")}:</strong> ${val.is_optimal ? `✅ ${t("common.yes")}` : `❌ ${t("common.no")}`}
+                                ${val.efficiency_score !== undefined
+            ? ` | <strong>${t("output.validator.efficiency")}:</strong> ${(val.efficiency_score * 100).toFixed(1)}%`
+            : ""
+          }
+                            </div>
+                            ${val.refinement_feedback
+            ? `
+                                <div style="margin-top: 10px;">
+                                    <strong>${t("output.validator.feedback")}:</strong>
+                                    <p style="margin: 5px 0; padding: 8px; background: white; border-radius: 4px; white-space: pre-wrap;">${escapeHtml(
+              val.refinement_feedback
+            )}</p>
+                                </div>
+                            `
+            : ""
+          }
+                            ${val.syntax_errors && val.syntax_errors.length > 0
+            ? `
+                                <div style="margin-top: 10px;">
+                                    <strong>${t("output.validator.syntax_errors")}:</strong>
+                                    <ul style="margin: 5px 0; padding-left: 20px; color: #dc3545;">
+                                        ${val.syntax_errors.map((e) => `<li>${escapeHtml(e)}</li>`).join("")}
+                                    </ul>
+                                </div>
+                            `
+            : ""
+          }
+                            ${val.semantic_issues && val.semantic_issues.length > 0
+            ? `
+                                <div style="margin-top: 10px;">
+                                    <strong>${t("output.validator.semantic_issues")}:</strong>
+                                    <ul style="margin: 5px 0; padding-left: 20px; color: #ffc107;">
+                                        ${val.semantic_issues.map((i) => `<li>${escapeHtml(i)}</li>`).join("")}
+                                    </ul>
+                                </div>
+                            `
+            : ""
+          }
+                        </div>
+                    </div>
+                `;
+      }
+
+      // Display Analyzer Output
+      if (data.analyzer_output) {
+        const analyzer = data.analyzer_output;
+        const approved = analyzer.approved;
+        const borderColor = approved ? "#28a745" : "#dc3545";
+        const bgColor = approved ? "#d4edda" : "#f8d7da";
+        const outputId = "analyzer-output";
+
+        html += `
+                    <div class="agent-output" style="background: ${bgColor}; border-left: 4px solid ${borderColor};">
+                        <div class="agent-output-header" onclick="toggleAgentOutput('${outputId}')">
+                            <h4 style="margin: 0; color: ${borderColor};">
+                                ${t("output.analyzer.title")} ${approved ? t("output.analyzer.approved_yes") : t("output.analyzer.approved_no")}
+                            </h4>
+                            <span class="collapse-icon collapsed" id="${outputId}-icon">▼</span>
+                        </div>
+                        <div class="agent-output-content collapsed" id="${outputId}">
+                            <div style="margin-top: 10px;">
+                                <strong>${t("output.analyzer.status")}:</strong> ${approved ? t("output.analyzer.status_ok") : t("output.analyzer.status_fail")}
+                            </div>
+                            ${!approved && analyzer.failure_step && analyzer.failure_step !== "none"
+            ? `
+                                <div style="margin-top: 10px;">
+                                    <strong>${t("output.analyzer.failure_step")}:</strong> <span style="text-transform: capitalize;">${escapeHtml(
+              analyzer.failure_step
+            )}</span>
+                                </div>
+                            `
+            : ""
+          }
+                            ${analyzer.failure_reason &&
+            analyzer.failure_reason !== "Result is correct - no failure analysis needed"
+            ? `
+                                <div style="margin-top: 10px;">
+                                    <strong>${t("output.analyzer.failure_reason")}:</strong>
+                                    <p style="margin: 5px 0; padding: 8px; background: white; border-radius: 4px; white-space: pre-wrap;">${escapeHtml(
+              analyzer.failure_reason
+            )}</p>
+                                </div>
+                            `
+            : ""
+          }
+                            ${analyzer.query_issues &&
+            analyzer.query_issues !== "No issues found - query matches expected results"
+            ? `
+                                <div style="margin-top: 10px;">
+                                    <strong>${t("output.analyzer.query_issues")}:</strong>
+                                    <p style="margin: 5px 0; padding: 8px; background: white; border-radius: 4px; white-space: pre-wrap;">${escapeHtml(
+              analyzer.query_issues
+            )}</p>
+                                </div>
+                            `
+            : ""
+          }
+                            ${analyzer.root_cause && analyzer.root_cause !== "Result is correct"
+            ? `
+                                <div style="margin-top: 10px;">
+                                    <strong>${t("output.analyzer.root_cause")}:</strong>
+                                    <p style="margin: 5px 0; padding: 8px; background: white; border-radius: 4px; white-space: pre-wrap;">${escapeHtml(
+              analyzer.root_cause
+            )}</p>
+                                </div>
+                            `
+            : ""
+          }
+                            ${analyzer.suggestions && analyzer.suggestions.length > 0
+            ? `
+                                <div style="margin-top: 10px;">
+                                    <strong>${t("output.analyzer.suggestions")}:</strong>
+                                    <ul style="margin: 5px 0; padding-left: 20px;">
+                                        ${analyzer.suggestions.map((s) => `<li>${escapeHtml(s)}</li>`).join("")}
+                                    </ul>
+                                </div>
+                            `
+            : ""
+          }
+                        </div>
+                    </div>
+                `;
+      }
+
+      if (data.sql_query) {
+        html += `
+                    <div class="sql-display" style="margin-top: 20px;">
+                        <strong>${t("sql.generated")}:</strong>
+                        <pre>${escapeHtml(data.sql_query)}</pre>
+                    </div>
+                `;
+      }
+
+      if (data.error) {
+        html += `
+                    <div class="error-message">
+                        <strong>${t("error.label")}:</strong> ${escapeHtml(data.error)}
+                    </div>
+                `;
+      }
+
+      statusContent.innerHTML = html;
+    }
+
+    function displayResults(data) {
+      const statusContent = document.getElementById("status-content");
+
+      // Remove any existing results section to prevent duplicates
+      const existingResults = statusContent.querySelector(".results-section");
+      if (existingResults) {
+        existingResults.remove();
+      }
+
+      // Update status display to include analyzer output if available
+      if (data.analyzer_output) {
+        updateStatusDisplay(data);
+      }
+
+      if (data.query_result && data.query_result.length > 0) {
+        const columns = Object.keys(data.query_result[0]);
+        let tableHtml =
+          `<div class="results-section"><h3>${t("results.query_title")}</h3><table class="results-table"><thead><tr>`;
+
+        columns.forEach((col) => {
+          tableHtml += `<th>${escapeHtml(col)}</th>`;
+        });
+        tableHtml += "</tr></thead><tbody>";
+
+        data.query_result.forEach((row) => {
+          tableHtml += "<tr>";
+          columns.forEach((col) => {
+            const value = row[col];
+            tableHtml += `<td>${value !== null && value !== undefined ? escapeHtml(String(value)) : "<em>null</em>"
+              }</td>`;
+          });
+          tableHtml += "</tr>";
+        });
+
+        tableHtml += "</tbody></table></div>";
+        statusContent.innerHTML += tableHtml;
+      } else {
+        const existingNoResults = statusContent.querySelector(".no-results-message");
+        if (!existingNoResults) {
+          statusContent.innerHTML += `<div class="no-results-message"><p>${t("results.none")}</p></div>`;
+        }
+      }
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement("div");
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    function toggleAgentOutput(outputId) {
+      const content = document.getElementById(outputId);
+      const icon = document.getElementById(outputId + "-icon");
+
+      if (content && icon) {
+        const isCollapsed = content.classList.contains("collapsed");
+
+        if (isCollapsed) {
+          // Expand
+          content.classList.remove("collapsed");
+          icon.classList.remove("collapsed");
+        } else {
+          // Collapse
+          content.classList.add("collapsed");
+          icon.classList.add("collapsed");
+        }
+      }
+    }
+
+    // Benchmark functionality
+    let currentDataset = null;
+    let currentQuestions = [];
+    let selectedIndices = new Set();
+    let currentBenchmarkRun = null;
+
+    function switchTab(tabName) {
+      // Update tab buttons
+      document.querySelectorAll(".tab").forEach((tab) => {
+        tab.classList.remove("active");
+      });
+      // Find the clicked tab button
+      const tabs = document.querySelectorAll(".tab");
+      tabs.forEach((tab, idx) => {
+        if ((tabName === "query" && idx === 0) || (tabName === "benchmarks" && idx === 1)) {
+          tab.classList.add("active");
+        }
+      });
+
+      // Update tab content
+      document.querySelectorAll(".tab-content").forEach((content) => {
+        content.classList.remove("active");
+      });
+      document.getElementById(tabName + "-tab").classList.add("active");
+
+      // Refresh connection dropdown when switching to benchmarks tab
+      if (tabName === "benchmarks") {
+        refreshBenchmarkConnectionDropdown();
+        loadResultsHistory();
+      }
+    }
+
+    function refreshBenchmarkConnectionDropdown() {
+      fetch("/api/connections")
+        .then((response) => response.json())
+        .then((connections) => {
+          const select = document.getElementById("benchmark-connection");
+          select.innerHTML = `<option value="">${t("query.select_connection_placeholder")}</option>`;
+          connections.forEach((conn) => {
+            const option = document.createElement("option");
+            option.value = conn.id;
+            option.textContent = `${conn.connection_string} (${conn.database_name})`;
+            select.appendChild(option);
+          });
+        })
+        .catch((error) => console.error(t("connections.refresh_error"), error));
+    }
+
+    function loadDataset() {
+      const dataset = document.getElementById("benchmark-dataset").value;
+      if (!dataset) {
+        document.getElementById("questions-section").style.display = "none";
+        document.getElementById("run-section").style.display = "none";
+        return;
+      }
+
+      currentDataset = dataset;
+      selectedIndices.clear();
+
+      fetch(`/api/benchmarks/${dataset}/questions`)
+        .then((response) => response.json())
+        .then((data) => {
+          currentQuestions = data.questions;
+          renderQuestions(data.questions);
+          document.getElementById("questions-section").style.display = "block";
+          document.getElementById("run-section").style.display = "block";
+          updateSelectionCount();
+        })
+        .catch((error) => {
+          console.error(t("dataset.load_error", { msg: error.message }));
+          alert(t("dataset.load_error", { msg: error.message }));
+        });
+    }
+
+    function renderQuestions(questions) {
+      const container = document.getElementById("questions-list");
+      container.innerHTML = questions
+        .map((q) => {
+          const difficultyClass = q.difficulty ? `question-difficulty ${q.difficulty}` : "";
+          const difficultyLabel = q.difficulty ? (I18N[currentUiLang][`difficulty.${q.difficulty}`] || q.difficulty) : "";
+          const difficultyBadge = q.difficulty ? `<span class="${difficultyClass}">${difficultyLabel}</span>` : "";
+          return `
+                    <div class="question-card" onclick="toggleQuestion(${q.index})">
+                        <div class="question-header">
+                            <input type="checkbox" id="q-${q.index}" onclick="event.stopPropagation(); toggleQuestion(${q.index
+            })" ${selectedIndices.has(q.index) ? "checked" : ""}>
+                            <span class="question-id">#${q.index}${q.question_id ? ` (ID: ${q.question_id})` : ""
+            }</span>
+                            ${difficultyBadge}
+                        </div>
+                        <div class="question-text">${escapeHtml(q.question)}</div>
+                    </div>
+                `;
+        })
+        .join("");
+    }
+
+    function toggleQuestion(index) {
+      if (selectedIndices.has(index)) {
+        selectedIndices.delete(index);
+      } else {
+        selectedIndices.add(index);
+      }
+      const checkbox = document.getElementById(`q-${index}`);
+      if (checkbox) {
+        checkbox.checked = selectedIndices.has(index);
+      }
+      const card = checkbox ? checkbox.closest(".question-card") : null;
+      if (card) {
+        card.classList.toggle("selected", selectedIndices.has(index));
+      }
+      updateSelectionCount();
+    }
+
+    function selectAllQuestions() {
+      currentQuestions.forEach((q) => selectedIndices.add(q.index));
+      renderQuestions(currentQuestions);
+      updateSelectionCount();
+    }
+
+    function deselectAllQuestions() {
+      selectedIndices.clear();
+      renderQuestions(currentQuestions);
+      updateSelectionCount();
+    }
+
+    function updateSelectionCount() {
+      const count = selectedIndices.size;
+      const questionWord = count === 1 ? t("selection.question_singular") : t("selection.question_plural");
+      const selectedWord = count === 1 ? t("selection.selected_singular") : t("selection.selected_plural");
+      document.getElementById("selection-count").textContent = t("selection.count", { count, question_word: questionWord, selected_word: selectedWord });
+    }
+
+    function runBenchmark(event) {
+      event.preventDefault();
+
+      if (!currentDataset) {
+        alert(t("benchmarks.validation.select_dataset_first"));
+        return;
+      }
+
+      if (selectedIndices.size === 0) {
+        alert(t("benchmarks.validation.select_at_least_one"));
+        return;
+      }
+
+      const connectionId = document.getElementById("benchmark-connection").value;
+      if (!connectionId) {
+        alert(t("benchmarks.validation.select_connection"));
+        return;
+      }
+
+      const runAnalyzer = document.getElementById("benchmark-run-analyzer").checked;
+      const indicesStr = Array.from(selectedIndices)
+        .sort((a, b) => a - b)
+        .join(",");
+
+      // Show progress
+      document.getElementById("benchmark-progress").style.display = "block";
+      document.getElementById("run-benchmark-btn").disabled = true;
+
+      const formData = new FormData();
+      formData.append("dataset", currentDataset);
+      formData.append("indices", indicesStr);
+      formData.append("connection_id", connectionId);
+      formData.append("run_analyzer", runAnalyzer ? "true" : "false");
+      formData.append("timeout_s", "30");
+      formData.append("max_concurrent", "5");
+
+      fetch("/api/benchmarks/run", {
+        method: "POST",
+        body: formData,
+      })
+        .then((response) => response.json())
+        .then((data) => {
+          currentBenchmarkRun = data;
+          // Poll for results (check if file exists)
+          pollBenchmarkResults(data.output_path);
+        })
+        .catch((error) => {
+          console.error(t("benchmarks.run_error", { msg: error.message }));
+          alert(t("benchmarks.run_error", { msg: error.message }));
+          document.getElementById("benchmark-progress").style.display = "none";
+          document.getElementById("run-benchmark-btn").disabled = false;
+        });
+    }
+
+    function pollBenchmarkResults(outputPath) {
+      // Extract filename from path
+      const filename = outputPath.split("/").pop();
+      let attempts = 0;
+      const maxAttempts = 120; // 10 minutes max
+
+      const checkResults = () => {
+        attempts++;
+        fetch(`/api/benchmarks/results/${filename}`)
+          .then((response) => {
+            if (response.ok) {
+              return response.json();
+            } else if (response.status === 404 && attempts < maxAttempts) {
+              // File not ready yet, keep polling
+              setTimeout(checkResults, 5000);
+              return null;
+            } else {
+              throw new Error("Failed to load results");
+            }
+          })
+          .then((data) => {
+            if (data) {
+              document.getElementById("benchmark-progress").style.display = "none";
+              document.getElementById("run-benchmark-btn").disabled = false;
+              displayBenchmarkResults(data);
+              loadResultsHistory(); // Refresh history
+            }
+          })
+          .catch((error) => {
+            if (attempts < maxAttempts) {
+              setTimeout(checkResults, 5000);
+            } else {
+              console.error(t("benchmarks.check_results_error"), error);
+              document.getElementById("benchmark-progress").style.display = "none";
+              document.getElementById("run-benchmark-btn").disabled = false;
+              alert(t("benchmarks.timeout"));
+            }
+          });
+      };
+
+      checkResults();
+    }
+
+    function displayBenchmarkResults(data) {
+      const summary = data.summary;
+      const results = data.results;
+
+      // Display summary
+      const summaryHtml = `
+                <div class="results-summary">
+                    <div class="summary-card">
+                        <h3>${t("benchmarks.summary.total_questions")}</h3>
+                        <div class="value">${summary.total}</div>
+                    </div>
+                    <div class="summary-card">
+                        <h3>${t("benchmarks.summary.exact_match")}</h3>
+                        <div class="value">${summary.exact_match.correct}/${summary.exact_match.total}</div>
+                        <div class="rate">${summary.exact_match.rate.toFixed(1)}%</div>
+                    </div>
+                    <div class="summary-card">
+                        <h3>${t("benchmarks.summary.result_match")}</h3>
+                        <div class="value">${summary.execution_match.correct}/${summary.execution_match.total}</div>
+                        <div class="rate">${summary.execution_match.rate.toFixed(1)}%</div>
+                    </div>
+                    <div class="summary-card">
+                        <h3>${t("benchmarks.summary.analyzer_match")}</h3>
+                        <div class="value">${summary.analyzer_match ? `${summary.analyzer_match.correct}/${summary.analyzer_match.total}` : "N/A"}</div>
+                        <div class="rate">${summary.analyzer_match ? `${summary.analyzer_match.rate.toFixed(1)}%` : "N/A"}</div>
+                    </div>
+                    <div class="summary-card">
+                        <h3>${t("benchmarks.summary.errors")}</h3>
+                        <div class="value">${summary.errors}</div>
+                    </div>
+                </div>
+            `;
+      document.getElementById("results-summary").innerHTML = summaryHtml;
+
+      // Display individual results
+      const resultsHtml = results
+        .map((result, idx) => {
+          const emStatus = result.exact_match ? "pass" : "fail";
+          const exaStatus =
+            result.execution_match === true ? "pass" : result.execution_match === false ? "fail" : "partial";
+          const amStatus =
+            result.analyzer_match === true ? "pass" : result.analyzer_match === false ? "fail" : "partial";
+          const hasError = result.error || result.execution_error;
+
+          return `
+                    <div class="result-item" id="result-${idx}">
+                        <div class="result-header" onclick="toggleResult(${idx})">
+                            <div>
+                                <strong>${t("benchmarks.result.question")} #${result.index}${result.question_id ? ` (ID: ${result.question_id})` : ""
+            }</strong>
+                                <div style="margin-top: 5px; color: #666;">${escapeHtml(
+              result.question.substring(0, 100)
+            )}${result.question.length > 100 ? "..." : ""}</div>
+                            </div>
+                            <div class="result-status">
+                                <span class="status-badge ${emStatus}">EM: ${result.exact_match ? "✓" : "✗"}</span>
+                                ${result.execution_match !== null
+              ? `<span class="status-badge ${exaStatus}">RM: ${result.execution_match ? "✓" : "✗"
+              }</span>`
+              : ""
+            }
+                                ${result.analyzer_match !== null
+              ? `<span class="status-badge ${amStatus}">AM: ${result.analyzer_match ? "✓" : "✗"
+              }</span>`
+              : ""
+            }
+                                ${hasError ? `<span class="status-badge fail">${t("error.label")}</span>` : ""}
+                            </div>
+                        </div>
+                        <div class="result-details" id="result-details-${idx}" style="display: none;">
+                            ${renderResultDetails(result)}
+                        </div>
+                    </div>
+                `;
+        })
+        .join("");
+
+      document.getElementById("results-list").innerHTML = resultsHtml;
+      document.getElementById("results-section").style.display = "block";
+    }
+
+    function renderResultDetails(result) {
+      let html = "";
+
+      // SQL Comparison
+      html += '<div class="sql-comparison">';
+      html += `<div class="sql-panel"><h4>${t("benchmarks.sql.gold")}</h4><pre>` + escapeHtml(result.gold_sql) + "</pre></div>";
+      html +=
+        `<div class="sql-panel"><h4>${t("benchmarks.sql.predicted")}</h4><pre>` +
+        escapeHtml(result.predicted_sql || "(vazio)") +
+        "</pre></div>";
+      html += "</div>";
+
+      // Execution Results Comparison
+      if (result.gold_execution_results || result.predicted_execution_results) {
+        html += '<div class="execution-results">';
+        html += `<h4>${t("benchmarks.execution_results")}</h4>`;
+        if (result.gold_execution_results) {
+          html += `<div style="margin-bottom: 10px;"><strong>${t("benchmarks.execution_results.gold")}:</strong></div>`;
+          html +=
+            '<pre style="background: #f8f9fa; padding: 10px; border-radius: 4px; max-height: 200px; overflow-y: auto;">' +
+            escapeHtml(JSON.stringify(result.gold_execution_results, null, 2)) +
+            "</pre>";
+        }
+        if (result.predicted_execution_results) {
+          html += `<div style="margin-top: 10px; margin-bottom: 10px;"><strong>${t("benchmarks.execution_results.predicted")}:</strong></div>`;
+          html +=
+            '<pre style="background: #f8f9fa; padding: 10px; border-radius: 4px; max-height: 200px; overflow-y: auto;">' +
+            escapeHtml(JSON.stringify(result.predicted_execution_results, null, 2)) +
+            "</pre>";
+        }
+        html += "</div>";
+      }
+
+      // Errors
+      if (result.error) {
+        html +=
+          `<div class="error-message" style="margin-top: 15px;"><strong>${t("benchmarks.error.system")}:</strong> ` +
+          escapeHtml(result.error) +
+          "</div>";
+      }
+      if (result.execution_error) {
+        html +=
+          `<div class="error-message" style="margin-top: 15px;"><strong>${t("benchmarks.error.execution")}:</strong> ` +
+          escapeHtml(result.execution_error) +
+          "</div>";
+      }
+
+      // Analyzer Output
+      if (result.analyzer_output) {
+        const analyzer = result.analyzer_output;
+        html += '<div class="analyzer-output">';
+        html += `<h4>${t("benchmarks.analyzer_match")}: ${analyzer.analyzer_match ? t("benchmarks.passed") : t("benchmarks.failed")}</h4>`;
+        html += `<p><strong>${t("benchmarks.approved")}:</strong> ` + (analyzer.approved ? t("common.yes") : t("common.no")) + "</p>";
+        if (analyzer.failure_step && analyzer.failure_step !== "none") {
+          html += `<p><strong>${t("output.analyzer.failure_step")}:</strong> ` + escapeHtml(analyzer.failure_step) + "</p>";
+        }
+        html += `<p><strong>${t("common.reason")}:</strong> ` + escapeHtml(analyzer.failure_reason || t("common.na")) + "</p>";
+        html += `<p><strong>${t("benchmarks.query_issues")}:</strong> ` + escapeHtml(analyzer.query_issues || t("common.na")) + "</p>";
+        html += `<p><strong>${t("benchmarks.root_cause")}:</strong> ` + escapeHtml(analyzer.root_cause || t("common.na")) + "</p>";
+        if (analyzer.suggestions && analyzer.suggestions.length > 0) {
+          html += `<p><strong>${t("benchmarks.suggestions")}:</strong></p><ul>`;
+          analyzer.suggestions.forEach((s) => {
+            html += "<li>" + escapeHtml(s) + "</li>";
+          });
+          html += "</ul>";
+        }
+        html += "</div>";
+      }
+
+      return html;
+    }
+
+    function toggleResult(idx) {
+      const details = document.getElementById(`result-details-${idx}`);
+      const item = document.getElementById(`result-${idx}`);
+      if (details.style.display === "none") {
+        details.style.display = "block";
+        item.classList.add("expanded");
+      } else {
+        details.style.display = "none";
+        item.classList.remove("expanded");
+      }
+    }
+
+    function loadResultsHistory() {
+      fetch("/api/benchmarks/results")
+        .then((response) => response.json())
+        .then((files) => {
+          if (files.length === 0) {
+            document.getElementById("results-history").innerHTML =
+              `<p style="color: #666;">${t("results.none")}</p>`;
+            return;
+          }
+
+          const historyHtml = files
+            .map((file) => {
+              const date = new Date(file.created_at);
+              return `
+                            <div class="connection-item" style="cursor: pointer;" onclick="loadResultFile('${file.filename
+                }')">
+                                <div class="connection-info">
+                                    <div class="connection-name">${file.filename}</div>
+                                    <div class="connection-db">Dataset: ${file.dataset} • ${file.total_questions
+                } ${file.total_questions === 1 ? t("selection.question_singular") : t("selection.question_plural")} • ${date.toLocaleString(currentUiLang)}</div>
+                                </div>
+                            </div>
+                        `;
+            })
+            .join("");
+
+          document.getElementById("results-history").innerHTML = historyHtml;
+        })
+        .catch((error) => {
+          console.error(t("benchmarks.load_history_error"), error);
+          document.getElementById("results-history").innerHTML =
+            `<p style="color: #dc3545;">${t("benchmarks.timeout")}</p>`;
+        });
+    }
+
+    function loadResultFile(filename) {
+      fetch(`/api/benchmarks/results/${filename}`)
+        .then((response) => response.json())
+        .then((data) => {
+          displayBenchmarkResults(data);
+          // Switch to results section
+          document.getElementById("results-section").scrollIntoView({ behavior: "smooth" });
+        })
+        .catch((error) => {
+          console.error(t("benchmarks.load_file_error", { msg: error.message }));
+          alert(t("benchmarks.load_file_error", { msg: error.message }));
+        });
+    }
+  </script>
+</body>
+
+</html>

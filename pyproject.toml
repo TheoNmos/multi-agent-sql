@@ -1,0 +1,120 @@
+[project]
+name = "agents"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "asyncpg>=0.30.0",
+    "fastapi>=0.104.0",
+    "jinja2>=3.1.0",
+    "logfire[asyncpg,fastapi]>=4.3.5",
+    "pydantic>=2.11.7",
+    "pydantic-ai>=0.7.4",
+    "pydantic-evals>=0.7.4",
+    "pydantic-settings>=2.10.1",
+    "python-multipart>=0.0.6",
+    "rapidfuzz>=3.0.0",
+    "redis[hiredis]>=7.0.1",
+    "sqlglot>=24.0.0",
+    "uvicorn[standard]>=0.24.0",
+]
+
+
+[dependency-groups]
+dev = [
+    "basedpyright>=1.31.4",
+    "ruff>=0.12.10",
+]
+
+[tool.ruff]
+line-length = 120
+exclude = [
+    ".git",
+    ".venv",
+    "venv",
+    "__pycache__",
+    "migrations",
+    "build",
+    "dist",
+    "*.html",
+    "*.css",
+    "*.js",
+    "node_modules",
+    ".env",
+    "*.ipynb"
+]
+
+lint.ignore = [
+    "B017",
+    "B019",
+    "B904",
+    "B905",
+    "C901",
+    "E501",
+    "E722",
+    "E731",
+    "F403",
+    "F541",
+    "F601",
+    "UP007",
+    "UP032",
+    "T201",
+]
+
+lint.select = [
+    "I",
+    "B",
+    "C4",
+    "C9",
+    "DJ012",
+    "E",
+    "F",
+    "RUF005",
+    "RUF013",
+    "RUF015",
+    "T2",
+    "TRY201",
+    "TRY400",
+    "UP",
+    "W",
+]
+
+
+[tool.basedpyright]
+pythonVersion = "3.12"
+
+reportExplicitAny = false
+reportAny = false
+reportMissingImports = "error"
+reportUnannotatedClassAttribute = false
+reportUnknownParameterType = false
+reportUnknownArgumentType = false
+reportUnusedCallResult = false
+reportUnknownMemberType = false
+reportUnknownVariableType = false
+reportMissingParameterType = false
+reportUnusedParameter = false
+reportImplicitStringConcatenation = false
+reportPrivateLocalImportUsage = false
+reportIgnoreCommentWithoutRule = false
+reportMissingTypeStubs = false
+reportImportCycles = false
+reportImplicitRelativeImport= false
+reportUntypedFunctionDecorator = false
+
+exclude = [
+    "typings",
+    ".venv",
+    "**/node_modules",
+    "*_test.py",
+    "**/tests/*",
+    "**/migrations/*",
+    "**/build",
+    "**/dist",
+    "*.html",
+    "*.css",
+    "*.js",
+    "*.ipynb",
+    "**/__pycache__",
+]

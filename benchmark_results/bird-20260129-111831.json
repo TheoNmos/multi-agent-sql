@@ -1,0 +1,176 @@
+[
+  {
+    "dataset": "bird",
+    "index": 1,
+    "question_id": 1471,
+    "db_id": "debit_card_specializing",
+    "question": "What is the ratio of customers who pay in EUR against customers who pay in CZK?",
+    "gold_sql": "SELECT CAST(SUM(CASE WHEN Currency = 'EUR' THEN 1 ELSE 0 END) AS REAL) / NULLIF(SUM(CASE WHEN Currency = 'CZK' THEN 1 ELSE 0 END), 0) FROM customers",
+    "predicted_sql": "SELECT CAST(SUM(CASE WHEN T1.currency = 'EUR' THEN 1 ELSE 0 END) AS REAL) / NULLIF(SUM(CASE WHEN T1.currency = 'CZK' THEN 1 ELSE 0 END), 0) FROM customers AS T1 WHERE T1.currency IS NOT NULL",
+    "exact_match": false,
+    "execution_match": null,
+    "analyzer_match": true,
+    "error": null,
+    "execution_error": "Connection or execution error: [Errno 111] Connection refused",
+    "gold_execution_results": null,
+    "predicted_execution_results": null,
+    "db_name": "passarinho",
+    "metadata": {
+      "latency_ms": 102770,
+      "tokens_in": null,
+      "tokens_out": null,
+      "model_name": null
+    },
+    "agent_trace": {
+      "status": "GENERATED",
+      "sql": "SELECT CAST(SUM(CASE WHEN T1.currency = 'EUR' THEN 1 ELSE 0 END) AS REAL) / NULLIF(SUM(CASE WHEN T1.currency = 'CZK' THEN 1 ELSE 0 END), 0) FROM customers AS T1 WHERE T1.currency IS NOT NULL",
+      "error": null,
+      "plan": "Return a single scalar value: (number of customers with currency = 'EUR') / (number of customers with currency = 'CZK'). Use COUNT or SUM of Boolean conditions on customers.currency; do not join transactions. Example SQL pattern: SELECT CAST(SUM(CASE WHEN currency = 'EUR' THEN 1 ELSE 0 END) AS FLOAT) / NULLIF(SUM(CASE WHEN currency = 'CZK' THEN 1 ELSE 0 END),0) AS eur_to_czk_ratio FROM customers WHERE currency IS NOT NULL; Do NOT GROUP BY (single scalar). Handle zero denominator with NULLIF to avoid division by zero.",
+      "feedback": "Query is syntactically valid and correctly computes the EUR-to-CZK customer ratio, but it is not optimal: EXPLAIN shows a sequential scan of the customers table. Add an index on the currency column or maintain pre-aggregated counts for frequent queries and prefer COUNT(*) FILTER (WHERE currency='EUR')::double precision / NULLIF(COUNT(*) FILTER (WHERE currency='CZK'),0) for clarity and better numeric precision.",
+      "attempts": 1,
+      "all_queries": [
+        "SELECT CAST(SUM(CASE WHEN T1.currency = 'EUR' THEN 1 ELSE 0 END) AS REAL) / NULLIF(SUM(CASE WHEN T1.currency = 'CZK' THEN 1 ELSE 0 END), 0) FROM customers AS T1 WHERE T1.currency IS NOT NULL"
+      ],
+      "interpreter_output": {
+        "clarified_question": "Calculate the ratio of customers who pay in EUR to customers who pay in CZK, using the customers table’s currency attribute.",
+        "sub_questions": [],
+        "explicit_intent": "Return a single scalar value: (number of customers with currency = 'EUR') / (number of customers with currency = 'CZK'). Use COUNT or SUM of Boolean conditions on customers.currency; do not join transactions. Example SQL pattern: SELECT CAST(SUM(CASE WHEN currency = 'EUR' THEN 1 ELSE 0 END) AS FLOAT) / NULLIF(SUM(CASE WHEN currency = 'CZK' THEN 1 ELSE 0 END),0) AS eur_to_czk_ratio FROM customers WHERE currency IS NOT NULL; Do NOT GROUP BY (single scalar). Handle zero denominator with NULLIF to avoid division by zero.",
+        "ambiguities_resolved": [
+          "Interpreted 'customers who pay in EUR' and 'customers who pay in CZK' as customers.currency = 'EUR' and customers.currency = 'CZK' in the customers table (no transaction join required).",
+          "Output shape clarified: single scalar ratio (one row, one column).",
+          "Interpretation of 'ratio of A against B' follows pattern COUNT(A)/COUNT(B).",
+          "If denominator (CZK count) is zero, return NULL (handled via NULLIF) to avoid division by zero.",
+          "Excluded NULL/unknown currency rows by adding WHERE currency IS NOT NULL in the example SQL (this is optional; counts could instead treat NULLs as neither EUR nor CZK).",
+          "Did not apply any time filters or grouping since the question asks for an overall ratio, not time-scoped or per-group breakdown."
+        ]
+      },
+      "mapper_output": "Relevant tables\n- customers — chosen as the sole table because the question explicitly asks to use the customers table’s currency attribute. This is a direct/minimal-table match: the customers table contains the currency column needed to compute the requested ratio, so no joins are necessary.\n\nKey columns (from get_table_info)\n- customers.customerid (bigint, primary key) — use this to count unique customers if needed.\n- customers.currency (text, nullable) — the attribute to filter by 'EUR' and 'CZK'.\n\nSample data & value encoding\n- Sample row: { customerid: 3, segment: SME, currency: EUR } — currency values are stored as text and use ISO-like codes (sample shows 'EUR'). Expect values like 'EUR' and 'CZK' (case-sensitive comparison depends on the SQL collation; sample is uppercase).\n\nColumn types & date format\n- No date columns involved. customers.customerid is bigint; customers.currency is text. No date-format handling required.\n\nRelationships\n- No foreign keys shown for customers in this schema info. There are no required joins to answer this question. (Warning below about joins.)\n\nCardinality warning\n- This can and should be answered using customers alone. WARNING: joining customers to transaction tables (e.g., transactions_1k) would restrict the count to only customers who have transactions and would change the denominator/numerator. To count all customers by currency, use customers table only.\n\nValidation notes & edge cases\n- currency is nullable (nullable = true). Decide whether to exclude NULL currencies from both numerator and denominator — typically exclude NULLs.\n- There may be zero customers with currency = 'CZK' (division by zero). Protect the division with NULLIF or conditional logic.\n- Use the primary key (customerid) for counting to avoid double-counting; COUNT(*) on customers is safe because customerid is PK.\n\nImplementation hints for SQL generator\n- Primary approach: count customers with currency = 'EUR' and count customers with currency = 'CZK', then compute their ratio.\n- Handle zero/NULL denominator, and cast to numeric/float to get a non-integer ratio. Example logic (natural-language):\n  - numerator = COUNT(*) WHERE currency = 'EUR'\n  - denominator = COUNT(*) WHERE currency = 'CZK'\n  - ratio = numerator / NULLIF(denominator, 0)  (cast numerator/denominator to numeric to avoid integer division)\n- Exclude NULL currencies unless the user intends to include them.\n\nBottom line (primary recommendation)\n- Use only the customers table, counting rows grouped/filtered by customers.currency (currency values are text like 'EUR' and 'CZK'), exclude NULL currency rows, and guard against division-by-zero when computing the EUR-to-CZK customer ratio.",
+      "generator_output": {
+        "reasoning_steps": [
+          "Use only the customers table (minimal-table principle) and assign it alias AS T1.",
+          "Count customers paying in EUR and CZK with SUM(CASE WHEN ... THEN 1 ELSE 0 END) to avoid joins and double-counting.",
+          "Exclude NULL currencies with WHERE T1.currency IS NOT NULL, cast numerator to REAL for non-integer division, and protect against division-by-zero using NULLIF on the CZK count.",
+          "Return a single scalar expression (no GROUP BY, no column aliases) that computes EUR_count / NULLIF(CZK_count, 0)."
+        ],
+        "sub_queries": [],
+        "confidence": 0.95,
+        "sql_query": "SELECT CAST(SUM(CASE WHEN T1.currency = 'EUR' THEN 1 ELSE 0 END) AS REAL) / NULLIF(SUM(CASE WHEN T1.currency = 'CZK' THEN 1 ELSE 0 END), 0)\nFROM customers AS T1\nWHERE T1.currency IS NOT NULL"
+      },
+      "validator_output": {
+        "is_valid": true,
+        "is_optimal": false,
+        "syntax_errors": [],
+        "semantic_issues": [],
+        "efficiency_score": 0.8,
+        "efficiency_issues": [
+          "Sequential scan on customers table (query plan shows Seq Scan with filter currency IS NOT NULL); no index used on currency.",
+          "Aggregation performs a full table scan which can be costly for large tables; consider index or materialized/pre-aggregated counters if query is frequent.",
+          "Casting to REAL may reduce precision; prefer double precision (FLOAT8) or numeric for accurate division."
+        ],
+        "refinement_feedback": "Query is syntactically valid and correctly computes the EUR-to-CZK customer ratio, but it is not optimal: EXPLAIN shows a sequential scan of the customers table. Add an index on the currency column or maintain pre-aggregated counts for frequent queries and prefer COUNT(*) FILTER (WHERE currency='EUR')::double precision / NULLIF(COUNT(*) FILTER (WHERE currency='CZK'),0) for clarity and better numeric precision."
+      },
+      "trace": {
+        "pipeline": "new",
+        "db_name": "passarinho",
+        "start_ts": "2026-01-29T11:18:31.604652+00:00",
+        "end_ts": "2026-01-29T11:20:14.317428+00:00",
+        "latency_ms": 102712,
+        "steps": [
+          {
+            "name": "interpreter",
+            "timing_ms": 19672,
+            "input_summary": {
+              "raw_question": "What is the ratio of customers who pay in EUR against customers who pay in CZK?"
+            },
+            "output_summary": {
+              "clarified_question": "Calculate the ratio of customers who pay in EUR to customers who pay in CZK, using the customers table’s currency attribute.",
+              "intent": "Return a single scalar value: (number of customers with currency = 'EUR') / (number of customers with currency = 'CZK'). Use COUNT or SUM of Boolean conditions on customers.currency; do not join transactions. Example SQL pattern: SELECT CAST(SUM(CASE WHEN currency = 'EUR' THEN 1 ELSE 0 END) AS FLOAT",
+              "sub_questions_count": 0
+            },
+            "error": null
+          },
+          {
+            "name": "mapper",
+            "timing_ms": 20938,
+            "input_summary": {
+              "clarified_question": "Calculate the ratio of customers who pay in EUR to customers who pay in CZK, using the customers table’s currency attribute.",
+              "all_tables_count": 75
+            },
+            "output_summary": {
+              "output_length": 2702,
+              "output_preview": "Relevant tables\n- customers — chosen as the sole table because the question explicitly asks to use the customers table’s currency attribute. This is a direct/minimal-table match: the customers table contains the currency column needed to compute the requested ratio, so no joins are necessary.\n\nKey c"
+            },
+            "error": null
+          },
+          {
+            "name": "generator",
+            "timing_ms": 21975,
+            "input_summary": {
+              "clarified_question": "Calculate the ratio of customers who pay in EUR to customers who pay in CZK, using the customers table’s currency attribute.",
+              "attempt": 1
+            },
+            "output_summary": {
+              "sql_length": 190,
+              "reasoning_steps_count": 4,
+              "confidence": 0.95
+            },
+            "error": null
+          },
+          {
+            "name": "validator",
+            "timing_ms": 40073,
+            "input_summary": {
+              "sql_length": 190,
+              "attempt": 1
+            },
+            "output_summary": {
+              "is_valid": true,
+              "is_optimal": false,
+              "efficiency_score": 0.8,
+              "syntax_error_count": 0,
+              "semantic_issue_count": 0
+            },
+            "error": null
+          }
+        ],
+        "tools": [
+          {
+            "agent": "mapper",
+            "tool": "get_table_info",
+            "args_redacted": [
+              "customers"
+            ],
+            "result_preview": "Retrieved info for 1 tables",
+            "timing_ms": 67,
+            "error": null
+          }
+        ],
+        "generator": {
+          "sql_query": "SELECT CAST(SUM(CASE WHEN T1.currency = 'EUR' THEN 1 ELSE 0 END) AS REAL) / NULLIF(SUM(CASE WHEN T1.currency = 'CZK' THEN 1 ELSE 0 END), 0) FROM customers AS T1 WHERE T1.currency IS NOT NULL",
+          "reasoning_steps": [
+            "Use only the customers table (minimal-table principle) and assign it alias AS T1.",
+            "Count customers paying in EUR and CZK with SUM(CASE WHEN ... THEN 1 ELSE 0 END) to avoid joins and double-counting.",
+            "Exclude NULL currencies with WHERE T1.currency IS NOT NULL, cast numerator to REAL for non-integer division, and protect against division-by-zero using NULLIF on the CZK count.",
+            "Return a single scalar expression (no GROUP BY, no column aliases) that computes EUR_count / NULLIF(CZK_count, 0)."
+          ],
+          "confidence": 0.95
+        },
+        "mapper": {
+          "all_tables_count": 75,
+          "selected_tables": [
+            "customers"
+          ]
+        }
+      }
+    },
+    "analyzer_output": {
+      "analyzer_match": true,
+      "approved": true,
+      "failure_step": "none",
+      "failure_reason": "Predicted SQL is semantically equivalent to the gold SQL. Both compute (count of customers with currency = 'EUR') / (count of customers with currency = 'CZK') using SUM(CASE WHEN ... THEN 1 ELSE 0 END) and protect against division-by-zero with NULLIF. Differences are syntactic: predicted query aliases the customers table as T1 and adds WHERE T1.currency IS NOT NULL. Excluding NULL currency rows does not change the EUR or CZK counts, since NULLs would not contribute to either SUM(CASE...) bucket. Therefore the business impact and information returned are the same.",
+      "query_issues": "No functional issues. Differences that do not affect business impact: table aliasing (AS T1) and an extra WHERE T1.currency IS NOT NULL filter (harmless because NULLs are not counted in either numerator or denominator). Casting to REAL vs the gold's REAL is identical. No change to aggregation logic or division-by-zero protection.",
+      "root_cause": "Result is correct - predicted query returns equivalent business information; variations are cosmetic (alias and NULL exclusion) and do not alter counts or ratio.",
+      "suggestions": []
+    }
+  }
+]

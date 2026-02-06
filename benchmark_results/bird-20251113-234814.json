@@ -1,0 +1,651 @@
+[
+  {
+    "dataset": "bird",
+    "index": 163,
+    "question_id": 1114,
+    "db_id": "european_football_2",
+    "question": "What was the average overall rating for Marko Arnautovic from 2007/2/22 to 2016/4/21?",
+    "gold_sql": "SELECT CAST(SUM(t2.overall_rating) AS REAL) / NULLIF(COUNT(t2.id), 0) FROM Player AS t1 INNER JOIN Player_Attributes AS t2 ON t1.player_fifa_api_id = t2.player_fifa_api_id WHERE t1.player_name = 'Marko Arnautovic' AND SUBSTR(t2.\"date\", 1, 10) BETWEEN '2007-02-22' AND '2016-04-21'",
+    "predicted_sql": "SELECT AVG(T1.\"overall_rating\") FROM player_attributes AS T1 WHERE T1.\"player_api_id\" = 17233 AND CAST(T1.\"date\" AS DATE) BETWEEN '2007-02-22' AND '2016-04-21'",
+    "exact_match": false,
+    "execution_match": false,
+    "analyzer_match": false,
+    "error": null,
+    "execution_error": null,
+    "gold_execution_results": [
+      {
+        "?column?": 75.39393939393939
+      }
+    ],
+    "predicted_execution_results": [
+      {
+        "avg": 64.5
+      }
+    ],
+    "db_name": "passarinho",
+    "metadata": {
+      "latency_ms": 93918,
+      "tokens_in": null,
+      "tokens_out": null,
+      "model_name": null
+    },
+    "agent_trace": {
+      "status": "GENERATED",
+      "sql": "SELECT AVG(T1.\"overall_rating\") FROM player_attributes AS T1 WHERE T1.\"player_api_id\" = 17233 AND CAST(T1.\"date\" AS DATE) BETWEEN '2007-02-22' AND '2016-04-21'",
+      "error": null,
+      "plan": "Return one scalar value: the average (AVG) of the column holding overall ratings for records matching the player and date range. Expected SQL pattern: SELECT AVG(overall_rating) AS avg_overall_rating FROM player_ratings WHERE player_name = 'Marko Arnautovic' AND rating_date BETWEEN '2007-02-22' AND '2016-04-21'; Notes: - Output shape: single scalar (one row, one column). - Aggregation: AVG(overall_rating). - Do NOT GROUP BY date or month (the question asks for one overall average across the entire range). - Include all matching records (if multiple entries per day exist, include them all). If the schema uses player_id instead of player_name, first resolve player_id with: SELECT id FROM players WHERE name = 'Marko Arnautovic' LIMIT 1; then use WHERE player_id = <id> AND rating_date BETWEEN ...",
+      "feedback": "Query is syntactically and semantically correct and returns the requested average, but it is not optimal: the planner used a sequential scan likely due to the CAST on the date column and/or missing indexes. Remove the CAST or make the literal types match the column (e.g., compare timestamps appropriately) and add a composite index on (player_api_id, date) to allow an index scan and avoid scanning the entire table.",
+      "attempts": 1,
+      "all_queries": [
+        "SELECT AVG(T1.\"overall_rating\") FROM player_attributes AS T1 WHERE T1.\"player_api_id\" = 17233 AND CAST(T1.\"date\" AS DATE) BETWEEN '2007-02-22' AND '2016-04-21'"
+      ],
+      "interpreter_output": {
+        "clarified_question": "Compute the single scalar average of the 'overall rating' for the player Marko Arnautovic for all rating records dated between 2007-02-22 and 2016-04-21 inclusive.",
+        "sub_questions": [],
+        "explicit_intent": "Return one scalar value: the average (AVG) of the column holding overall ratings for records matching the player and date range. Expected SQL pattern: SELECT AVG(overall_rating) AS avg_overall_rating FROM player_ratings WHERE player_name = 'Marko Arnautovic' AND rating_date BETWEEN '2007-02-22' AND '2016-04-21'; Notes: - Output shape: single scalar (one row, one column). - Aggregation: AVG(overall_rating). - Do NOT GROUP BY date or month (the question asks for one overall average across the entire range). - Include all matching records (if multiple entries per day exist, include them all). If the schema uses player_id instead of player_name, first resolve player_id with: SELECT id FROM players WHERE name = 'Marko Arnautovic' LIMIT 1; then use WHERE player_id = <id> AND rating_date BETWEEN ...",
+        "ambiguities_resolved": [
+          "Interpreted player identifier: use exact match on player name 'Marko Arnautovic' unless the database schema requires joining by player_id (assumption disclosed).",
+          "Date boundaries: interpreted inclusive range from 2007-02-22 through 2016-04-21 (use BETWEEN '2007-02-22' AND '2016-04-21').",
+          "Date format: assumed ISO 'YYYY-MM-DD' format for date/datetime columns; if stored differently (e.g., strings like '20070222') the filter should be adapted.",
+          "Output shape: single scalar average (one row, one column) as the question asks for 'the average overall rating' — do NOT return per-year or per-month breakdowns.",
+          "Aggregation rule: use AVG(overall_rating) across all matching rows; do NOT divide by number of months or group by month unless explicitly requested.",
+          "Records inclusion: include all rating records for the player in that date range (multiple records per day are included).",
+          "Column name assumptions: assumed 'overall_rating' is the column name and 'rating_date' (or 'date') is the date column; if different, replace with actual column names."
+        ]
+      },
+      "mapper_output": "Selected tables (3-5): player, player_attributes\n\nWhy these tables\n- player_attributes (PRIMARY): contains the metric we need — overall_rating — and a date for each rating record. This table directly stores the ratings over time for players, so it's the primary table to compute the requested average.\n- player (SECONDARY): maps player_api_id to player_name, so it is useful if we want to filter by the player's name rather than by id. Use player only to translate Marko Arnautovic → player_api_id; the aggregation itself can be done from player_attributes alone once the id is known.\n\nKey columns (from get_table_info)\n- player_attributes:\n  - player_api_id (bigint) — FK to player.player_api_id. Use this to identify which rows belong to Marko Arnautovic.\n  - date (text) — stores the rating record date/time (see format below).\n  - overall_rating (bigint, nullable) — the numeric metric to average. Exclude NULLs when averaging.\n- player:\n  - player_api_id (bigint) — the id to join on.\n  - player_name (text) — for filtering by name (e.g., \"Marko Arnautovic\").\n\nDate format & column types (critical)\n- The player_attributes.date sample_row value is \"2007-02-22 00:00:00\" (text column storing a timestamp-like string). So:\n  - Date values are stored as timestamp-like text (YYYY-MM-DD HH:MI:SS).\n  - Use DATE or TIMESTAMP comparison (e.g., cast text to DATE or TIMESTAMP) when filtering by date range.\n- overall_rating is an integer (bigint). Use numeric AVG (which will produce a numeric/float result). Make sure to ignore NULL overall_rating values.\n\nSample data (from sample_row)\n- player sample_row: { player_api_id: 505942, player_name: \"Aaron Appindangoye\", birthday: \"1992-02-29 00:00:00\", ... } — shows player_name storage.\n- player_attributes sample_row: { player_api_id: 17233, date: \"2007-02-22 00:00:00\", overall_rating: 63, ... } — demonstrates:\n  - date format is timestamp-like text,\n  - overall_rating values are integers (example: 63),\n  - player_api_id 17233 appears in player_attributes sample.\n\nIdentifying the player\n- A search of player.player_name returned the exact string \"Marko Arnautovic\".\n- A search of player_attributes.player_api_id found value 17233 (this matches the player_attributes sample_row).\n- Therefore Marko Arnautovic corresponds to player_api_id = 17233 in this dataset. You can:\n  - Option A (recommended / minimal): Filter player_attributes.player_api_id = 17233 and compute AVG(overall_rating) for the date range.\n  - Option B: Join player_attributes to player on player_api_id and filter WHERE player.player_name = 'Marko Arnautovic' (useful if you want to avoid hardcoding the id).\n\nRelationships\n- player_attributes.player_api_id → player.player_api_id (many rating rows per player, many-to-one to player table).\n- This is a standard FK; joining player_attributes to player will not multiply rows if joined correctly (player is the 1 side), but the join is unnecessary if you already know player_api_id.\n\nCardinality & join warning\n- This query can be answered using only player_attributes (single-table) if you supply the correct player_api_id (17233). That avoids any join and avoids potential join-induced filtering.\n- If you choose to join to player to filter by name, the join is many-to-one (player_attributes → player). It should not multiply rating rows, but ensure you filter by the correct exact player_name (case-sensitive behavior depends on DB). If there were multiple players with identical names (rare), join+name filter could match multiple ids — then you would aggregate across all matched ids unintentionally. Therefore, using the player_api_id is safer/precise.\n\nValidation notes / special considerations\n- overall_rating is nullable per schema — exclude NULLs in the AVG to avoid skewing (AVG automatically ignores NULLs in SQL).\n- Date bounds: question requests inclusive range from 2007-02-22 to 2016-04-21. Because dates are stored as timestamp-like text, cast to DATE (or TIMESTAMP) before comparison, e.g., CAST(date AS DATE) BETWEEN '2007-02-22' AND '2016-04-21' (inclusive).\n- Confirmed columns exist: player_attributes has overall_rating and date; player has player_name. player_api_id exists in both tables and is the appropriate join key.\n\nPrimary approach (recommended)\n- Retrieve player_api_id for Marko Arnautovic (found: 17233).\n- Compute the single scalar average from player_attributes.overall_rating for rows where player_api_id = 17233 and CAST(date AS DATE) BETWEEN '2007-02-22' AND '2016-04-21', excluding NULL overall_rating.\n\nImportant final notes\n- Primary/best match: player_attributes is the direct source of ratings and is sufficient if you use the known player_api_id (17233).\n- If filtering by name, join to player on player_api_id and filter player.player_name = 'Marko Arnautovic'.\n- Use DATE/TIMESTAMP casting of the text date column to ensure correct inclusive comparisons.",
+      "generator_output": {
+        "reasoning_steps": [
+          "Identify that player_attributes contains overall_rating, date, and player_api_id linking ratings to players.",
+          "Use known mapping: Marko Arnautovic corresponds to player_api_id = 17233, so a join to player table is unnecessary (minimal-table principle).",
+          "Convert the text 'date' column to DATE with CAST to perform an inclusive BETWEEN filter from '2007-02-22' to '2016-04-21'.",
+          "Compute AVG(T1.\"overall_rating\") which in SQL automatically ignores NULLs, yielding a single scalar result across all matching rows."
+        ],
+        "sub_queries": [],
+        "confidence": 0.95,
+        "sql_query": "SELECT AVG(T1.\"overall_rating\")\nFROM player_attributes AS T1\nWHERE T1.\"player_api_id\" = 17233\n  AND CAST(T1.\"date\" AS DATE) BETWEEN '2007-02-22' AND '2016-04-21'"
+      },
+      "validator_output": {
+        "is_valid": true,
+        "is_optimal": false,
+        "syntax_errors": [],
+        "semantic_issues": [],
+        "efficiency_score": 0.6,
+        "efficiency_issues": [
+          "Sequential scan on player_attributes causing a full table scan",
+          "CAST(T1.\"date\" AS DATE) in the WHERE clause may prevent use of an index on the date/timestamp column",
+          "No evidence of an index (or composite index) on (player_api_id, date) to support the filter efficiently"
+        ],
+        "refinement_feedback": "Query is syntactically and semantically correct and returns the requested average, but it is not optimal: the planner used a sequential scan likely due to the CAST on the date column and/or missing indexes. Remove the CAST or make the literal types match the column (e.g., compare timestamps appropriately) and add a composite index on (player_api_id, date) to allow an index scan and avoid scanning the entire table."
+      },
+      "trace": {
+        "pipeline": "new",
+        "db_name": "passarinho",
+        "start_ts": "2025-11-14T02:48:14.959863+00:00",
+        "end_ts": "2025-11-14T02:49:48.860584+00:00",
+        "latency_ms": 93900,
+        "steps": [
+          {
+            "name": "interpreter",
+            "timing_ms": 9953,
+            "input_summary": {
+              "raw_question": "What was the average overall rating for Marko Arnautovic from 2007/2/22 to 2016/4/21?"
+            },
+            "output_summary": {
+              "clarified_question": "Compute the single scalar average of the 'overall rating' for the player Marko Arnautovic for all rating records dated between 2007-02-22 and 2016-04-21 inclusive.",
+              "intent": "Return one scalar value: the average (AVG) of the column holding overall ratings for records matching the player and date range. Expected SQL pattern: SELECT AVG(overall_rating) AS avg_overall_rating FROM player_ratings WHERE player_name = 'Marko Arnautovic' AND rating_date BETWEEN '2007-02-22' AND ",
+              "sub_questions_count": 0
+            },
+            "error": null
+          },
+          {
+            "name": "mapper",
+            "timing_ms": 35697,
+            "input_summary": {
+              "clarified_question": "Compute the single scalar average of the 'overall rating' for the player Marko Arnautovic for all rating records dated between 2007-02-22 and 2016-04-21 inclusive.",
+              "all_tables_count": 75
+            },
+            "output_summary": {
+              "output_length": 4876,
+              "output_preview": "Selected tables (3-5): player, player_attributes\n\nWhy these tables\n- player_attributes (PRIMARY): contains the metric we need — overall_rating — and a date for each rating record. This table directly stores the ratings over time for players, so it's the primary table to compute the requested average"
+            },
+            "error": null
+          },
+          {
+            "name": "generator",
+            "timing_ms": 17132,
+            "input_summary": {
+              "clarified_question": "Compute the single scalar average of the 'overall rating' for the player Marko Arnautovic for all rating records dated between 2007-02-22 and 2016-04-21 inclusive.",
+              "attempt": 1
+            },
+            "output_summary": {
+              "sql_length": 161,
+              "reasoning_steps_count": 4,
+              "confidence": 0.95
+            },
+            "error": null
+          },
+          {
+            "name": "validator",
+            "timing_ms": 30914,
+            "input_summary": {
+              "sql_length": 159,
+              "attempt": 1
+            },
+            "output_summary": {
+              "is_valid": true,
+              "is_optimal": false,
+              "efficiency_score": 0.6,
+              "syntax_error_count": 0,
+              "semantic_issue_count": 0
+            },
+            "error": null
+          }
+        ],
+        "tools": [
+          {
+            "agent": "mapper",
+            "tool": "get_table_info",
+            "args_redacted": [
+              "player",
+              "player_attributes"
+            ],
+            "result_preview": "Retrieved info for 2 tables",
+            "timing_ms": 120,
+            "error": null
+          },
+          {
+            "agent": "mapper",
+            "tool": "search_column_values",
+            "args_redacted": {
+              "table_name": "player",
+              "column_name": "player_name",
+              "keyword": "Marko Arnautovic",
+              "limit": 5
+            },
+            "result_preview": "Found 1 matching values",
+            "timing_ms": 26,
+            "error": null
+          },
+          {
+            "agent": "mapper",
+            "tool": "search_column_values",
+            "args_redacted": {
+              "table_name": "player_attributes",
+              "column_name": "player_api_id",
+              "keyword": "17233",
+              "limit": 5
+            },
+            "result_preview": "Found 1 matching values",
+            "timing_ms": 204,
+            "error": null
+          }
+        ],
+        "generator": {
+          "sql_query": "SELECT AVG(T1.\"overall_rating\") FROM player_attributes AS T1 WHERE T1.\"player_api_id\" = 17233 AND CAST(T1.\"date\" AS DATE) BETWEEN '2007-02-22' AND '2016-04-21'",
+          "reasoning_steps": [
+            "Identify that player_attributes contains overall_rating, date, and player_api_id linking ratings to players.",
+            "Use known mapping: Marko Arnautovic corresponds to player_api_id = 17233, so a join to player table is unnecessary (minimal-table principle).",
+            "Convert the text 'date' column to DATE with CAST to perform an inclusive BETWEEN filter from '2007-02-22' to '2016-04-21'.",
+            "Compute AVG(T1.\"overall_rating\") which in SQL automatically ignores NULLs, yielding a single scalar result across all matching rows."
+          ],
+          "confidence": 0.95
+        },
+        "mapper": {
+          "all_tables_count": 75,
+          "selected_tables": [
+            "player",
+            "player_attributes"
+          ]
+        }
+      }
+    },
+    "analyzer_output": {
+      "analyzer_match": false,
+      "approved": false,
+      "failure_step": "generator",
+      "failure_reason": "The generated SQL filters by player_api_id = 17233 (hardcoded) instead of resolving or joining on the player name 'Marko Arnautovic'. That incorrect identification of the player (or use of the wrong ID/column) caused the query to select a different set of rows, producing a different average (64.5 vs expected 75.39). The generator assumed a mapping (player_api_id = 17233) without verifying it against the player table or using a join, and it may also have used a different id column name (player_api_id vs player_fifa_api_id) than the gold SQL.",
+      "query_issues": "Predicted SQL issues: 1) Filters on player_api_id = 17233 rather than filtering by player_name or joining to the player table, risking an incorrect player selection. 2) Possible column mismatch: gold SQL uses player_fifa_api_id while predicted uses player_api_id — schema mismatch risk. 3) Different numeric result (64.5 vs 75.3939) shows the filtered rows are different, so aggregation is incorrect. 4) Date handling differences (CAST(...) vs SUBSTR(...)) are unlikely to be the main issue but could affect index use; they don't explain the large numeric discrepancy.",
+      "root_cause": "Generator-level logical error: incorrect assumption/hardcoding of player identifier and/or wrong column choice instead of resolving the player's id via a join or subquery. This led to filtering the wrong records and thus an incorrect AVG result.",
+      "suggestions": [
+        "Generator: Do not hardcode entity IDs when the natural language question references a name. Generate a safe join or subquery to resolve the name to the correct id (e.g., join Player ON player_name='Marko Arnautovic').",
+        "Mapper: When proposing table/column mappings, explicitly verify and record the canonical id mapping for named entities (e.g., include a step that confirms player_name -> player_api_id) so downstream agents can use the correct identifier.",
+        "Validator: Add semantic/execution checks that compare key statistics (row counts, min/max dates, sample averages) against expected ranges or against an alternate query (e.g., join-based) to detect large discrepancies before accepting a result.",
+        "Pipeline: Implement an execution-time sanity check that runs a small auxiliary query to confirm the selected player_api_id actually corresponds to the requested player_name, and fall back to a join if not.",
+        "Prompts/Training: Instruct the generator to prefer joining on names or using an explicit lookup subquery rather than assuming ids from sample rows; include guidance to prefer schema-correct id columns (player_fifa_api_id vs player_api_id)."
+      ]
+    }
+  },
+  {
+    "dataset": "bird",
+    "index": 176,
+    "question_id": 1145,
+    "db_id": "european_football_2",
+    "question": "Which top 4 leagues had the most games in the 2015-2016 season?",
+    "gold_sql": "SELECT t1.name FROM League AS t1 INNER JOIN Match AS t2 ON t1.id = t2.league_id WHERE t2.season = '2015/2016' GROUP BY t1.name ORDER BY COUNT(t2.id) DESC NULLS LAST LIMIT 4",
+    "predicted_sql": "SELECT T2.\"name\", COUNT(T1.\"id\") FROM match AS T1 INNER JOIN league AS T2 ON T1.\"league_id\" = T2.\"id\" WHERE T1.\"season\" = '2015/2016' GROUP BY T2.\"id\", T2.\"name\" ORDER BY COUNT(T1.\"id\") DESC NULLS LAST LIMIT 4",
+    "exact_match": false,
+    "execution_match": false,
+    "analyzer_match": true,
+    "error": null,
+    "execution_error": null,
+    "gold_execution_results": [
+      {
+        "name": "Italy Serie A"
+      },
+      {
+        "name": "Spain LIGA BBVA"
+      },
+      {
+        "name": "England Premier League"
+      },
+      {
+        "name": "France Ligue 1"
+      }
+    ],
+    "predicted_execution_results": [
+      {
+        "name": "Spain LIGA BBVA",
+        "count": 380
+      },
+      {
+        "name": "Italy Serie A",
+        "count": 380
+      },
+      {
+        "name": "France Ligue 1",
+        "count": 380
+      },
+      {
+        "name": "England Premier League",
+        "count": 380
+      }
+    ],
+    "db_name": "passarinho",
+    "metadata": {
+      "latency_ms": 93881,
+      "tokens_in": null,
+      "tokens_out": null,
+      "model_name": null
+    },
+    "agent_trace": {
+      "status": "GENERATED",
+      "sql": "SELECT T2.\"name\", COUNT(T1.\"id\") FROM match AS T1 INNER JOIN league AS T2 ON T1.\"league_id\" = T2.\"id\" WHERE T1.\"season\" = '2015/2016' GROUP BY T2.\"id\", T2.\"name\" ORDER BY COUNT(T1.\"id\") DESC NULLS LAST LIMIT 4",
+      "error": null,
+      "plan": "Find the top 4 leagues by game count for season '2015-2016'. Expected output shape: 4 rows with two columns: league_name (string) and games_count (integer). Approach: filter matches to the 2015-2016 season, group by league, count matches per league, order by count DESC, limit 4. SQL pattern: SELECT l.name AS league_name, COUNT(*) AS games_count FROM matches m JOIN leagues l ON m.league_id = l.id WHERE m.season = '2015-2016' GROUP BY l.id, l.name ORDER BY games_count DESC LIMIT 4; Alternative season filters if season field uses '2015/2016' or if no season column exists: use a date range (e.g., m.match_date BETWEEN '2015-07-01' AND '2016-06-30') or WHERE m.season LIKE '2015%'. Aggregation: COUNT(*) per league. Tie-breaker: if more than 4 leagues tie for 4th place, this query will return 4 of them based on DB ordering; to include ties, use dense_rank() partition by season and rank by count DESC and select rank <= 4.",
+      "feedback": "Query is syntactically valid and returns the top 4 leagues for the 2015/2016 season, but it's not fully optimal because the planner performs a sequential scan on the match table; add an index on match(season) or a composite index on (season, league_id) to speed filtering and aggregation. Consider using COUNT(*) for clarity and grouping by t2.id (selecting t2.name) to simplify the GROUP BY.",
+      "attempts": 1,
+      "all_queries": [
+        "SELECT T2.\"name\", COUNT(T1.\"id\") FROM match AS T1 INNER JOIN league AS T2 ON T1.\"league_id\" = T2.\"id\" WHERE T1.\"season\" = '2015/2016' GROUP BY T2.\"id\", T2.\"name\" ORDER BY COUNT(T1.\"id\") DESC NULLS LAST LIMIT 4"
+      ],
+      "interpreter_output": {
+        "clarified_question": "Which four leagues had the highest number of games (matches) during the 2015-2016 season? Return the top 4 leagues ordered by number of games descending.",
+        "sub_questions": [],
+        "explicit_intent": "Find the top 4 leagues by game count for season '2015-2016'. Expected output shape: 4 rows with two columns: league_name (string) and games_count (integer). Approach: filter matches to the 2015-2016 season, group by league, count matches per league, order by count DESC, limit 4. SQL pattern: SELECT l.name AS league_name, COUNT(*) AS games_count FROM matches m JOIN leagues l ON m.league_id = l.id WHERE m.season = '2015-2016' GROUP BY l.id, l.name ORDER BY games_count DESC LIMIT 4; Alternative season filters if season field uses '2015/2016' or if no season column exists: use a date range (e.g., m.match_date BETWEEN '2015-07-01' AND '2016-06-30') or WHERE m.season LIKE '2015%'. Aggregation: COUNT(*) per league. Tie-breaker: if more than 4 leagues tie for 4th place, this query will return 4 of them based on DB ordering; to include ties, use dense_rank() partition by season and rank by count DESC and select rank <= 4.",
+        "ambiguities_resolved": [
+          "Interpreted 'games' as match records in a matches table (one row = one game).",
+          "Interpreted '2015-2016 season' as the season identifier stored in matches.season = '2015-2016'. If the dataset uses '2015/2016' or another format, use that exact string or fall back to a date-range filter (e.g., match_date BETWEEN '2015-07-01' AND '2016-06-30').",
+          "Output shape: a list of 4 rows (league_name, games_count). Not returning additional columns unless requested.",
+          "Assume leagues are identified by leagues.id and have a human-readable leagues.name. Query should JOIN matches.league_id to leagues.id to show names.",
+          "Assume all match types within the season (regular season, playoffs) are counted unless user specifies to exclude some types.",
+          "Tie handling: default is LIMIT 4 (arbitrary tie-break if counts equal). If ties should be included, use a ranking approach (dense_rank) instead of LIMIT."
+        ]
+      },
+      "mapper_output": "Selected tables (3) and why:\n1. match — Primary table containing individual game records; it directly stores the season and a league identifier, so this is the core table to count games per league for a given season. (Highest priority because match = matches/games.)\n2. league — Provides human-readable league names for league_id values from match. Use this to return the league name alongside counts.\n3. seasons — Included for completeness (shows available season/year metadata). Not required to answer the question, but added because it’s in the schema list and can help validate season values.\n\nKey columns (which map to the question):\n- match.id (bigint, PK): unique match identifier — can be counted (COUNT(*) or COUNT(id)) to get number of games.\n- match.league_id (bigint): league identifier for each match — group by this to aggregate per league.\n- match.season (text): season identifier (filter column). This is the column to filter for '2015/2016'.\n- league.id (bigint, PK) and league.name (text): join key and readable league name.\n\nDate format & column types:\n- match.season is a text column storing seasons like \"2012/2013\", \"2015/2016\" (not a DATE). Use string comparison, e.g., WHERE season = '2015/2016'.\n  - Evidence: sample of distinct match.season values returned: [\"2012/2013\",\"2010/2011\",\"2013/2014\",\"2015/2016\",\"2008/2009\",\"2014/2015\",\"2011/2012\",\"2009/2010\"].\n- match.date is stored as text timestamp (sample: \"2008-08-17 00:00:00\") if you ever need date-level filtering; not needed here.\n- match.id and league.id are bigint; league.name is text.\n\nSample data (illustrative):\n- match.sample_row.season = \"2008/2009\" (shows the format)\n- league.sample_row.name = \"Belgium Jupiler League\"\n- Distinct season values include \"2015/2016\" (so that exact string should be used in the filter).\n\nRelationships:\n- Logical relationship: match.league_id → league.id. Note: the metadata did not show an explicit foreign-key constraint for league_id, but the columns are the natural join pair. Other match foreign keys exist (teams/players) but are not needed here.\n\nValue insights / encodings:\n- season uses \"YYYY/YYYY\" text pattern (e.g., \"2015/2016\"). Use equality on the string rather than date functions.\n- Matches are uniquely identified by match.id, so COUNT(*) or COUNT(id) yields the number of matches.\n\nCardinality warnings and recommendations:\n- This query can be answered using only the match table (group by match.league_id and COUNT(*) to get counts). That avoids join-induced row drops.\n- If you want the league names in the output, join the aggregated match results to league on league.id. WARNING: an inner join to league will drop any matches whose league_id has no corresponding row in league; to avoid this, either:\n  - Aggregate in match (group by league_id) then LEFT JOIN league to attach names, or\n  - Use an inner join if you are certain every league_id in match has a matching league record.\n- Joining match to other tables (teams/players) is unnecessary and will change cardinality — do not join them.\n\nValidation notes:\n- Confirmed match table contains season and league_id columns.\n- Confirmed league table contains id and name columns for mapping.\n- Season value to filter is exactly '2015/2016' (case-sensitive string match).\n\nPrimary choices:\n- PRIMARY metric and filter: match.season (filter = '2015/2016') and match.league_id (grouping key). Use match.id (or COUNT(*)) to compute number of games.\n- Use league.name only for display; match table is sufficient to compute the top-4.\n\nSuggested approach for SQL generator (natural description):\n- Filter match rows where season = '2015/2016', group by league_id, count matches per league_id, order by count desc, limit 4. Then join to league to obtain league.name (use LEFT JOIN to avoid dropping unmatched league_ids).\n\nIf you want, I can now generate the exact SQL statement that returns the top 4 leagues (league name + games count) for season '2015/2016'.",
+      "generator_output": {
+        "reasoning_steps": [
+          "Filter match rows to season '2015/2016' using T1.\"season\" = '2015/2016'.",
+          "Aggregate matches per league by counting T1.\"id\" for each league_id.",
+          "Join aggregated results to the league table (T2) on T1.\"league_id\" = T2.\"id\" to obtain league names.",
+          "Group by T2.\"id\" and T2.\"name\", order by the match count descending (NULLS LAST) and limit to top 4."
+        ],
+        "sub_queries": [],
+        "confidence": 0.92,
+        "sql_query": "SELECT T2.\"name\", COUNT(T1.\"id\")\nFROM match AS T1\nINNER JOIN league AS T2 ON T1.\"league_id\" = T2.\"id\"\nWHERE T1.\"season\" = '2015/2016'\nGROUP BY T2.\"id\", T2.\"name\"\nORDER BY COUNT(T1.\"id\") DESC NULLS LAST\nLIMIT 4"
+      },
+      "validator_output": {
+        "is_valid": true,
+        "is_optimal": false,
+        "syntax_errors": [],
+        "semantic_issues": [],
+        "efficiency_score": 0.75,
+        "efficiency_issues": [
+          "Sequential scan on \"match\" for filter season = '2015/2016' (no index used)",
+          "Aggregation requires scanning all qualifying match rows before grouping and sorting (can be reduced with an index or materialized summary)",
+          "Sort for ORDER BY COUNT(...) requires top-N processing after aggregation"
+        ],
+        "refinement_feedback": "Query is syntactically valid and returns the top 4 leagues for the 2015/2016 season, but it's not fully optimal because the planner performs a sequential scan on the match table; add an index on match(season) or a composite index on (season, league_id) to speed filtering and aggregation. Consider using COUNT(*) for clarity and grouping by t2.id (selecting t2.name) to simplify the GROUP BY."
+      },
+      "trace": {
+        "pipeline": "new",
+        "db_name": "passarinho",
+        "start_ts": "2025-11-14T02:48:14.964461+00:00",
+        "end_ts": "2025-11-14T02:49:48.810959+00:00",
+        "latency_ms": 93846,
+        "steps": [
+          {
+            "name": "interpreter",
+            "timing_ms": 21397,
+            "input_summary": {
+              "raw_question": "Which top 4 leagues had the most games in the 2015-2016 season?"
+            },
+            "output_summary": {
+              "clarified_question": "Which four leagues had the highest number of games (matches) during the 2015-2016 season? Return the top 4 leagues ordered by number of games descending.",
+              "intent": "Find the top 4 leagues by game count for season '2015-2016'. Expected output shape: 4 rows with two columns: league_name (string) and games_count (integer). Approach: filter matches to the 2015-2016 season, group by league, count matches per league, order by count DESC, limit 4. SQL pattern: SELECT ",
+              "sub_questions_count": 0
+            },
+            "error": null
+          },
+          {
+            "name": "mapper",
+            "timing_ms": 33009,
+            "input_summary": {
+              "clarified_question": "Which four leagues had the highest number of games (matches) during the 2015-2016 season? Return the top 4 leagues ordered by number of games descending.",
+              "all_tables_count": 75
+            },
+            "output_summary": {
+              "output_length": 3948,
+              "output_preview": "Selected tables (3) and why:\n1. match — Primary table containing individual game records; it directly stores the season and a league identifier, so this is the core table to count games per league for a given season. (Highest priority because match = matches/games.)\n2. league — Provides human-readab"
+            },
+            "error": null
+          },
+          {
+            "name": "generator",
+            "timing_ms": 17144,
+            "input_summary": {
+              "clarified_question": "Which four leagues had the highest number of games (matches) during the 2015-2016 season? Return the top 4 leagues ordered by number of games descending.",
+              "attempt": 1
+            },
+            "output_summary": {
+              "sql_length": 209,
+              "reasoning_steps_count": 4,
+              "confidence": 0.92
+            },
+            "error": null
+          },
+          {
+            "name": "validator",
+            "timing_ms": 22084,
+            "input_summary": {
+              "sql_length": 209,
+              "attempt": 1
+            },
+            "output_summary": {
+              "is_valid": true,
+              "is_optimal": false,
+              "efficiency_score": 0.75,
+              "syntax_error_count": 0,
+              "semantic_issue_count": 0
+            },
+            "error": null
+          }
+        ],
+        "tools": [
+          {
+            "agent": "mapper",
+            "tool": "get_table_info",
+            "args_redacted": [
+              "match",
+              "league",
+              "seasons"
+            ],
+            "result_preview": "Retrieved info for 3 tables",
+            "timing_ms": 79,
+            "error": null
+          },
+          {
+            "agent": "mapper",
+            "tool": "sample_values",
+            "args_redacted": {
+              "table_name": "match",
+              "column_name": "season",
+              "limit": 10
+            },
+            "result_preview": "Retrieved 8 sample values",
+            "timing_ms": 65,
+            "error": null
+          }
+        ],
+        "generator": {
+          "sql_query": "SELECT T2.\"name\", COUNT(T1.\"id\") FROM match AS T1 INNER JOIN league AS T2 ON T1.\"league_id\" = T2.\"id\" WHERE T1.\"season\" = '2015/2016' GROUP BY T2.\"id\", T2.\"name\" ORDER BY COUNT(T1.\"id\") DESC NULLS LAST LIMIT 4",
+          "reasoning_steps": [
+            "Filter match rows to season '2015/2016' using T1.\"season\" = '2015/2016'.",
+            "Aggregate matches per league by counting T1.\"id\" for each league_id.",
+            "Join aggregated results to the league table (T2) on T1.\"league_id\" = T2.\"id\" to obtain league names.",
+            "Group by T2.\"id\" and T2.\"name\", order by the match count descending (NULLS LAST) and limit to top 4."
+          ],
+          "confidence": 0.92
+        },
+        "mapper": {
+          "all_tables_count": 75,
+          "selected_tables": [
+            "match",
+            "league",
+            "seasons"
+          ]
+        }
+      }
+    },
+    "analyzer_output": {
+      "analyzer_match": true,
+      "approved": true,
+      "failure_step": "none",
+      "failure_reason": "Results are correct - predicted results deliver the same business impact and information. Both queries filter matches to season '2015/2016', aggregate by league, and return the top four leagues by match count. The predicted results contain the same four league names as the gold results; the predicted output also includes the match counts (all 380), which does not contradict the gold answer. Row order differs but is immaterial because counts are equal (ties), and the extra 'count' column is additional useful information.",
+      "query_issues": "Differences are cosmetic and do not affect business impact: predicted result includes an extra 'count' column (numeric match counts) and presents rows in a different order. Column naming and GROUP BY usage differ slightly (grouping by T2.id, T2.name) but return the same aggregated values. No incorrect filtering or aggregation detected.",
+      "root_cause": "No substantive error — the generator produced a semantically equivalent query that returns the same top-4 leagues and match counts. Differences are presentation-related (ordering and extra column).",
+      "suggestions": []
+    }
+  },
+  {
+    "dataset": "bird",
+    "index": 406,
+    "question_id": 208,
+    "db_id": "toxicology",
+    "question": "Which type of label is the most numerous in atoms with hydrogen?",
+    "gold_sql": "SELECT T.label FROM (SELECT T2.label, COUNT(T2.molecule_id) FROM atom AS T1 INNER JOIN molecule AS T2 ON T1.molecule_id = T2.molecule_id WHERE T1.element = 'h' GROUP BY T2.label ORDER BY COUNT(T2.molecule_id) DESC NULLS LAST LIMIT 1) AS t",
+    "predicted_sql": "",
+    "exact_match": false,
+    "execution_match": null,
+    "analyzer_match": false,
+    "error": "Query is syntactically valid but semantically incorrect because it selects molecule.label instead of the atom label.type required and therefore counts atoms per molecule label rather than label types; rewrite to join the table that stores label.type and count label.type for atoms that have an H neighbor. Also eliminate OR-based JOIN conditions (use UNION ALL or two explicit joins) to allow index use and deduplicate atom IDs before aggregation to avoid COUNT(DISTINCT) overhead.",
+    "execution_error": "Predicted SQL is empty, skipping execution",
+    "gold_execution_results": null,
+    "predicted_execution_results": null,
+    "db_name": "passarinho",
+    "metadata": {
+      "latency_ms": 132254,
+      "tokens_in": null,
+      "tokens_out": null,
+      "model_name": null
+    },
+    "agent_trace": {
+      "status": "REJECTED",
+      "sql": null,
+      "error": "Query is syntactically valid but semantically incorrect because it selects molecule.label instead of the atom label.type required and therefore counts atoms per molecule label rather than label types; rewrite to join the table that stores label.type and count label.type for atoms that have an H neighbor. Also eliminate OR-based JOIN conditions (use UNION ALL or two explicit joins) to allow index use and deduplicate atom IDs before aggregation to avoid COUNT(DISTINCT) overhead.",
+      "plan": null,
+      "feedback": null,
+      "attempts": 1,
+      "all_queries": [
+        "SELECT T4.\"label\" FROM atom AS T1 INNER JOIN connected AS T2 ON (T1.\"atom_id\" = T2.\"atom_id\" OR T1.\"atom_id\" = T2.\"atom_id2\") INNER JOIN atom AS T3 ON ((T2.\"atom_id\" = T1.\"atom_id\" AND T3.\"atom_id\" = T2.\"atom_id2\") OR (T2.\"atom_id2\" = T1.\"atom_id\" AND T3.\"atom_id\" = T2.\"atom_id\")) INNER JOIN molecule AS T4 ON T1.\"molecule_id\" = T4.\"molecule_id\" WHERE T3.\"element\" = 'h' GROUP BY T4.\"label\" ORDER BY COUNT(DISTINCT T1.\"atom_id\") DESC NULLS LAST LIMIT 1"
+      ],
+      "interpreter_output": {
+        "clarified_question": "Which label.type occurs most frequently among atoms that are bonded to at least one hydrogen atom?",
+        "sub_questions": [],
+        "explicit_intent": "Find the single label.type (string) that has the highest count among labels attached to atoms that are bonded to a hydrogen atom. Steps/formula: 1) Identify atoms A that are bonded to one or more hydrogen atoms H (atoms where H.element = 'H') by checking the bonds table for a bond linking A.id to H.id (consider both bond endpoints atom_id1/atom_id2). 2) Join those atoms A to the labels table (labels.atom_id = A.id). 3) Aggregate counts per labels.type: COUNT(*) (counts label rows) OR optionally COUNT(DISTINCT labels.atom_id) (counts distinct atoms that have that label type). 4) Return the labels.type with the maximum count: ORDER BY count DESC LIMIT 1. SQL pattern example (counting label rows):\n\nSELECT l.type\nFROM labels l\nJOIN atoms a ON l.atom_id = a.id\nWHERE EXISTS (\n  SELECT 1 FROM bonds b\n  JOIN atoms h ON ( (b.atom_id1 = a.id AND b.atom_id2 = h.id) OR (b.atom_id2 = a.id AND b.atom_id1 = h.id) )\n  WHERE h.element = 'H'\n)\nGROUP BY l.type\nORDER BY COUNT(*) DESC\nLIMIT 1;\n\nIf you prefer to count distinct atoms per label type instead of label rows, replace ORDER BY COUNT(*) DESC with ORDER BY COUNT(DISTINCT l.atom_id) DESC and use that metric for LIMIT 1. Expected output shape: single-row scalar containing the label.type string (optionally include the count if desired).",
+        "ambiguities_resolved": [
+          "Interpreted 'atoms with hydrogen' as 'atoms that are bonded to at least one hydrogen atom' (default). Alternative interpretation 'atoms that are hydrogen themselves (element = \"H\")' was considered but not used by default—state explicitly if you want that instead.",
+          "Interpreted 'type of label' as labels.type in a labels table linked by labels.atom_id → atoms.id.",
+          "Interpreted 'most numerous' to mean the label.type with the highest count. Default counting method: COUNT of label rows (COUNT(*)). Alternative: COUNT(DISTINCT labels.atom_id) to count unique atoms per label type—specify if you prefer that.",
+          "Output shape disambiguation: Return a single scalar row with the label.type string (not a list). If you want the count as well, request 'label type and count'.",
+          "Bond endpoint handling: assumed bonds table provides endpoints (atom_id1, atom_id2). Query uses existence of a bond linking the target atom to any atom with element = 'H' and checks both endpoint orders."
+        ]
+      },
+      "mapper_output": "Selected tables (3-4) and why\n- atom — directly contains atomic element (we need to find hydrogen atoms and the atoms bonded to them). (Exact semantic match: contains element column.)\n- connected — describes which two atoms are bonded (atom_id, atom_id2). This is the adjacency/bond list we must use to find atoms that are bonded to an H. (Direct match for bond relationships.)\n- molecule — contains a label column (sample values show \"-\" and \"+\"). The question asks about \"label.type\" — there is no separate label table in the schema, so the molecule.label column is the best match for that concept. I also included bond in the exploration for completeness (bond/bond_type exists) but it is not required to answer this question.\n\nKey columns (which map to question concepts)\n- atom.element (text) — element symbol for an atom. Sample values include: \"sn\",\"k\",\"ca\",\"cu\",\"p\",\"h\",\"cl\",\"zn\",\"i\",\"o\". Important: hydrogen is encoded as the lower-case string \"h\".\n- atom.atom_id (text, primary key) — unique atom identifier used in connected.\n- connected.atom_id, connected.atom_id2 (both text) — pair of atom IDs representing a bond between two atoms. Use these to find which atoms are bonded to which neighbors.\n- molecule.molecule_id (text, primary key) and molecule.label (text) — molecule.label is the label/type field (sample values: \"-\" and \"+\") that we will aggregate by.\n\nTable/column types & sample data\n- atom.element: text. Sample values include \"h\" for hydrogen (lower-case).\n- molecule.label: text. Sample distinct sample values: [\"-\",\"+\"].\n- connected keys: atom_id and atom_id2 are text and together are the primary key for the connected table (each row represents a bond between two atom_ids).\n- Sample rows:\n  - atom sample_row: { atom_id: \"TR000_1\", molecule_id: \"TR000\", element: \"cl\" }\n  - connected sample_row: { atom_id: \"TR000_1\", atom_id2: \"TR000_2\", bond_id: \"TR000_1_2\" }\n  - molecule sample_row: { molecule_id: \"TR000\", label: \"+\" }\n\nForeign keys / relationships\n- atom.molecule_id -> molecule.molecule_id (many atoms belong to one molecule; molecule.label attaches to each atom via this FK).\n- connected.atom_id / connected.atom_id2 reference atom.atom_id (connected links two atoms).\n- bond is linked to connected via bond_id, and bond.molecule_id links to molecule; bond is optional for this query.\n\nHow to identify \"atoms bonded to at least one hydrogen\"\n- connected lists bonded atom pairs once (atom_id / atom_id2). To find atoms that are bonded to an H you must check both directions:\n  - Case A: connected.atom_id = X and connected.atom_id2 = Y where Y's atom.element = 'h'\n  - Case B: connected.atom_id2 = X and connected.atom_id = Y where Y.element = 'h'\n- This ensures you capture atoms that are on either side of the stored pair.\n\nPrimary approach (minimal tables / cardinality)\n- This can be answered using only atom + connected + molecule (no join to bond required). Alternative join to bond is unnecessary for finding atoms bonded to hydrogen.\n- Cardinality warning: Joining atom -> connected (inner join) restricts to atoms that appear in connected (i.e., atoms that have at least one bond). That is intended here because the question targets atoms bonded to at least one hydrogen. Joining atom -> molecule is many-to-one (many atoms per molecule) and will not duplicate atoms beyond their inherent multiplicity. If you wanted counts per molecule rather than per atom, you would need to deduplicate accordingly. Here we count atoms, so no deduplication of atoms is needed beyond ensuring each atom is counted only once even if it bonds to multiple H atoms (if the question intends \"atoms that are bonded to at least one hydrogen\", each atom should be counted once).\n\nValidation & assumptions / ambiguities\n- Assumption: \"label.type\" refers to molecule.label because no other label table/column exists in the schema. molecule.label sample values are \"-\" and \"+\".\n- Hydrogen is encoded as \"h\" (lower-case) in atom.element based on sample values. Use element = 'h' (case-sensitive match).\n- If the intent was to count molecule-level labels rather than atom-level labels, clarify: current plan counts atoms (each atom inherits its molecule.label) and then aggregates label frequencies over those atoms.\n\nImportant notes for SQL generation\n- Make sure to check both sides of connected pairs when finding neighbors that are hydrogen atoms.\n- Use DISTINCT on atom.atom_id when selecting atoms that have at least one hydrogen neighbor (so atoms with multiple H neighbors are still counted once).\n- Then join those atoms to molecule on molecule_id and GROUP BY molecule.label, COUNT(*) to find which label value occurs most frequently.\n- Because element values are lower-case in sample data, filter with element = 'h'.\n- Example logic (natural description): find all atom.atom_id such that there exists a connected row linking it to another atom whose element = 'h' (consider both atom_id and atom_id2 positions). Join those atoms to molecule to get molecule.label. Group by molecule.label and return the label with largest count.\n\nSummary (primary choice)\n- Primary tables: atom, connected, molecule (bond included only as optional, not needed).\n- Primary columns: atom.element, atom.atom_id, atom.molecule_id, connected.atom_id/atom_id2, molecule.label.\n- Key encodings: hydrogen is \"h\" (lower-case); molecule.label sample values are \"-\" and \"+\".\n- This query can be answered without bond table; use atom + connected + molecule and ensure you check connected both directions and deduplicate atoms before grouping by molecule.label.",
+      "generator_output": {
+        "reasoning_steps": [
+          "Select atoms (T1) and join the connected table (T2) to find bonded neighbors.",
+          "Join the neighbor atom rows (T3) and filter T3.\"element\" = 'h' so the neighbor is hydrogen.",
+          "Join molecule (T4) to get the label for each atom, group by T4.\"label\" and count distinct T1.\"atom_id\" to avoid double-counting atoms bonded to multiple hydrogens.",
+          "Order by the count descending and return the top label with LIMIT 1."
+        ],
+        "sub_queries": [],
+        "confidence": 0.9,
+        "sql_query": "SELECT T4.\"label\"\nFROM atom AS T1\nINNER JOIN connected AS T2 ON (T1.\"atom_id\" = T2.\"atom_id\" OR T1.\"atom_id\" = T2.\"atom_id2\")\nINNER JOIN atom AS T3 ON ((T2.\"atom_id\" = T1.\"atom_id\" AND T3.\"atom_id\" = T2.\"atom_id2\") OR (T2.\"atom_id2\" = T1.\"atom_id\" AND T3.\"atom_id\" = T2.\"atom_id\"))\nINNER JOIN molecule AS T4 ON T1.\"molecule_id\" = T4.\"molecule_id\"\nWHERE T3.\"element\" = 'h'\nGROUP BY T4.\"label\"\nORDER BY COUNT(DISTINCT T1.\"atom_id\") DESC NULLS LAST\nLIMIT 1;"
+      },
+      "validator_output": {
+        "is_valid": false,
+        "is_optimal": false,
+        "syntax_errors": [],
+        "semantic_issues": [
+          "Query returns molecule.label (T4.\"label\") instead of the atom label type requested (label.type), so it does not answer the original question.",
+          "The query aggregates atoms by molecule label rather than counting occurrences of atom label types among atoms that are bonded to hydrogen."
+        ],
+        "efficiency_score": 0.5,
+        "efficiency_issues": [
+          "JOIN conditions use OR, producing BitmapOr and repeated scans that increase cost.",
+          "Execution plan shows expensive nested loops and many bitmap heap scans, indicating heavy work and suboptimal index usage.",
+          "COUNT(DISTINCT T1.atom_id) and late aggregation increase work; deduplicate atoms before aggregation to reduce cost."
+        ],
+        "refinement_feedback": "Query is syntactically valid but semantically incorrect because it selects molecule.label instead of the atom label.type required and therefore counts atoms per molecule label rather than label types; rewrite to join the table that stores label.type and count label.type for atoms that have an H neighbor. Also eliminate OR-based JOIN conditions (use UNION ALL or two explicit joins) to allow index use and deduplicate atom IDs before aggregation to avoid COUNT(DISTINCT) overhead."
+      },
+      "trace": {
+        "pipeline": "new",
+        "db_name": "passarinho",
+        "start_ts": "2025-11-14T02:48:14.967986+00:00",
+        "end_ts": "2025-11-14T02:50:27.174891+00:00",
+        "latency_ms": 132206,
+        "steps": [
+          {
+            "name": "interpreter",
+            "timing_ms": 22710,
+            "input_summary": {
+              "raw_question": "Which type of label is the most numerous in atoms with hydrogen?"
+            },
+            "output_summary": {
+              "clarified_question": "Which label.type occurs most frequently among atoms that are bonded to at least one hydrogen atom?",
+              "intent": "Find the single label.type (string) that has the highest count among labels attached to atoms that are bonded to a hydrogen atom. Steps/formula: 1) Identify atoms A that are bonded to one or more hydrogen atoms H (atoms where H.element = 'H') by checking the bonds table for a bond linking A.id to H.",
+              "sub_questions_count": 0
+            },
+            "error": null
+          },
+          {
+            "name": "mapper",
+            "timing_ms": 58012,
+            "input_summary": {
+              "clarified_question": "Which label.type occurs most frequently among atoms that are bonded to at least one hydrogen atom?",
+              "all_tables_count": 75
+            },
+            "output_summary": {
+              "output_length": 5562,
+              "output_preview": "Selected tables (3-4) and why\n- atom — directly contains atomic element (we need to find hydrogen atoms and the atoms bonded to them). (Exact semantic match: contains element column.)\n- connected — describes which two atoms are bonded (atom_id, atom_id2). This is the adjacency/bond list we must use "
+            },
+            "error": null
+          },
+          {
+            "name": "generator",
+            "timing_ms": 19840,
+            "input_summary": {
+              "clarified_question": "Which label.type occurs most frequently among atoms that are bonded to at least one hydrogen atom?",
+              "attempt": 1
+            },
+            "output_summary": {
+              "sql_length": 454,
+              "reasoning_steps_count": 4,
+              "confidence": 0.9
+            },
+            "error": null
+          },
+          {
+            "name": "validator",
+            "timing_ms": 31116,
+            "input_summary": {
+              "sql_length": 453,
+              "attempt": 1
+            },
+            "output_summary": {
+              "is_valid": false,
+              "is_optimal": false,
+              "efficiency_score": 0.5,
+              "syntax_error_count": 0,
+              "semantic_issue_count": 2
+            },
+            "error": null
+          }
+        ],
+        "tools": [
+          {
+            "agent": "mapper",
+            "tool": "get_table_info",
+            "args_redacted": [
+              "atom",
+              "bond",
+              "connected",
+              "molecule"
+            ],
+            "result_preview": "Retrieved info for 4 tables",
+            "timing_ms": 72,
+            "error": null
+          },
+          {
+            "agent": "mapper",
+            "tool": "sample_values",
+            "args_redacted": {
+              "table_name": "atom",
+              "column_name": "element",
+              "limit": 10
+            },
+            "result_preview": "Retrieved 10 sample values",
+            "timing_ms": 32,
+            "error": null
+          },
+          {
+            "agent": "mapper",
+            "tool": "sample_values",
+            "args_redacted": {
+              "table_name": "molecule",
+              "column_name": "label",
+              "limit": 20
+            },
+            "result_preview": "Retrieved 2 sample values",
+            "timing_ms": 12,
+            "error": null
+          }
+        ],
+        "generator": {
+          "sql_query": "SELECT T4.\"label\" FROM atom AS T1 INNER JOIN connected AS T2 ON (T1.\"atom_id\" = T2.\"atom_id\" OR T1.\"atom_id\" = T2.\"atom_id2\") INNER JOIN atom AS T3 ON ((T2.\"atom_id\" = T1.\"atom_id\" AND T3.\"atom_id\" = T2.\"atom_id2\") OR (T2.\"atom_id2\" = T1.\"atom_id\" AND T3.\"atom_id\" = T2.\"atom_id\")) INNER JOIN molecule AS T4 ON T1.\"molecule_id\" = T4.\"molecule_id\" WHERE T3.\"element\" = 'h' GROUP BY T4.\"label\" ORDER BY COUNT(DISTINCT T1.\"atom_id\") DESC NULLS LAST LIMIT 1",
+          "reasoning_steps": [
+            "Select atoms (T1) and join the connected table (T2) to find bonded neighbors.",
+            "Join the neighbor atom rows (T3) and filter T3.\"element\" = 'h' so the neighbor is hydrogen.",
+            "Join molecule (T4) to get the label for each atom, group by T4.\"label\" and count distinct T1.\"atom_id\" to avoid double-counting atoms bonded to multiple hydrogens.",
+            "Order by the count descending and return the top label with LIMIT 1."
+          ],
+          "confidence": 0.9
+        },
+        "mapper": {
+          "all_tables_count": 75,
+          "selected_tables": [
+            "atom",
+            "bond",
+            "connected",
+            "molecule"
+          ]
+        }
+      }
+    },
+    "analyzer_output": {
+      "analyzer_match": false,
+      "approved": false,
+      "failure_step": "mapper",
+      "failure_reason": "The mapper incorrectly mapped the requested 'label.type' to molecule.label in the schema, causing the pipeline to count molecule labels (molecule.label) for hydrogen atoms rather than counting atom label types. This incorrect table/column selection was propagated into the generated SQL. Additionally, the predicted SQL ultimately was empty (execution skipped), so no correct result was produced. The generator then produced a query that aggregated by molecule.label (wrong entity) and used OR-based JOIN conditions and COUNT(DISTINCT) which are inefficient; the validator caught semantic mismatches but could not recover the correct target. Overall the earliest incorrect decision was made by the mapper when it equated label.type with molecule.label and failed to find/require the atom label table.",
+      "query_issues": "- Predicted SQL is empty; execution skipped.\\n- Generated SQL in the trace aggregates molecule.label instead of the atom label.type required by the question.\\n- The query counts atoms per molecule label rather than counts of label.type for atoms (or labels attached to atoms bonded to H).\\n- JOIN conditions in the generated query use OR-based predicates that harm index usage and efficiency.\\n- COUNT(DISTINCT) was used instead of pre-deduplicating atom IDs, increasing cost.\\n- Overall filtering/joins do not match the clarified intent (labels attached to atoms bonded to H).",
+      "root_cause": "Incorrect schema mapping / misinterpretation of where label.type lives in the schema. The mapper assumed molecule.label was the requested label.type (no explicit labels table mapping), leading to generation of SQL that answers a different question. The validator detected the mismatch but after the wrong mapping and generation steps, and the pipeline produced no executed result.",
+      "suggestions": [
+        "Fix the mapper: require explicit verification of the existence of a labels table/column that maps to label.type. If the schema lacks a direct match, the mapper should ask for clarification instead of mapping to a similarly named column (e.g., molecule.label).",
+        "Strengthen generator/validator checks: before finalizing SQL, validate that the selected output column/table semantically matches the interpreter's clarified target (e.g., question asks for label.type -> ensure chosen column is a label type attached to atoms).",
+        "Add semantic unit tests and sample-data checks: run small sample queries to confirm the query returns values of the expected entity (e.g., label strings attached to atoms) and not molecule-level labels. If mismatch detected, fail fast and request mapping correction.",
+        "Improve join construction: avoid OR-based JOIN conditions by rewriting as UNION ALL or explicit two-branch joins to enable index utilisation; deduplicate atoms early (using a subquery) to avoid COUNT(DISTINCT) where possible.",
+        "Enhance pipeline error handling: when predicted SQL is empty or execution fails, produce a detailed actionable diagnostic that identifies whether the failure was mapping, generation, or execution so upstream components can correct the mapping and regenerate SQL."
+      ]
+    }
+  }
+]

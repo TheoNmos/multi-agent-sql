@@ -1,0 +1,103 @@
+[
+  {
+    "dataset": "bird",
+    "index": 1,
+    "question_id": 1471,
+    "db_id": "debit_card_specializing",
+    "question": "What is the ratio of customers who pay in EUR against customers who pay in CZK?",
+    "gold_sql": "SELECT CAST(SUM(CASE WHEN Currency = 'EUR' THEN 1 ELSE 0 END) AS REAL) / NULLIF(SUM(CASE WHEN Currency = 'CZK' THEN 1 ELSE 0 END), 0) FROM customers",
+    "predicted_sql": "",
+    "exact_match": false,
+    "execution_match": null,
+    "analyzer_match": false,
+    "error": "Schema mapper failed: name 'name' is not defined",
+    "execution_error": "Predicted SQL is empty, skipping execution",
+    "gold_execution_results": null,
+    "predicted_execution_results": null,
+    "db_name": "bird_benchmark",
+    "metadata": {
+      "latency_ms": 19849,
+      "tokens_in": null,
+      "tokens_out": null,
+      "model_name": null
+    },
+    "agent_trace": {
+      "status": "ERROR",
+      "sql": null,
+      "error": "Schema mapper failed: name 'name' is not defined",
+      "plan": null,
+      "feedback": null,
+      "attempts": 1,
+      "all_queries": [],
+      "interpreter_output": {
+        "clarified_question": "Calculate the ratio of customers who have currency = 'EUR' to customers who have currency = 'CZK' using the customers table. Return a single scalar value representing (count of EUR customers) / (count of CZK customers).",
+        "sub_questions": [],
+        "explicit_intent": "Return one numeric scalar: the ratio = COUNT(customers where currency = 'EUR') / COUNT(customers where currency = 'CZK'). Use the customers table only (no transaction joins). Example SQL patterns: \n1) Standard SQL: SELECT CAST(SUM(CASE WHEN currency = 'EUR' THEN 1 ELSE 0 END) AS FLOAT) / NULLIF(SUM(CASE WHEN currency = 'CZK' THEN 1 ELSE 0 END), 0) AS eur_to_czk_ratio FROM customers;\n2) PostgreSQL: SELECT (COUNT(*) FILTER (WHERE currency = 'EUR'))::float / NULLIF(COUNT(*) FILTER (WHERE currency = 'CZK'), 0) AS eur_to_czk_ratio FROM customers;\nNotes: do not GROUP BY (single scalar). Handle division-by-zero with NULLIF (returns NULL if no CZK customers). Cast to float to get non-integer ratio.",
+        "ambiguities_resolved": [
+          "Interpreted 'customers who pay in EUR' and 'customers who pay in CZK' as customers.currency = 'EUR' and customers.currency = 'CZK' in the customers table (no requirement to join transactions or verify payments).",
+          "Assumed each row in customers table represents one distinct customer; thus COUNT on customers counts distinct customers. If 'distinct' or de-duplication is required, modify to COUNT(DISTINCT customer_id) in SQL.",
+          "Assumed exact equality on currency values ('EUR' and 'CZK'). If currency values are stored in different case or with codes, adjust comparison (e.g., UPPER(currency) = 'EUR').",
+          "Resolved output shape: single scalar value (one row, one column) as the ratio EUR/CZK. Do not return separate counts unless explicitly requested.",
+          "If CZK count is zero, the query should guard against division-by-zero (e.g., using NULLIF) — result will be NULL or handle as desired (infinite/not applicable).",
+          "No time filtering or 'made a payment' temporal scope implied; question treated as a customer-attribute snapshot across the entire customers table."
+        ]
+      },
+      "mapper_output": null,
+      "generator_output": null,
+      "validator_output": null,
+      "trace": {
+        "pipeline": "new",
+        "db_name": "bird_benchmark",
+        "start_ts": "2026-01-28T20:03:21.288627+00:00",
+        "end_ts": "2026-01-28T20:03:41.062454+00:00",
+        "latency_ms": 19773,
+        "steps": [
+          {
+            "name": "interpreter",
+            "timing_ms": 19718,
+            "input_summary": {
+              "raw_question": "What is the ratio of customers who pay in EUR against customers who pay in CZK?"
+            },
+            "output_summary": {
+              "clarified_question": "Calculate the ratio of customers who have currency = 'EUR' to customers who have currency = 'CZK' using the customers table. Return a single scalar value representing (count of EUR customers) / (count",
+              "intent": "Return one numeric scalar: the ratio = COUNT(customers where currency = 'EUR') / COUNT(customers where currency = 'CZK'). Use the customers table only (no transaction joins). Example SQL patterns: \n1) Standard SQL: SELECT CAST(SUM(CASE WHEN currency = 'EUR' THEN 1 ELSE 0 END) AS FLOAT) / NULLIF(SUM(",
+              "sub_questions_count": 0
+            },
+            "error": null
+          },
+          {
+            "name": "mapper",
+            "timing_ms": 18,
+            "input_summary": {
+              "clarified_question": "Calculate the ratio of customers who have currency = 'EUR' to customers who have currency = 'CZK' using the customers table. Return a single scalar value representing (count of EUR customers) / (count",
+              "all_tables_count": 0
+            },
+            "output_summary": null,
+            "error": "name 'name' is not defined"
+          }
+        ],
+        "tools": [],
+        "generator": null,
+        "mapper": {
+          "all_tables_count": 0,
+          "selected_tables": []
+        }
+      }
+    },
+    "analyzer_output": {
+      "analyzer_match": false,
+      "approved": false,
+      "failure_step": "mapper",
+      "failure_reason": "Schema mapping failed during the mapper step (error reported: \"Schema mapper failed: name 'name' is not defined\"), which prevented generation of any SQL. As a result the generator produced no SQL (predicted SQL is empty) and execution was skipped. The pipeline therefore produced no results and cannot answer the question. This is an operational/mapping failure rather than a logic error in the intended SQL formulation.",
+      "query_issues": "Predicted SQL is empty (no query produced). Missing critical elements required to answer the question: no SELECT, no aggregation (COUNT or SUM CASE), no denominator guarding (NULLIF), and therefore no numeric ratio. Execution could not run due to lack of SQL. Gold SQL computes CAST(SUM(CASE WHEN Currency='EUR' THEN 1 END) AS REAL)/NULLIF(SUM(CASE WHEN Currency='CZK' THEN 1 END),0). Predicted output provides none of this information.",
+      "root_cause": "Failure in schema mapper (name 'name' undefined) prevented correct mapping of table/column names to the logical query. This caused the generator to emit no SQL. Fundamental cause: robustness gap in mapper when encountering unexpected schema references or undefined identifiers, leading to cascade failure.",
+      "suggestions": [
+        "Improve mapper robustness: add defensive checks and exception handling for undefined identifiers; when mapping fails, return structured diagnostics (which column/table couldn't be resolved) and attempt best-effort heuristics (e.g., case-insensitive matching, synonyms).",
+        "Generator validation: ensure generator validates that non-empty, syntactically plausible SQL was produced before returning; if dependencies (mapped schema) are missing, return a clear error instead of empty string.",
+        "Validator/Execution safety: add a pre-execution check that blocks execution of empty or invalid SQL and surfaces a user-friendly error explaining which pipeline step failed and why.",
+        "Interpreter/schema hinting: enrich the interpreter output with candidate table/column hints (e.g., explicitly suggest 'customers.currency' or 'customers' table) so mapper has clearer targets; include fallback to COUNT(DISTINCT ...) if ambiguity about duplicates exists.",
+        "Pipeline-level monitoring and tests: add end-to-end integration tests for common query patterns (simple aggregations), add logging/alerting for mapper failures, and implement automatic retries or guided prompts to request clarifying info when mapping fails."
+      ]
+    }
+  }
+]

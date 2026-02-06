@@ -1,0 +1,659 @@
+[
+  {
+    "dataset": "livraria",
+    "index": 2,
+    "question_id": 2,
+    "db_id": null,
+    "question": "Quantos empréstimos foram realizados em 2024?",
+    "gold_sql": "SELECT COUNT(*) FROM emprestimos WHERE EXTRACT(YEAR FROM data_emprestimo) = 2024;",
+    "predicted_sql": "SELECT COUNT(T1.emprestimo_id) FROM emprestimos AS T1 WHERE T1.data_emprestimo BETWEEN DATE '2024-01-01' AND DATE '2024-12-31'",
+    "exact_match": false,
+    "execution_match": true,
+    "analyzer_match": true,
+    "error": null,
+    "execution_error": null,
+    "gold_execution_results": [
+      {
+        "count": 5
+      }
+    ],
+    "predicted_execution_results": [
+      {
+        "count": 5
+      }
+    ],
+    "db_name": "livraria",
+    "metadata": {
+      "latency_ms": 72256,
+      "tokens_in": null,
+      "tokens_out": null,
+      "model_name": null
+    },
+    "agent_trace": {
+      "status": "GENERATED",
+      "sql": "SELECT COUNT(T1.emprestimo_id) FROM emprestimos AS T1 WHERE T1.data_emprestimo BETWEEN DATE '2024-01-01' AND DATE '2024-12-31'",
+      "error": null,
+      "plan": "Retornar um único escalar: o número total de empréstimos realizados em 2024. Esperado: uma linha, uma coluna com um inteiro. Método/SQL padrão: SELECT COUNT(*) AS total_empréstimos_2024 FROM loans WHERE <filtro_de_ano_2024>; Onde <filtro_de_ano_2024> deve ser uma das formas apropriadas de filtrar o ano no seu esquema de dados, por exemplo:\n- Se a coluna for DATE/TIMESTAMP chamada loan_date ou disbursement_date: WHERE EXTRACT(YEAR FROM loan_date) = 2024\n- Se a coluna for string no formato 'YYYYMMDD' ou 'YYYY-MM-DD': WHERE SUBSTR(loan_date,1,4) = '2024' ou WHERE loan_date LIKE '2024%'\n- Se preferir intervalos: WHERE loan_date BETWEEN '2024-01-01' AND '2024-12-31'\nNão usar GROUP BY (a pergunta pede um único valor para o ano). Se a definição de \"realizados\" exigir apenas empréstimos efetivamente desembolsados/ativados, adicionar filtro de status, por exemplo: AND status = 'disbursed' ou AND status IN ('disbursed','completed') conforme o dicionário de dados. Não dividir por meses — a resposta deve ser um único total para todo 2024.",
+      "feedback": "Query is syntactically valid and returns the requested count but may miss timestamped rows on 2024-12-31; change the date filter to a half-open range (e.g., data_emprestimo >= '2024-01-01' AND data_emprestimo < '2025-01-01') or cast to date, and add an index on data_emprestimo if the table is large.",
+      "attempts": 1,
+      "all_queries": [
+        "SELECT COUNT(T1.emprestimo_id) FROM emprestimos AS T1 WHERE T1.data_emprestimo BETWEEN DATE '2024-01-01' AND DATE '2024-12-31'"
+      ],
+      "interpreter_output": {
+        "clarified_question": "Quantos empréstimos foram realizados no ano civil de 2024? (Contar o total de registros de empréstimo cuja data de realização/desembolso pertence ao ano 2024.)",
+        "sub_questions": [],
+        "explicit_intent": "Retornar um único escalar: o número total de empréstimos realizados em 2024. Esperado: uma linha, uma coluna com um inteiro. Método/SQL padrão: SELECT COUNT(*) AS total_empréstimos_2024 FROM loans WHERE <filtro_de_ano_2024>; Onde <filtro_de_ano_2024> deve ser uma das formas apropriadas de filtrar o ano no seu esquema de dados, por exemplo:\n- Se a coluna for DATE/TIMESTAMP chamada loan_date ou disbursement_date: WHERE EXTRACT(YEAR FROM loan_date) = 2024\n- Se a coluna for string no formato 'YYYYMMDD' ou 'YYYY-MM-DD': WHERE SUBSTR(loan_date,1,4) = '2024' ou WHERE loan_date LIKE '2024%'\n- Se preferir intervalos: WHERE loan_date BETWEEN '2024-01-01' AND '2024-12-31'\nNão usar GROUP BY (a pergunta pede um único valor para o ano). Se a definição de \"realizados\" exigir apenas empréstimos efetivamente desembolsados/ativados, adicionar filtro de status, por exemplo: AND status = 'disbursed' ou AND status IN ('disbursed','completed') conforme o dicionário de dados. Não dividir por meses — a resposta deve ser um único total para todo 2024.",
+        "ambiguities_resolved": [
+          "Interpretei \"empréstimos\" como registros de empréstimo (tabela genérica 'loans'), uma linha por empréstimo.",
+          "Interpretei \"realizados\" como empréstimos cuja data de realização/desembolso (campo como loan_date ou disbursement_date) cai em 2024. Se você quis dizer outra definição (ex.: aprovados, contratados mas não desembolsados), informe qual o campo/status considerar.",
+          "Assumi nomes e tipos de colunas comuns (loan_date / disbursement_date; DATE/TIMESTAMP ou string 'YYYY...'). Indiquei várias opções de filtro de ano conforme o formato de data.",
+          "Output shape: um único escalar (uma linha, uma coluna) com o total de empréstimos em 2024 — não agrupar por mês nem retornar colunas extras."
+        ]
+      },
+      "mapper_output": "Resumo de mapeamento de esquema para a pergunta: \"Quantos empréstimos foram realizados no ano civil de 2024?\"\n\n1) Tabelas selecionadas e motivo\n- emprestimos (PRIMÁRIA) — selecionada porque a pergunta pergunta diretamente pelo total de registros de empréstimo; esta tabela contém as datas de realização (data_emprestimo). É suficiente sozinha para responder à pergunta.\n- membros — incluída apenas para entender relacionamentos (quem tomou emprestado). Não é necessária para a contagem, mas mostrei porque existe FK.\n- livros — incluída apenas para entender relacionamentos (qual livro foi emprestado). Também não é necessária para a contagem.\n\nEscolhi emprestimos como tabela única e principal porque pelo princípio do \"minimal-table\": todas as informações necessárias (identificador do empréstimo e data de realização) estão nela, então não é preciso fazer JOINs que poderiam alterar cardinalidade.\n\n2) Colunas-chave (por tabela)\n- emprestimos:\n  - emprestimo_id (integer, PK) — identifica cada empréstimo; pode ser usado em COUNT(emprestimo_id) ou COUNT(*).\n  - data_emprestimo (date, NOT NULL) — coluna de data que determina o ano de realização; é o campo prioritário para filtrar 2024.\n  - data_devolucao (date, nullable) — informação adicional (não necessária para esta contagem).\n  - livro_id, membro_id — FKs para livros e membros (relacionamentos).\n- membros:\n  - membro_id (integer, PK), nome, data_cadastro — apenas referência; não necessário para contar empréstimos em 2024.\n- livros:\n  - livro_id (integer, PK), titulo, etc. — apenas referência; não necessário para contar empréstimos em 2024.\n\n3) Formato de data e tipos\n- A coluna emprestimos.data_emprestimo tem tipo DATE (verificado no schema).\n- Sample row mostra: \"data_emprestimo\": \"2024-01-15\" — formato DATE (YYYY-MM-DD).\n- Consequência: usar comparações/extração de ano com funções de data. Exemplos válidos:\n  - WHERE EXTRACT(YEAR FROM data_emprestimo) = 2024\n  - OU WHERE data_emprestimo BETWEEN DATE '2024-01-01' AND DATE '2024-12-31'\n- Não é necessário fazer manipulação de strings; trate como DATE.\n\n4) Exemplo de sample_row (mostra formato real)\n- emprestimos sample_row: { emprestimo_id: 1, livro_id: 1, membro_id: 1, data_emprestimo: \"2024-01-15\", data_devolucao: \"2024-02-01\" }\n- membros sample_row: { membro_id: 1, nome: \"Ana Souza\", data_cadastro: \"2023-01-10\" }\n- livros sample_row: { livro_id: 1, titulo: \"Dom Casmurro\", ano_publicacao: 1899, ... }\n\n5) Relacionamentos (FKs)\n- emprestimos.livro_id -> livros.livro_id\n- emprestimos.membro_id -> membros.membro_id\nEsses relacionamentos existem, mas não são necessários para responder “quantos empréstimos em 2024”.\n\n6) Insights de valores / observações de domínio\n- data_emprestimo é NOT NULL no esquema, então todos os empréstimos têm data de realização registrada; isso facilita a contagem sem precisar filtrar NULLs.\n- data_devolucao pode ser NULL (empréstimos ainda não devolvidos), mas isso não afeta a contagem por data_emprestimo.\n\n7) Avisos de cardinalidade / recomendação sobre JOINs\n- RECOMENDAÇÃO: NÃO fazer JOIN com membros ou livros para esta pergunta — a contagem pode ser respondida usando somente emprestimos. Fazer JOINs pode:\n  - potencialmente alterar o resultado se houver múltiplas correspondências (embora aqui as FKs sejam 1:1 para livro/membro, joins não necessários);\n  - aumentar custo da consulta sem ganho.\n- Em suma: \"Esta query pode ser respondida usando apenas a tabela emprestimos sem joins, evitando mudanças de cardinalidade.\"\n\n8) Validação / notas finais\n- Confirmado: tabela emprestimos existe e contém data_emprestimo do tipo DATE — coluna correta para filtrar ano = 2024.\n- Sugestões de filtro SQL (para o gerador de SQL):\n  - COUNT usando intervalo de datas:\n    SELECT COUNT(*) FROM emprestimos\n    WHERE data_emprestimo BETWEEN DATE '2024-01-01' AND DATE '2024-12-31';\n  - OU usando extração de ano:\n    SELECT COUNT(*) FROM emprestimos\n    WHERE EXTRACT(YEAR FROM data_emprestimo) = 2024;\n- Ambas abordagens são corretas; prefira BETWEEN para potencial uso de índices na coluna de data.\n\nSe quiser, eu gero a consulta SQL final pronta para execução no seu banco.",
+      "generator_output": {
+        "reasoning_steps": [
+          "Escolhi apenas a tabela 'emprestimos' porque ela contém a coluna de data de realização (data_emprestimo) necessária para contar empréstimos em 2024; joins não são necessários.",
+          "Usei um agregado COUNT sobre a chave primária emprestimo_id para retornar um único escalar com o total de registros.",
+          "Filtrei por intervalo de datas entre '2024-01-01' e '2024-12-31' sobre a coluna DATE T1.data_emprestimo — abordagem eficiente e amigável a índices.",
+          "Segui as regras de estrutura: início com SELECT, uso de alias de tabela AS T1 e qualificação de coluna T1.data_emprestimo; sem alias de coluna para o resultado."
+        ],
+        "sub_queries": [],
+        "confidence": 0.95,
+        "sql_query": "SELECT COUNT(T1.emprestimo_id)\nFROM emprestimos AS T1\nWHERE T1.data_emprestimo BETWEEN DATE '2024-01-01' AND DATE '2024-12-31'"
+      },
+      "validator_output": {
+        "is_valid": true,
+        "is_optimal": false,
+        "syntax_errors": [],
+        "semantic_issues": [
+          "If data_emprestimo is a TIMESTAMP the BETWEEN DATE '2024-01-01' AND DATE '2024-12-31' comparison may exclude rows on 2024-12-31 after 00:00:00; use a half-open range (data_emprestimo >= '2024-01-01' AND data_emprestimo < '2025-01-01') or cast data_emprestimo::date BETWEEN DATE '2024-01-01' AND DATE '2024-12-31'.",
+          "COUNT(emprestimo_id) will ignore NULL emprestimo_id values; prefer COUNT(*) if emprestimo_id is guaranteed NOT NULL (primary key) or ensure the column is non-null."
+        ],
+        "efficiency_score": 0.8,
+        "efficiency_issues": [
+          "Sequential scan on table 'emprestimos' with the date filter indicates no index is being used on data_emprestimo; this may cause full-table scans for large tables.",
+          "Plan shows low overall cost but lacks index usage for the filter, which can degrade performance as data grows."
+        ],
+        "refinement_feedback": "Query is syntactically valid and returns the requested count but may miss timestamped rows on 2024-12-31; change the date filter to a half-open range (e.g., data_emprestimo >= '2024-01-01' AND data_emprestimo < '2025-01-01') or cast to date, and add an index on data_emprestimo if the table is large."
+      },
+      "trace": {
+        "pipeline": "new",
+        "db_name": "livraria",
+        "start_ts": "2025-11-14T21:32:30.457850+00:00",
+        "end_ts": "2025-11-14T21:33:42.690918+00:00",
+        "latency_ms": 72233,
+        "steps": [
+          {
+            "name": "interpreter",
+            "timing_ms": 15459,
+            "input_summary": {
+              "raw_question": "Quantos empréstimos foram realizados em 2024?"
+            },
+            "output_summary": {
+              "clarified_question": "Quantos empréstimos foram realizados no ano civil de 2024? (Contar o total de registros de empréstimo cuja data de realização/desembolso pertence ao ano 2024.)",
+              "intent": "Retornar um único escalar: o número total de empréstimos realizados em 2024. Esperado: uma linha, uma coluna com um inteiro. Método/SQL padrão: SELECT COUNT(*) AS total_empréstimos_2024 FROM loans WHERE <filtro_de_ano_2024>; Onde <filtro_de_ano_2024> deve ser uma das formas apropriadas de filtrar o ",
+              "sub_questions_count": 0
+            },
+            "error": null
+          },
+          {
+            "name": "mapper",
+            "timing_ms": 22703,
+            "input_summary": {
+              "clarified_question": "Quantos empréstimos foram realizados no ano civil de 2024? (Contar o total de registros de empréstimo cuja data de realização/desembolso pertence ao ano 2024.)",
+              "all_tables_count": 6
+            },
+            "output_summary": {
+              "output_length": 4138,
+              "output_preview": "Resumo de mapeamento de esquema para a pergunta: \"Quantos empréstimos foram realizados no ano civil de 2024?\"\n\n1) Tabelas selecionadas e motivo\n- emprestimos (PRIMÁRIA) — selecionada porque a pergunta pergunta diretamente pelo total de registros de empréstimo; esta tabela contém as datas de realizaç"
+            },
+            "error": null
+          },
+          {
+            "name": "generator",
+            "timing_ms": 10350,
+            "input_summary": {
+              "clarified_question": "Quantos empréstimos foram realizados no ano civil de 2024? (Contar o total de registros de empréstimo cuja data de realização/desembolso pertence ao ano 2024.)",
+              "attempt": 1
+            },
+            "output_summary": {
+              "sql_length": 126,
+              "reasoning_steps_count": 4,
+              "confidence": 0.95
+            },
+            "error": null
+          },
+          {
+            "name": "validator",
+            "timing_ms": 23538,
+            "input_summary": {
+              "sql_length": 126,
+              "attempt": 1
+            },
+            "output_summary": {
+              "is_valid": true,
+              "is_optimal": false,
+              "efficiency_score": 0.8,
+              "syntax_error_count": 0,
+              "semantic_issue_count": 2
+            },
+            "error": null
+          }
+        ],
+        "tools": [
+          {
+            "agent": "mapper",
+            "tool": "get_table_info",
+            "args_redacted": [
+              "emprestimos",
+              "membros",
+              "livros"
+            ],
+            "result_preview": "Retrieved info for 3 tables",
+            "timing_ms": 39,
+            "error": null
+          }
+        ],
+        "generator": {
+          "sql_query": "SELECT COUNT(T1.emprestimo_id) FROM emprestimos AS T1 WHERE T1.data_emprestimo BETWEEN DATE '2024-01-01' AND DATE '2024-12-31'",
+          "reasoning_steps": [
+            "Escolhi apenas a tabela 'emprestimos' porque ela contém a coluna de data de realização (data_emprestimo) necessária para contar empréstimos em 2024; joins não são necessários.",
+            "Usei um agregado COUNT sobre a chave primária emprestimo_id para retornar um único escalar com o total de registros.",
+            "Filtrei por intervalo de datas entre '2024-01-01' e '2024-12-31' sobre a coluna DATE T1.data_emprestimo — abordagem eficiente e amigável a índices.",
+            "Segui as regras de estrutura: início com SELECT, uso de alias de tabela AS T1 e qualificação de coluna T1.data_emprestimo; sem alias de coluna para o resultado."
+          ],
+          "confidence": 0.95
+        },
+        "mapper": {
+          "all_tables_count": 6,
+          "selected_tables": [
+            "emprestimos",
+            "membros",
+            "livros"
+          ]
+        }
+      }
+    },
+    "analyzer_output": {
+      "analyzer_match": true,
+      "approved": true,
+      "failure_step": "none",
+      "failure_reason": "Result is correct - rule-based match (EM or RM) confirms correctness",
+      "query_issues": "No issues found - query matches expected results",
+      "root_cause": "Result is correct - validated by exact match or execution match",
+      "suggestions": []
+    }
+  },
+  {
+    "dataset": "livraria",
+    "index": 6,
+    "question_id": 6,
+    "db_id": null,
+    "question": "Conte quantos livros por gênero existem.",
+    "gold_sql": "SELECT g.nome AS genero, COUNT(*) AS qtd FROM livros l JOIN generos g ON g.genero_id = l.genero_id GROUP BY g.nome ORDER BY qtd DESC, genero;",
+    "predicted_sql": "SELECT T1.nome, COUNT(T2.livro_id) FROM generos AS T1 LEFT JOIN livros AS T2 ON T2.genero_id = T1.genero_id GROUP BY T1.nome ORDER BY COUNT(T2.livro_id) DESC NULLS LAST",
+    "exact_match": false,
+    "execution_match": true,
+    "analyzer_match": true,
+    "error": null,
+    "execution_error": null,
+    "gold_execution_results": [
+      {
+        "genero": "Romance",
+        "qtd": 6
+      },
+      {
+        "genero": "Ficção Científica",
+        "qtd": 5
+      },
+      {
+        "genero": "Thriller",
+        "qtd": 3
+      },
+      {
+        "genero": "Educação",
+        "qtd": 2
+      },
+      {
+        "genero": "Fantasia",
+        "qtd": 2
+      },
+      {
+        "genero": "História",
+        "qtd": 2
+      },
+      {
+        "genero": "Infantojuvenil",
+        "qtd": 2
+      },
+      {
+        "genero": "Mistério",
+        "qtd": 2
+      },
+      {
+        "genero": "Poesia",
+        "qtd": 2
+      },
+      {
+        "genero": "Tecnologia",
+        "qtd": 2
+      },
+      {
+        "genero": "Biografia",
+        "qtd": 1
+      },
+      {
+        "genero": "Não Ficção",
+        "qtd": 1
+      }
+    ],
+    "predicted_execution_results": [
+      {
+        "nome": "Romance",
+        "count": 6
+      },
+      {
+        "nome": "Ficção Científica",
+        "count": 5
+      },
+      {
+        "nome": "Thriller",
+        "count": 3
+      },
+      {
+        "nome": "História",
+        "count": 2
+      },
+      {
+        "nome": "Mistério",
+        "count": 2
+      },
+      {
+        "nome": "Educação",
+        "count": 2
+      },
+      {
+        "nome": "Infantojuvenil",
+        "count": 2
+      },
+      {
+        "nome": "Tecnologia",
+        "count": 2
+      },
+      {
+        "nome": "Poesia",
+        "count": 2
+      },
+      {
+        "nome": "Fantasia",
+        "count": 2
+      },
+      {
+        "nome": "Biografia",
+        "count": 1
+      },
+      {
+        "nome": "Não Ficção",
+        "count": 1
+      }
+    ],
+    "db_name": "livraria",
+    "metadata": {
+      "latency_ms": 71429,
+      "tokens_in": null,
+      "tokens_out": null,
+      "model_name": null
+    },
+    "agent_trace": {
+      "status": "GENERATED",
+      "sql": "SELECT T1.nome, COUNT(T2.livro_id) FROM generos AS T1 LEFT JOIN livros AS T2 ON T2.genero_id = T1.genero_id GROUP BY T1.nome ORDER BY COUNT(T2.livro_id) DESC NULLS LAST",
+      "error": null,
+      "plan": "Retornar uma linha por gênero com duas colunas: (gênero, quantidade_de_livros). Calcular usando COUNT(*) agrupado por gênero. SQL padrão: SELECT genre AS genero, COUNT(*) AS quantidade_de_livros FROM livros_table WHERE genre IS NOT NULL GROUP BY genre ORDER BY quantidade_de_livros DESC; - Expected output shape: multiple rows (one row por gênero). - Columns to SELECT: genre (ou genero) e COUNT(*). - Aggregation: COUNT(*). - GROUP BY: genre. - ORDER BY: opcional (por exemplo, DESC para ver os gêneros com mais livros primeiro).",
+      "feedback": "Consulta é sintaticamente válida e retorna o nome do gênero com a contagem de livros, mas agrupar apenas por T1.nome pode juntar gêneros com o mesmo nome; prefira GROUP BY T1.genero_id, T1.nome. O plano mostra varreduras sequenciais e estimativas discrepantes — rode ANALYZE e, se as tabelas forem grandes, considere índice em livros.genero_id para melhorar desempenho. Remova o NULLS LAST do ORDER BY porque COUNT nunca produz NULL.",
+      "attempts": 1,
+      "all_queries": [
+        "SELECT T1.nome, COUNT(T2.livro_id) FROM generos AS T1 LEFT JOIN livros AS T2 ON T2.genero_id = T1.genero_id GROUP BY T1.nome ORDER BY COUNT(T2.livro_id) DESC NULLS LAST"
+      ],
+      "interpreter_output": {
+        "clarified_question": "Conte quantos livros existem em cada gênero (retornar uma linha por gênero com o nome do gênero e a contagem).",
+        "sub_questions": [],
+        "explicit_intent": "Retornar uma linha por gênero com duas colunas: (gênero, quantidade_de_livros). Calcular usando COUNT(*) agrupado por gênero. SQL padrão: SELECT genre AS genero, COUNT(*) AS quantidade_de_livros FROM livros_table WHERE genre IS NOT NULL GROUP BY genre ORDER BY quantidade_de_livros DESC; - Expected output shape: multiple rows (one row por gênero). - Columns to SELECT: genre (ou genero) e COUNT(*). - Aggregation: COUNT(*). - GROUP BY: genre. - ORDER BY: opcional (por exemplo, DESC para ver os gêneros com mais livros primeiro).",
+        "ambiguities_resolved": [
+          "Interpreted 'gênero' as the book genre column (assume column named 'genre' or 'genero').",
+          "Assumed a single table with books (named e.g., 'books' or 'livros'). If your schema uses different table/column names, substitute accordingly.",
+          "Output shape clarified: return multiple rows (one per gênero) with columns (gênero, contagem). Not a single scalar.",
+          "Default assumption: exclude NULL/unknown genres (use WHERE genre IS NOT NULL). If you want to include NULL as a category, remove that filter or COALESCE genre to 'Unknown'.",
+          "If genres may have inconsistent casing/spacing, consider normalizing (e.g., LOWER(TRIM(genre))) before grouping."
+        ]
+      },
+      "mapper_output": "Resumo da análise do esquema (para gerar a SQL correta)\n\n1) Tabelas selecionadas e por quê\n- generos — selecionada porque contém o nome do gênero (direto match com o pedido \"gênero\") e é a tabela de referência de gêneros.\n- livros — selecionada porque contém os registros dos livros e a coluna genero_id que liga cada livro ao seu gênero.\nRacional: a contagem de livros por gênero exige os livros (entidade a ser contada) e o nome do gênero; essas duas tabelas são suficientes. Não são necessárias outras tabelas.\n\n2) Colunas relevantes (e por que)\n- generos.nome (text) — o nome do gênero que deve aparecer na saída (campo solicitado).\n- generos.genero_id (integer, PK) — chave primária usada para ligar aos livros.\n- livros.livro_id (integer, PK) — identificador do livro; usado para contar livros.\n- livros.genero_id (integer, FK, nullable) — chave estrangeira para generos; relaciona cada livro a um gênero.\nObservação: livros.preço, autor_id etc. não são relevantes para esta contagem.\n\n3) Tipos de coluna e formato de dados\n- generos.genero_id: integer (PK)\n- generos.nome: text (ex.: \"Ficção Científica\" no sample_row)\n- livros.livro_id: integer (PK)\n- livros.genero_id: integer (FK, pode ser NULL segundo schema)\nNão há colunas de data relevantes para esta consulta.\n\n4) Sample rows (exemplos observados)\n- generos sample_row: { genero_id: 1, nome: \"Ficção Científica\" }\n- livros sample_row: { livro_id: 1, titulo: \"Dom Casmurro\", genero_id: 3, ... }\nIsto mostra que livros.genero_id referencia generos.genero_id (valores inteiros).\n\n5) Relacionamentos\n- livros.genero_id → generos.genero_id (foreign key).\n- Chave primária: generos.genero_id; livros.livro_id é PK em livros.\n\n6) Avisos de cardinalidade / recomendação de JOIN\n- IMPORTANTE: para \"retornar uma linha por gênero\" incluindo gêneros que atualmente NÃO têm livros, use LEFT JOIN de generos para livros:\n  - Se usar INNER JOIN (generos JOIN livros), gêneros sem livros serão omitidos.\n  - LEFT JOIN garante que gêneros sem livros apareçam com contagem zero.\n- Contagem correta: contar livros.livro_id (COUNT(livros.livro_id)) — isso conta somente livros associados. Para mostrar zero quando não há livros, usar COUNT(livros.livro_id) com LEFT JOIN (COUNT de coluna não-nula).\n- Observação: livros.genero_id é nullable — livros com genero_id NULL não serão contados em nenhum gênero; se quiser contabilizar esses, é necessário tratá-los separadamente (por exemplo, agrupar por COALESCE(genero, 'Sem gênero')).\n\n7) Validação / notas finais\n- Confirmei que as colunas necessárias existem: generos.nome e livros.livro_id / livros.genero_id estão presentes.\n- Primary choice: usar as tabelas generos (para nome) e livros (para contagem) com LEFT JOIN para garantir uma linha por gênero.\n- Não há ambiguidade de formato de data nem codificações especiais a considerar.\n\nSe desejar, posso agora gerar a consulta SQL recomendada (por exemplo, usando LEFT JOIN e COUNT) para retornar uma linha por gênero com o nome do gênero e a contagem de livros.",
+      "generator_output": {
+        "reasoning_steps": [
+          "Identifiquei as tabelas necessárias: generos (para o nome do gênero) e livros (para contar os livros por gênero).",
+          "Usei LEFT JOIN de generos (T1) para livros (T2) para garantir que gêneros sem livros apareçam com contagem zero.",
+          "Usei COUNT(T2.livro_id) para contar somente livros associados a cada gênero (COUNT de coluna não-nula com LEFT JOIN).",
+          "Agrupei por T1.nome para obter uma linha por gênero e ordenei pela contagem decrescente para ver os gêneros com mais livros primeiro."
+        ],
+        "sub_queries": [],
+        "confidence": 0.95,
+        "sql_query": "SELECT T1.nome, COUNT(T2.livro_id)\nFROM generos AS T1\nLEFT JOIN livros AS T2 ON T2.genero_id = T1.genero_id\nGROUP BY T1.nome\nORDER BY COUNT(T2.livro_id) DESC NULLS LAST"
+      },
+      "validator_output": {
+        "is_valid": true,
+        "is_optimal": false,
+        "syntax_errors": [],
+        "semantic_issues": [
+          "Agrupar apenas por T1.nome pode causar consolidação incorreta se houver gêneros com o mesmo nome; prefira agrupar por T1.genero_id, T1.nome para garantir unicidade.",
+          "ORDER BY COUNT(T2.livro_id) DESC NULLS LAST: COUNT nunca retorna NULL, portanto o NULLS LAST é redundante."
+        ],
+        "efficiency_score": 0.7,
+        "efficiency_issues": [
+          "Varreduras sequenciais (Seq Scan) em 'livros' e 'generos' — pode ser aceitável para agregação completa, mas pode ser lento em tabelas grandes.",
+          "Grande discrepância entre linhas planejadas (1270) e reais (12) indica estatísticas desatualizadas; execute ANALYZE para melhorar estimativas do planejador.",
+          "Sort em memória para ORDER BY COUNT(...) — para grandes números de gêneros, ordenação pode consumir mais memória; sem índice que ajude nesta agregação."
+        ],
+        "refinement_feedback": "Consulta é sintaticamente válida e retorna o nome do gênero com a contagem de livros, mas agrupar apenas por T1.nome pode juntar gêneros com o mesmo nome; prefira GROUP BY T1.genero_id, T1.nome. O plano mostra varreduras sequenciais e estimativas discrepantes — rode ANALYZE e, se as tabelas forem grandes, considere índice em livros.genero_id para melhorar desempenho. Remova o NULLS LAST do ORDER BY porque COUNT nunca produz NULL."
+      },
+      "trace": {
+        "pipeline": "new",
+        "db_name": "livraria",
+        "start_ts": "2025-11-14T21:32:30.473373+00:00",
+        "end_ts": "2025-11-14T21:33:41.885540+00:00",
+        "latency_ms": 71412,
+        "steps": [
+          {
+            "name": "interpreter",
+            "timing_ms": 21410,
+            "input_summary": {
+              "raw_question": "Conte quantos livros por gênero existem."
+            },
+            "output_summary": {
+              "clarified_question": "Conte quantos livros existem em cada gênero (retornar uma linha por gênero com o nome do gênero e a contagem).",
+              "intent": "Retornar uma linha por gênero com duas colunas: (gênero, quantidade_de_livros). Calcular usando COUNT(*) agrupado por gênero. SQL padrão: SELECT genre AS genero, COUNT(*) AS quantidade_de_livros FROM livros_table WHERE genre IS NOT NULL GROUP BY genre ORDER BY quantidade_de_livros DESC; - Expected o",
+              "sub_questions_count": 0
+            },
+            "error": null
+          },
+          {
+            "name": "mapper",
+            "timing_ms": 19613,
+            "input_summary": {
+              "clarified_question": "Conte quantos livros existem em cada gênero (retornar uma linha por gênero com o nome do gênero e a contagem).",
+              "all_tables_count": 6
+            },
+            "output_summary": {
+              "output_length": 3009,
+              "output_preview": "Resumo da análise do esquema (para gerar a SQL correta)\n\n1) Tabelas selecionadas e por quê\n- generos — selecionada porque contém o nome do gênero (direto match com o pedido \"gênero\") e é a tabela de referência de gêneros.\n- livros — selecionada porque contém os registros dos livros e a coluna genero"
+            },
+            "error": null
+          },
+          {
+            "name": "generator",
+            "timing_ms": 8021,
+            "input_summary": {
+              "clarified_question": "Conte quantos livros existem em cada gênero (retornar uma linha por gênero com o nome do gênero e a contagem).",
+              "attempt": 1
+            },
+            "output_summary": {
+              "sql_length": 168,
+              "reasoning_steps_count": 4,
+              "confidence": 0.95
+            },
+            "error": null
+          },
+          {
+            "name": "validator",
+            "timing_ms": 22219,
+            "input_summary": {
+              "sql_length": 168,
+              "attempt": 1
+            },
+            "output_summary": {
+              "is_valid": true,
+              "is_optimal": false,
+              "efficiency_score": 0.7,
+              "syntax_error_count": 0,
+              "semantic_issue_count": 2
+            },
+            "error": null
+          }
+        ],
+        "tools": [
+          {
+            "agent": "mapper",
+            "tool": "get_table_info",
+            "args_redacted": [
+              "generos",
+              "livros"
+            ],
+            "result_preview": "Retrieved info for 2 tables",
+            "timing_ms": 65,
+            "error": null
+          }
+        ],
+        "generator": {
+          "sql_query": "SELECT T1.nome, COUNT(T2.livro_id) FROM generos AS T1 LEFT JOIN livros AS T2 ON T2.genero_id = T1.genero_id GROUP BY T1.nome ORDER BY COUNT(T2.livro_id) DESC NULLS LAST",
+          "reasoning_steps": [
+            "Identifiquei as tabelas necessárias: generos (para o nome do gênero) e livros (para contar os livros por gênero).",
+            "Usei LEFT JOIN de generos (T1) para livros (T2) para garantir que gêneros sem livros apareçam com contagem zero.",
+            "Usei COUNT(T2.livro_id) para contar somente livros associados a cada gênero (COUNT de coluna não-nula com LEFT JOIN).",
+            "Agrupei por T1.nome para obter uma linha por gênero e ordenei pela contagem decrescente para ver os gêneros com mais livros primeiro."
+          ],
+          "confidence": 0.95
+        },
+        "mapper": {
+          "all_tables_count": 6,
+          "selected_tables": [
+            "generos",
+            "livros"
+          ]
+        }
+      }
+    },
+    "analyzer_output": {
+      "analyzer_match": true,
+      "approved": true,
+      "failure_step": "none",
+      "failure_reason": "Result is correct - rule-based match (EM or RM) confirms correctness",
+      "query_issues": "No issues found - query matches expected results",
+      "root_cause": "Result is correct - validated by exact match or execution match",
+      "suggestions": []
+    }
+  },
+  {
+    "dataset": "livraria",
+    "index": 14,
+    "question_id": 14,
+    "db_id": null,
+    "question": "Quais gêneros possuem mais de 3 livros cadastrados?",
+    "gold_sql": "SELECT g.nome, COUNT(*) AS qtd FROM livros l JOIN generos g ON g.genero_id = l.genero_id GROUP BY g.nome HAVING COUNT(*) > 3 ORDER BY qtd DESC;",
+    "predicted_sql": "SELECT T1.nome, COUNT(T2.livro_id) FROM generos AS T1 INNER JOIN livros AS T2 ON T2.genero_id = T1.genero_id GROUP BY T1.genero_id, T1.nome HAVING COUNT(T2.livro_id) > 3 ORDER BY COUNT(T2.livro_id) DESC NULLS LAST",
+    "exact_match": false,
+    "execution_match": true,
+    "analyzer_match": true,
+    "error": null,
+    "execution_error": null,
+    "gold_execution_results": [
+      {
+        "nome": "Romance",
+        "qtd": 6
+      },
+      {
+        "nome": "Ficção Científica",
+        "qtd": 5
+      }
+    ],
+    "predicted_execution_results": [
+      {
+        "nome": "Romance",
+        "count": 6
+      },
+      {
+        "nome": "Ficção Científica",
+        "count": 5
+      }
+    ],
+    "db_name": "livraria",
+    "metadata": {
+      "latency_ms": 68344,
+      "tokens_in": null,
+      "tokens_out": null,
+      "model_name": null
+    },
+    "agent_trace": {
+      "status": "GENERATED",
+      "sql": "SELECT T1.nome, COUNT(T2.livro_id) FROM generos AS T1 INNER JOIN livros AS T2 ON T2.genero_id = T1.genero_id GROUP BY T1.genero_id, T1.nome HAVING COUNT(T2.livro_id) > 3 ORDER BY COUNT(T2.livro_id) DESC NULLS LAST",
+      "error": null,
+      "plan": "Retornar a lista de gêneros que possuem mais de 3 livros registrados. Saída esperada: linhas com colunas (genre_name, book_count). Padrão SQL (esquema com tabela genres e books ligada por genre_id):\n\nSELECT g.name AS genre_name, COUNT(b.id) AS book_count\nFROM genres g\nJOIN books b ON b.genre_id = g.id\nGROUP BY g.id, g.name\nHAVING COUNT(b.id) > 3\nORDER BY book_count DESC;\n\nSe o esquema não tiver tabela genres e o gênero estiver em books.genero (texto):\n\nSELECT b.genero AS genre_name, COUNT(*) AS book_count\nFROM books b\nGROUP BY b.genero\nHAVING COUNT(*) > 3\nORDER BY book_count DESC;\n\nAgregação usada: COUNT(book_id) por gênero. Filtro: HAVING COUNT(...) > 3 (estritamente mais de 3). GROUP BY por gênero. Não há divisão temporal nem outras transformações.",
+      "feedback": "Consulta é sintaticamente válida e responde corretamente à pergunta, mas não é ótima: o plano mostra varreduras sequenciais e estimativas imprecisas. Crie um índice em livros.genero_id e execute ANALYZE para melhorar o plano; opcionalmente agrupe apenas por t1.genero_id (nome é funcionalmente dependente) e use COUNT(*) para pequeno ganho de clareza.",
+      "attempts": 1,
+      "all_queries": [
+        "SELECT T1.nome, COUNT(T2.livro_id) FROM generos AS T1 INNER JOIN livros AS T2 ON T2.genero_id = T1.genero_id GROUP BY T1.genero_id, T1.nome HAVING COUNT(T2.livro_id) > 3 ORDER BY COUNT(T2.livro_id) DESC NULLS LAST"
+      ],
+      "interpreter_output": {
+        "clarified_question": "Quais gêneros (nomes) têm mais de 3 livros cadastrados no banco de dados?",
+        "sub_questions": [],
+        "explicit_intent": "Retornar a lista de gêneros que possuem mais de 3 livros registrados. Saída esperada: linhas com colunas (genre_name, book_count). Padrão SQL (esquema com tabela genres e books ligada por genre_id):\n\nSELECT g.name AS genre_name, COUNT(b.id) AS book_count\nFROM genres g\nJOIN books b ON b.genre_id = g.id\nGROUP BY g.id, g.name\nHAVING COUNT(b.id) > 3\nORDER BY book_count DESC;\n\nSe o esquema não tiver tabela genres e o gênero estiver em books.genero (texto):\n\nSELECT b.genero AS genre_name, COUNT(*) AS book_count\nFROM books b\nGROUP BY b.genero\nHAVING COUNT(*) > 3\nORDER BY book_count DESC;\n\nAgregação usada: COUNT(book_id) por gênero. Filtro: HAVING COUNT(...) > 3 (estritamente mais de 3). GROUP BY por gênero. Não há divisão temporal nem outras transformações.",
+        "ambiguities_resolved": [
+          "Interpretei 'gêneros' como as entidades de gênero literário; pode ser uma tabela separada (genres) ou um campo na tabela books (books.genero).",
+          "Interpretei 'mais de 3' como estritamente maior que 3 (COUNT > 3), não >= 3.",
+          "Interpretei 'cadastrados' como todos os registros atuais na(s) tabela(s) — não apliquei nenhum filtro temporal ou de status, pois não foi solicitado.",
+          "Saída padrão escolhida: retornar tanto o nome do gênero quanto a contagem de livros (genre_name, book_count). Se preferir apenas os nomes, a query pode usar SELECT g.name ... HAVING COUNT(...) > 3 sem retornar book_count.",
+          "Não foi necessário considerar relações 'bond/connection' especiais — apenas agregação por gênero."
+        ]
+      },
+      "mapper_output": "Resumo do mapeamento de esquema para responder: \"Quais gêneros (nomes) têm mais de 3 livros cadastrados no banco de dados?\"\n\n1) Tabelas selecionadas e motivo\n- generos — selecionada porque contém o nome do gênero (direto match com \"gêneros\" / \"nomes\"). É onde obtemos o texto do gênero para exibir.\n- livros — selecionada porque contém os registros de livros que serão contados por gênero (contém genero_id e livro_id). Combinando livros (contagem) + generos (nome) obtemos a resposta.\n\nEscolhi apenas essas duas porque elas são suficientes: livros contém os itens a serem agregados; generos converte o id em nome legível. Não é necessário juntar outras tabelas (autores, editoras, etc.) para esta pergunta.\n\n2) Colunas-chave (por tabela) e por que são relevantes\n- livros\n  - livro_id (integer, PK) — serve para contar livros de forma única (COUNT(livro_id) ou COUNT(*) por grupo).\n  - genero_id (integer, nullable) — chave estrangeira que liga cada livro a um gênero; é a coluna usada para agrupar/filtrar.\n- generos\n  - genero_id (integer, PK) — chave primária que se relaciona com livros.genero_id.\n  - nome (text) — nome do gênero; é o valor final que a pergunta solicita.\n\n3) Tipos de coluna e formato de dados relevantes\n- genero_id: integer (em ambas as tabelas).\n- livro_id: integer.\n- nome (generos): text.\n- Não há colunas de data envolvidas nesta pergunta — nada a documentar sobre formato de data.\n\n4) Sample rows / exemplos observados\n- generos sample_row: { genero_id: 1, nome: 'Ficção Científica' }\n- livros sample_row: { livro_id: 1, titulo: 'Dom Casmurro', ano_publicacao: 1899, isbn: '978-85-12345-01-0', autor_id: 1, editora_id: 1, genero_id: 3, preco: '39.90' }\nObservação: no sample os IDs de exemplo não precisam corresponder (ex.: livro sample tem genero_id = 3 enquanto generos sample mostra genero_id = 1). Isso apenas ilustra formatos; a relação real vem dos valores em cada tabela no banco.\n\n5) Relacionamentos (foreign keys)\n- livros.genero_id -> generos.genero_id (FK). Modelo many-to-one: muitos livros por um gênero.\n- Essa relação é suficiente para juntar livros ao nome do gênero.\n\n6) Considerações sobre cardinalidade e JOINs\n- WARNING (cardinalidade): A contagem de livros por gênero deve ser feita a partir da tabela livros. Fazer um INNER JOIN com generos para obter o nome não altera a contagem (cada livro corresponde a, no máximo, um gênero). Porém:\n  - Se livros.genero_id for NULL, esses livros serão excluídos de um GROUP BY por genero_id/INNER JOIN — se quiser incluir um rótulo \"Sem gênero\", use LEFT JOIN e trate NULLs explicitamente.\n  - Como existe FK declarada, espera-se integridade referencial (livros.genero_id aponta para um registro em generos). Se houver inconsistência na base, um INNER JOIN pode eliminar livros com genero_id inválido; nesse caso um LEFT JOIN + COALESCE pode ser preferível.\n- Esta consulta pode ser respondida usando apenas livros (agrupando por genero_id e filtrando COUNT > 3). Contudo, para retornar os nomes legíveis dos gêneros é necessário juntar com generos. Em resumo:\n  - \"Esta consulta pode ser respondida usando somente livros para calcular as contagens; junte com generos apenas para mapear genero_id → nome.\"\n\n7) Validações / Ambiguidades\n- Confirmado: generos.nome existe e é o campo a mostrar como \"nome do gênero\".\n- Confirmado: livros possui genero_id e livro_id necessários para agrupar e contar.\n- Ambiguidade potencial: livros.genero_id é nullable — decidir se NULLs devem ser contados como um \"gênero desconhecido\" ou ignorados. A interpretação padrão aqui (pergunta) é listar gêneros com nome (ou seja, apenas gêneros registrados na tabela generos com mais de 3 livros).\n\n8) Observações finais / instruções para o gerador SQL\n- Abordagem recomendada (padrão): contar livros por genero_id em livros, filtrar HAVING COUNT(*) > 3, e INNER JOIN com generos para obter generos.nome.\n- Se desejar incluir livros sem genero atribuído, usar LEFT JOIN e agrupar por generos.nome (COALESCE(generos.nome, 'Sem gênero')).\n- Ordenação sugerida (opcional): ORDER BY COUNT(*) DESC para listar primeiro os gêneros com mais livros.\n\nExemplo lógico da intenção SQL (não é o SQL final aqui, apenas a ideia):\n- SELECT g.nome, COUNT(*) as total\n  FROM livros l\n  JOIN generos g ON l.genero_id = g.genero_id\n  GROUP BY g.nome\n  HAVING COUNT(*) > 3;\n\nCom isso, o SQL Generator tem os elementos necessários: tabelas principais (livros, generos), colunas-chave (livro_id, genero_id, nome), relações e as considerações sobre JOINs e NULLs.",
+      "generator_output": {
+        "reasoning_steps": [
+          "Selected tables generos (T1) and livros (T2) because generos.nome provides the genre name and livros contains the book rows to count.",
+          "Join generos and livros on T2.genero_id = T1.genero_id to map each book to its genre name.",
+          "Aggregate by genre using COUNT(T2.livro_id) to count books per genre and include all non-aggregated columns in GROUP BY (T1.genero_id, T1.nome).",
+          "Filter groups with HAVING COUNT(T2.livro_id) > 3 to keep only genres with strictly more than 3 books.",
+          "Order results by the count descending for convenience; no column aliases or CTEs used to comply with dataset rules."
+        ],
+        "sub_queries": [],
+        "confidence": 0.95,
+        "sql_query": "SELECT T1.nome, COUNT(T2.livro_id)\nFROM generos AS T1\nINNER JOIN livros AS T2 ON T2.genero_id = T1.genero_id\nGROUP BY T1.genero_id, T1.nome\nHAVING COUNT(T2.livro_id) > 3\nORDER BY COUNT(T2.livro_id) DESC NULLS LAST;"
+      },
+      "validator_output": {
+        "is_valid": true,
+        "is_optimal": false,
+        "syntax_errors": [],
+        "semantic_issues": [],
+        "efficiency_score": 0.75,
+        "efficiency_issues": [
+          "Sequential scans on livros and generos (no index used on livros.genero_id)",
+          "Planner estimated rows (210) far from actual rows (2), indicating outdated statistics",
+          "Grouping by both t1.genero_id and t1.nome is redundant if genero_id is primary key"
+        ],
+        "refinement_feedback": "Consulta é sintaticamente válida e responde corretamente à pergunta, mas não é ótima: o plano mostra varreduras sequenciais e estimativas imprecisas. Crie um índice em livros.genero_id e execute ANALYZE para melhorar o plano; opcionalmente agrupe apenas por t1.genero_id (nome é funcionalmente dependente) e use COUNT(*) para pequeno ganho de clareza."
+      },
+      "trace": {
+        "pipeline": "new",
+        "db_name": "livraria",
+        "start_ts": "2025-11-14T21:32:30.477405+00:00",
+        "end_ts": "2025-11-14T21:33:38.779238+00:00",
+        "latency_ms": 68301,
+        "steps": [
+          {
+            "name": "interpreter",
+            "timing_ms": 15879,
+            "input_summary": {
+              "raw_question": "Quais gêneros possuem mais de 3 livros cadastrados?"
+            },
+            "output_summary": {
+              "clarified_question": "Quais gêneros (nomes) têm mais de 3 livros cadastrados no banco de dados?",
+              "intent": "Retornar a lista de gêneros que possuem mais de 3 livros registrados. Saída esperada: linhas com colunas (genre_name, book_count). Padrão SQL (esquema com tabela genres e books ligada por genre_id):\n\nSELECT g.name AS genre_name, COUNT(b.id) AS book_count\nFROM genres g\nJOIN books b ON b.genre_id = g.",
+              "sub_questions_count": 0
+            },
+            "error": null
+          },
+          {
+            "name": "mapper",
+            "timing_ms": 21093,
+            "input_summary": {
+              "clarified_question": "Quais gêneros (nomes) têm mais de 3 livros cadastrados no banco de dados?",
+              "all_tables_count": 6
+            },
+            "output_summary": {
+              "output_length": 4511,
+              "output_preview": "Resumo do mapeamento de esquema para responder: \"Quais gêneros (nomes) têm mais de 3 livros cadastrados no banco de dados?\"\n\n1) Tabelas selecionadas e motivo\n- generos — selecionada porque contém o nome do gênero (direto match com \"gêneros\" / \"nomes\"). É onde obtemos o texto do gênero para exibir.\n-"
+            },
+            "error": null
+          },
+          {
+            "name": "generator",
+            "timing_ms": 9212,
+            "input_summary": {
+              "clarified_question": "Quais gêneros (nomes) têm mais de 3 livros cadastrados no banco de dados?",
+              "attempt": 1
+            },
+            "output_summary": {
+              "sql_length": 214,
+              "reasoning_steps_count": 5,
+              "confidence": 0.95
+            },
+            "error": null
+          },
+          {
+            "name": "validator",
+            "timing_ms": 21974,
+            "input_summary": {
+              "sql_length": 213,
+              "attempt": 1
+            },
+            "output_summary": {
+              "is_valid": true,
+              "is_optimal": false,
+              "efficiency_score": 0.75,
+              "syntax_error_count": 0,
+              "semantic_issue_count": 0
+            },
+            "error": null
+          }
+        ],
+        "tools": [
+          {
+            "agent": "mapper",
+            "tool": "get_table_info",
+            "args_redacted": [
+              "generos",
+              "livros"
+            ],
+            "result_preview": "Retrieved info for 2 tables",
+            "timing_ms": 51,
+            "error": null
+          }
+        ],
+        "generator": {
+          "sql_query": "SELECT T1.nome, COUNT(T2.livro_id) FROM generos AS T1 INNER JOIN livros AS T2 ON T2.genero_id = T1.genero_id GROUP BY T1.genero_id, T1.nome HAVING COUNT(T2.livro_id) > 3 ORDER BY COUNT(T2.livro_id) DESC NULLS LAST",
+          "reasoning_steps": [
+            "Selected tables generos (T1) and livros (T2) because generos.nome provides the genre name and livros contains the book rows to count.",
+            "Join generos and livros on T2.genero_id = T1.genero_id to map each book to its genre name.",
+            "Aggregate by genre using COUNT(T2.livro_id) to count books per genre and include all non-aggregated columns in GROUP BY (T1.genero_id, T1.nome).",
+            "Filter groups with HAVING COUNT(T2.livro_id) > 3 to keep only genres with strictly more than 3 books.",
+            "Order results by the count descending for convenience; no column aliases or CTEs used to comply with dataset rules."
+          ],
+          "confidence": 0.95
+        },
+        "mapper": {
+          "all_tables_count": 6,
+          "selected_tables": [
+            "generos",
+            "livros"
+          ]
+        }
+      }
+    },
+    "analyzer_output": {
+      "analyzer_match": true,
+      "approved": true,
+      "failure_step": "none",
+      "failure_reason": "Result is correct - rule-based match (EM or RM) confirms correctness",
+      "query_issues": "No issues found - query matches expected results",
+      "root_cause": "Result is correct - validated by exact match or execution match",
+      "suggestions": []
+    }
+  }
+]

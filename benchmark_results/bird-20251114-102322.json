@@ -1,0 +1,976 @@
+[
+  {
+    "dataset": "bird",
+    "index": 215,
+    "question_id": 931,
+    "db_id": "formula_1",
+    "question": "What was the fastest lap speed among all drivers in the 2009 Spanish Grand Prix?",
+    "gold_sql": "SELECT T2.fastestLapSpeed FROM races AS T1 INNER JOIN results AS T2 ON T2.raceId = T1.raceId WHERE T1.name = 'Spanish Grand Prix' AND T1.year = 2009 AND NOT T2.fastestLapSpeed IS NULL ORDER BY T2.fastestLapSpeed DESC NULLS LAST LIMIT 1",
+    "predicted_sql": "SELECT MAX(CAST(T1.\"fastestlapspeed\" AS numeric)) FROM results AS T1 INNER JOIN races AS T2 ON T1.\"raceid\" = T2.\"raceid\" WHERE T2.\"year\" = 2009 AND (T2.\"name\" ILIKE '%Spanish Grand Prix%' OR T2.\"name\" ILIKE '%Spanish%' OR T2.\"location\" ILIKE '%Spain%' OR T2.\"circuit_country\" ILIKE '%Spain%') AND T1.\"fastestlapspeed\" IS NOT NULL AND T1.\"fastestlapspeed\" <> ''",
+    "exact_match": false,
+    "execution_match": null,
+    "analyzer_match": false,
+    "error": "Erro de sintaxe: SQL error: column t2.location does not exist.",
+    "execution_error": "Predicted SQL execution error: column t2.location does not exist",
+    "gold_execution_results": [
+      {
+        "fastestlapspeed": "202.484"
+      }
+    ],
+    "predicted_execution_results": null,
+    "db_name": "passarinho",
+    "metadata": {
+      "latency_ms": 77776,
+      "tokens_in": null,
+      "tokens_out": null,
+      "model_name": null
+    },
+    "agent_trace": {
+      "status": "REJECTED",
+      "sql": "SELECT MAX(CAST(T1.\"fastestlapspeed\" AS numeric)) FROM results AS T1 INNER JOIN races AS T2 ON T1.\"raceid\" = T2.\"raceid\" WHERE T2.\"year\" = 2009 AND (T2.\"name\" ILIKE '%Spanish Grand Prix%' OR T2.\"name\" ILIKE '%Spanish%' OR T2.\"location\" ILIKE '%Spain%' OR T2.\"circuit_country\" ILIKE '%Spain%') AND T1.\"fastestlapspeed\" IS NOT NULL AND T1.\"fastestlapspeed\" <> ''",
+      "error": "Erro de sintaxe: SQL error: column t2.location does not exist.",
+      "plan": null,
+      "feedback": null,
+      "attempts": 1,
+      "all_queries": [
+        "SELECT MAX(CAST(T1.\"fastestlapspeed\" AS numeric)) FROM results AS T1 INNER JOIN races AS T2 ON T1.\"raceid\" = T2.\"raceid\" WHERE T2.\"year\" = 2009 AND (T2.\"name\" ILIKE '%Spanish Grand Prix%' OR T2.\"name\" ILIKE '%Spanish%' OR T2.\"location\" ILIKE '%Spain%' OR T2.\"circuit_country\" ILIKE '%Spain%') AND T1.\"fastestlapspeed\" IS NOT NULL AND T1.\"fastestlapspeed\" <> ''"
+      ],
+      "interpreter_output": {
+        "clarified_question": "What was the single highest lap speed (maximum lap speed) recorded by any driver during the 2009 Spanish Grand Prix race?",
+        "sub_questions": [],
+        "explicit_intent": "Return a single scalar: the maximum lap speed value recorded for the 2009 Spanish Grand Prix. Expected output shape: one row, one column (scalar). SQL pattern: SELECT MAX(lap_speed_column) FROM lap_times JOIN races ON lap_times.race_id = races.race_id WHERE races.year = 2009 AND (races.name ILIKE '%Spanish%' OR races.circuit_country ILIKE '%Spain%' OR races.location ILIKE '%Spain%'); Alternate pattern if speeds are stored in results: SELECT MAX(results.fastest_lap_speed) FROM results JOIN races ON results.race_id = races.race_id WHERE races.year = 2009 AND (races.name ILIKE '%Spanish%' OR races.circuit_country ILIKE '%Spain%'); Aggregation: MAX(). Do NOT GROUP BY. If you need session scoping, add AND lap_times.session = 'RACE' or similar. Report units (e.g., km/h) if available.",
+        "ambiguities_resolved": [
+          "Interpreted '2009 Spanish Grand Prix' as the Formula 1 race held in Spain in calendar year 2009. Filter by races.year = 2009 and match race name/circuit/location to 'Spanish' or 'Spain'.",
+          "Interpreted 'fastest lap speed among all drivers' as the single highest lap speed value across all lap records in that race (the MAX of the lap speed column). Did NOT interpret as per-driver maxima unless explicitly requested.",
+          "Output shape: single scalar value (one row, one column) — do not return per-driver rows or extra columns.",
+          "Assumed lap-level speed data exists (e.g., lap_times.speed or lap_times.speed_kph). If only per-driver fastest lap speeds exist in a results table, use MAX(results.fastest_lap_speed) instead.",
+          "Assumed speeds are measured in a single unit (commonly km/h); surface this assumption and convert if the schema uses a different unit."
+        ]
+      },
+      "mapper_output": "Selected tables (3-5) and why they’re relevant\n1. results — PRIMARY choice. This table contains per-driver metrics for a given race, including fastestlapspeed (sample: \"209.158\") and fastestlaptime. The question asks for the single highest lap speed in a specific race; results.fastestlapspeed is the closest direct match (precomputed per-driver fastest-lap speed).\n2. races — REQUIRED to identify the Spanish Grand Prix in 2009 and obtain its raceid. Filter on races.year = 2009 and races.name = 'Spanish Grand Prix' (or LIKE '%Spanish Grand Prix%') to get the right raceid for the results table.\n3. drivers — OPTIONAL. If you also want to show which driver recorded that top speed, join results.driverid -> drivers.driverid to get forename/surname. Not required to compute the numeric maximum but useful for attribution.\n4. laptimes — INCLUDED for completeness / domain note. laptimes contains per-lap times (time, milliseconds) but does NOT contain a speed column, so it cannot directly answer \"maximum lap speed\" without extra track-length data. Thus laptimes is not necessary for the simple max-speed computation.\n\nKey columns (and why they matter)\n- races.raceid (bigint): primary key to identify the race.\n- races.year (bigint) and races.name (text): used to filter to the 2009 Spanish Grand Prix.\n- results.raceid (bigint): FK to races; use to restrict results to that race.\n- results.fastestlapspeed (text): the per-driver fastest lap speed value (sample: \"209.158\"). This is the primary metric to aggregate (take MAX).\n- results.driverid (bigint): FK to drivers, use only if you want the driver who achieved the max.\n- drivers.forename, drivers.surname (text): to report driver name when joining.\n- laptimes.milliseconds (bigint) and laptimes.time (text): per-lap timing available, but no speed column — included for note only.\n\nColumn types & date handling\n- races.year is an integer (bigint). Filter by year using numeric equality: races.year = 2009.\n- races.name is text. Use exact match or LIKE: races.name = 'Spanish Grand Prix' or races.name ILIKE '%Spanish Grand Prix%'.\n- results.fastestlapspeed is stored as text (sample shows \"209.158\"). Important: cast to numeric (float/decimal) before taking MAX: e.g., CAST(results.fastestlapspeed AS numeric) or results.fastestlapspeed::numeric.\n- laptimes.time is text in \"M:SS.mmm\" format (sample \"1:52.965\"); laptimes.milliseconds is bigint (sample 112965) if you needed to compute speed from lap time.\n\nSample data references (from sample_row)\n- results.sample_row shows: fastestlaptime = \"1:35.405\", fastestlapspeed = \"209.158\" — demonstrates the fastestlapspeed format (string decimal).\n- races.sample_row (example) shows structure: raceid, year, name, date — confirming these columns exist. A search found the race name \"Spanish Grand Prix\" in the races.name column.\n- laptimes.sample_row: {raceid:2, driverid:1, lap:1, time:\"1:52.965\", milliseconds:112965} — shows time format and millisecond numeric storage.\n- drivers.sample_row: {driverid:1, forename:\"Lewis\", surname:\"Hamilton\"} — shows how to get driver names.\n\nRelationships / foreign keys\n- laptimes.driverid -> drivers.driverid\n- laptimes.raceid -> races.raceid\n- results.driverid -> drivers.driverid\n- results.raceid -> races.raceid\n\nBecause of these FKs:\n- To restrict results to the 2009 Spanish GP, join or filter results using the raceid found in races where year=2009 and name='Spanish Grand Prix'.\n- If you want driver names, join results.driverid -> drivers.driverid.\n\nValue encodings / domain notes\n- results.fastestlapspeed is a text decimal like \"209.158\". It should be interpreted as a numeric speed value (likely km/h in this dataset, but units are not explicitly in the schema). Cast to numeric before aggregation.\n- Some rows may have NULL/empty fastestlapspeed; use a WHERE results.fastestlapspeed IS NOT NULL (or filter after casting) to avoid cast errors.\n\nCardinality & join warnings\n- This query can be answered using only the results table (plus races to find the raceid): you do NOT need to join laptimes. Using only results avoids unintended cardinality changes.\n- If you join drivers to show the driver name who set the max, the join is many-to-one (results -> drivers) and will not change the MAX computation, but ensure you find the result row that produced the MAX (e.g., select the results row with the maximum casted fastestlapspeed).\n- WARNING: Joining results to laptimes (or other per-lap tables) is unnecessary and could complicate the query; do not join them for this aggregation.\n\nValidation notes & ambiguities\n- Confirmed existence of required columns: races.name, races.year, races.raceid; results.fastestlapspeed, results.raceid, results.driverid; drivers.forename/surname.\n- Important: fastestlapspeed is stored as text — must be cast to numeric for MAX. Also ensure you filter to the correct race (Spain 2009) — use both year and name to be precise.\n- If multiple races are named 'Spanish Grand Prix' across years, filter by races.year = 2009 to get the correct event.\n\nRecommended approach (summary for SQL generator)\n- Find the raceid for the Spanish Grand Prix in 2009 from races (WHERE year = 2009 AND name ILIKE '%Spanish Grand Prix%').\n- Use results filtered to that raceid and compute MAX(CAST(fastestlapspeed AS numeric)) to get the single highest lap speed recorded by any driver in that race.\n- Optionally, join drivers to identify which driver achieved that max and include fastestlaptime if desired.\n\nExample logic (descriptive, not SQL here):\n- Identify raceid for races.name = 'Spanish Grand Prix' AND races.year = 2009.\n- Compute MAX(CAST(results.fastestlapspeed AS numeric)) FROM results WHERE results.raceid = that raceid AND results.fastestlapspeed IS NOT NULL.\n- Optionally return the driver row(s) where CAST(fastestlapspeed AS numeric) equals that MAX to get the driver name and lap info.\n\nIf you want, I can now generate the exact SQL statement(s) to compute the maximum fastest lap speed for the 2009 Spanish Grand Prix and optionally return the driver who recorded it. Which output would you prefer?",
+      "generator_output": {
+        "reasoning_steps": [
+          "Use the results table (per-driver fastest lap speed) and races table (to identify the 2009 Spanish Grand Prix).",
+          "Join results (T1) to races (T2) on raceid and filter races to year = 2009 and Spanish identifiers in name/location/circuit_country.",
+          "Exclude NULL or empty fastestlapspeed values and cast the text speed to numeric before aggregation.",
+          "Return a single scalar: the maximum of the casted fastestlapspeed values for that race."
+        ],
+        "sub_queries": [],
+        "confidence": 0.92,
+        "sql_query": "SELECT MAX(CAST(T1.\"fastestlapspeed\" AS numeric))\nFROM results AS T1\nINNER JOIN races AS T2 ON T1.\"raceid\" = T2.\"raceid\"\nWHERE T2.\"year\" = 2009\n  AND (T2.\"name\" ILIKE '%Spanish Grand Prix%'\n       OR T2.\"name\" ILIKE '%Spanish%'\n       OR T2.\"location\" ILIKE '%Spain%'\n       OR T2.\"circuit_country\" ILIKE '%Spain%')\n  AND T1.\"fastestlapspeed\" IS NOT NULL\n  AND T1.\"fastestlapspeed\" <> ''"
+      },
+      "validator_output": {
+        "is_valid": false,
+        "is_optimal": false,
+        "syntax_errors": [
+          "SQL error: column t2.location does not exist"
+        ],
+        "semantic_issues": [],
+        "efficiency_score": 0.0,
+        "efficiency_issues": [],
+        "refinement_feedback": "Erro de sintaxe: SQL error: column t2.location does not exist."
+      },
+      "trace": {
+        "pipeline": "new",
+        "db_name": "passarinho",
+        "start_ts": "2025-11-14T13:23:22.108400+00:00",
+        "end_ts": "2025-11-14T13:24:39.775140+00:00",
+        "latency_ms": 77666,
+        "steps": [
+          {
+            "name": "interpreter",
+            "timing_ms": 20386,
+            "input_summary": {
+              "raw_question": "What was the fastest lap speed among all drivers in the 2009 Spanish Grand Prix?"
+            },
+            "output_summary": {
+              "clarified_question": "What was the single highest lap speed (maximum lap speed) recorded by any driver during the 2009 Spanish Grand Prix race?",
+              "intent": "Return a single scalar: the maximum lap speed value recorded for the 2009 Spanish Grand Prix. Expected output shape: one row, one column (scalar). SQL pattern: SELECT MAX(lap_speed_column) FROM lap_times JOIN races ON lap_times.race_id = races.race_id WHERE races.year = 2009 AND (races.name ILIKE '%",
+              "sub_questions_count": 0
+            },
+            "error": null
+          },
+          {
+            "name": "mapper",
+            "timing_ms": 43475,
+            "input_summary": {
+              "clarified_question": "What was the single highest lap speed (maximum lap speed) recorded by any driver during the 2009 Spanish Grand Prix race?",
+              "all_tables_count": 75
+            },
+            "output_summary": {
+              "output_length": 6088,
+              "output_preview": "Selected tables (3-5) and why they’re relevant\n1. results — PRIMARY choice. This table contains per-driver metrics for a given race, including fastestlapspeed (sample: \"209.158\") and fastestlaptime. The question asks for the single highest lap speed in a specific race; results.fastestlapspeed is the"
+            },
+            "error": null
+          },
+          {
+            "name": "generator",
+            "timing_ms": 13594,
+            "input_summary": {
+              "clarified_question": "What was the single highest lap speed (maximum lap speed) recorded by any driver during the 2009 Spanish Grand Prix race?",
+              "attempt": 1
+            },
+            "output_summary": {
+              "sql_length": 387,
+              "reasoning_steps_count": 4,
+              "confidence": 0.92
+            },
+            "error": null
+          },
+          {
+            "name": "validator",
+            "timing_ms": 14,
+            "input_summary": {
+              "sql_length": 360,
+              "attempt": 1
+            },
+            "output_summary": {
+              "is_valid": false,
+              "is_optimal": false,
+              "efficiency_score": 0.0,
+              "syntax_error_count": 1,
+              "semantic_issue_count": 0
+            },
+            "error": null
+          }
+        ],
+        "tools": [
+          {
+            "agent": "mapper",
+            "tool": "get_table_info",
+            "args_redacted": [
+              "laptimes",
+              "races",
+              "results",
+              "drivers"
+            ],
+            "result_preview": "Retrieved info for 4 tables",
+            "timing_ms": 94,
+            "error": null
+          },
+          {
+            "agent": "mapper",
+            "tool": "search_column_values",
+            "args_redacted": {
+              "table_name": "races",
+              "column_name": "name",
+              "keyword": "Spanish",
+              "limit": 10
+            },
+            "result_preview": "Found 1 matching values",
+            "timing_ms": 11,
+            "error": null
+          },
+          {
+            "agent": "mapper",
+            "tool": "search_column_values",
+            "args_redacted": {
+              "table_name": "races",
+              "column_name": "year",
+              "keyword": "2009",
+              "limit": 50
+            },
+            "result_preview": "Found 1 matching values",
+            "timing_ms": 3,
+            "error": null
+          }
+        ],
+        "generator": {
+          "sql_query": "SELECT MAX(CAST(T1.\"fastestlapspeed\" AS numeric)) FROM results AS T1 INNER JOIN races AS T2 ON T1.\"raceid\" = T2.\"raceid\" WHERE T2.\"year\" = 2009 AND (T2.\"name\" ILIKE '%Spanish Grand Prix%' OR T2.\"name\" ILIKE '%Spanish%' OR T2.\"location\" ILIKE '%Spain%' OR T2.\"circuit_country\" ILIKE '%Spain%') AND T1.\"fastestlapspeed\" IS NOT NULL AND T1.\"fastestlapspeed\" <> ''",
+          "reasoning_steps": [
+            "Use the results table (per-driver fastest lap speed) and races table (to identify the 2009 Spanish Grand Prix).",
+            "Join results (T1) to races (T2) on raceid and filter races to year = 2009 and Spanish identifiers in name/location/circuit_country.",
+            "Exclude NULL or empty fastestlapspeed values and cast the text speed to numeric before aggregation.",
+            "Return a single scalar: the maximum of the casted fastestlapspeed values for that race."
+          ],
+          "confidence": 0.92
+        },
+        "mapper": {
+          "all_tables_count": 75,
+          "selected_tables": [
+            "laptimes",
+            "races",
+            "results",
+            "drivers"
+          ]
+        }
+      }
+    },
+    "analyzer_output": {
+      "analyzer_match": false,
+      "approved": false,
+      "failure_step": "mapper",
+      "failure_reason": "The pipeline generated a SQL query that references non-existent columns (e.g., t2.location and t2.circuit_country). The mapper proposed these race columns as possible match candidates and the generator incorporated them into the WHERE clause. This produced a syntax/execution error (column does not exist), so the predicted SQL failed to return any result and thus cannot deliver the business answer. Although the aggregation (MAX(CAST(...))) and choice of results.fastestLapSpeed conceptually match the gold query, the incorrect schema assumptions introduced by the mapper prevented successful execution and retrieval of the maximum speed.",
+      "query_issues": "Predicted SQL issues: 1) References non-existent columns: T2.location and T2.circuit_country do not exist in the races table, causing SQL execution error. 2) Broad name matching (ILIKE '%Spanish%') is more permissive than the gold SQL's exact name = 'Spanish Grand Prix' but would not necessarily change the numeric answer if correctly executed; however the non-existent-column error prevents any comparison. 3) The query returns MAX(CAST(fastestlapspeed AS numeric)) which is semantically equivalent to selecting the highest fastestLapSpeed, but execution failed so no value was produced (gold value was 202.484). 4) Minor robustness issue: filtering out empty string '' is okay but indicates fastestlapspeed is stored as text and should be validated/cleaned beforehand.",
+      "root_cause": "Incorrect schema understanding in the mapper stage (and subsequently used by the generator). The mapper suggested optional columns (location, circuit_country) that do not exist in the actual schema; the generator then included them in the SQL WHERE clause. The validator only reported the syntax error post-generation rather than preventing the generator from emitting invalid column references.",
+      "suggestions": [
+        "Improve the mapper to read and use actual schema metadata (table and column names) rather than hypothesizing columns; only propose columns that exist in the schema.",
+        "Have the SQL generator validate column and table names against the available schema before emitting final SQL; if a referenced column is missing, fallback to alternative predicates (e.g., use exact race name) or omit the invalid predicates.",
+        "Enhance the validator to perform static analysis (schema-aware) and catch non-existent column references and other syntax issues earlier in the pipeline, returning actionable feedback to the generator to retry.",
+        "Prefer the gold filtering approach (use exact races.name = 'Spanish Grand Prix' AND races.year = 2009) when the exact race name is known in the schema; otherwise implement a robust two-stage matching: attempt exact match first, then relaxed match if no results found.",
+        "Add an execution-time fallback: if the first generated query fails, attempt a conservative alternative that only uses verified columns and simpler predicates to ensure an answer is returned (e.g., join on raceId and use MAX on results.fastestlapspeed)."
+      ]
+    }
+  },
+  {
+    "dataset": "bird",
+    "index": 225,
+    "question_id": 955,
+    "db_id": "formula_1",
+    "question": "What is the average time in seconds of champion for each year, before year 1975?",
+    "gold_sql": "WITH time_in_seconds AS (SELECT T2.year, T2.raceId, T1.positionOrder, CASE WHEN T1.positionOrder = 1 THEN (CASE WHEN SPLIT_PART(T1.time, ':', 1) <> '' AND SPLIT_PART(T1.time, ':', 2) <> '' AND SPLIT_PART(SPLIT_PART(T1.time, ':', 3), '.', 1) <> '' THEN (CAST(SPLIT_PART(T1.time, ':', 1) AS REAL) * 3600) + (CAST(SPLIT_PART(T1.time, ':', 2) AS REAL) * 60) + CAST(SPLIT_PART(SPLIT_PART(T1.time, ':', 3), '.', 1) AS REAL) + CAST(SPLIT_PART(SPLIT_PART(T1.time, ':', 3), '.', 2) AS REAL)/1000   ELSE 0 END) ELSE (CASE WHEN SUBSTRING(T1.time FROM 2) <> '' THEN CAST(SUBSTRING(T1.time FROM 2) AS REAL) ELSE 0 END) END AS time_seconds FROM results AS T1 INNER JOIN races AS T2 ON T1.raceId = T2.raceId WHERE T1.time IS NOT NULL AND T1.time != ''), champion_time AS (SELECT year, raceId, time_seconds FROM time_in_seconds WHERE positionOrder = 1)  SELECT year, AVG(time_seconds) FROM champion_time WHERE year < 1975 GROUP BY year HAVING AVG(time_seconds) IS NOT NULL",
+    "predicted_sql": "SELECT T2.\"year\", AVG(T1.\"milliseconds\")/1000.0 FROM results AS T1 INNER JOIN races AS T2 ON T1.\"raceid\" = T2.\"raceid\" WHERE T2.\"year\" < 1975 AND T1.\"position\" = 1 AND T1.\"milliseconds\" IS NOT NULL GROUP BY T2.\"year\" ORDER BY T2.\"year\" NULLS LAST",
+    "exact_match": false,
+    "execution_match": false,
+    "analyzer_match": true,
+    "error": null,
+    "execution_error": null,
+    "gold_execution_results": [
+      {
+        "year": 1950,
+        "avg": 9712.01842857143
+      },
+      {
+        "year": 1951,
+        "avg": 10870.343222222222
+      },
+      {
+        "year": 1952,
+        "avg": 11061.26325
+      },
+      {
+        "year": 1953,
+        "avg": 10828.015666666666
+      },
+      {
+        "year": 1954,
+        "avg": 11212.563444444446
+      },
+      {
+        "year": 1955,
+        "avg": 10791.868714285714
+      },
+      {
+        "year": 1956,
+        "avg": 10871.124888888888
+      },
+      {
+        "year": 1957,
+        "avg": 11322.675666666668
+      },
+      {
+        "year": 1958,
+        "avg": 8379.745
+      },
+      {
+        "year": 1959,
+        "avg": 8745.455555555554
+      },
+      {
+        "year": 1960,
+        "avg": 8771.807
+      },
+      {
+        "year": 1961,
+        "avg": 8258.129125
+      },
+      {
+        "year": 1962,
+        "avg": 8410.781555555555
+      },
+      {
+        "year": 1963,
+        "avg": 8280.7054
+      },
+      {
+        "year": 1964,
+        "avg": 8005.108600000001
+      },
+      {
+        "year": 1965,
+        "avg": 8165.3046
+      },
+      {
+        "year": 1966,
+        "avg": 7834.341444444445
+      },
+      {
+        "year": 1967,
+        "avg": 7645.46409090909
+      },
+      {
+        "year": 1968,
+        "avg": 7626.180083333333
+      },
+      {
+        "year": 1969,
+        "avg": 7006.474909090909
+      },
+      {
+        "year": 1970,
+        "avg": 6520.316
+      },
+      {
+        "year": 1971,
+        "avg": 6111.651454545455
+      },
+      {
+        "year": 1972,
+        "avg": 6526.003249999999
+      },
+      {
+        "year": 1973,
+        "avg": 6235.945266666666
+      },
+      {
+        "year": 1974,
+        "avg": 6046.8204
+      }
+    ],
+    "predicted_execution_results": [
+      {
+        "year": 1950,
+        "?column?": 9712.595714285715
+      },
+      {
+        "year": 1951,
+        "?column?": 10870.532222222222
+      },
+      {
+        "year": 1952,
+        "?column?": 11061.585
+      },
+      {
+        "year": 1953,
+        "?column?": 10828.476666666667
+      },
+      {
+        "year": 1954,
+        "?column?": 11213.074444444444
+      },
+      {
+        "year": 1955,
+        "?column?": 10792.332857142857
+      },
+      {
+        "year": 1956,
+        "?column?": 10871.648888888889
+      },
+      {
+        "year": 1957,
+        "?column?": 11323.316666666668
+      },
+      {
+        "year": 1958,
+        "?column?": 8380.190909090908
+      },
+      {
+        "year": 1959,
+        "?column?": 8745.945555555556
+      },
+      {
+        "year": 1960,
+        "?column?": 8772.149
+      },
+      {
+        "year": 1961,
+        "?column?": 8258.5375
+      },
+      {
+        "year": 1962,
+        "?column?": 8411.155555555555
+      },
+      {
+        "year": 1963,
+        "?column?": 8281.24
+      },
+      {
+        "year": 1964,
+        "?column?": 8005.465
+      },
+      {
+        "year": 1965,
+        "?column?": 8165.67
+      },
+      {
+        "year": 1966,
+        "?column?": 7834.694444444444
+      },
+      {
+        "year": 1967,
+        "?column?": 7645.836363636364
+      },
+      {
+        "year": 1968,
+        "?column?": 7626.578333333333
+      },
+      {
+        "year": 1969,
+        "?column?": 7006.870909090909
+      },
+      {
+        "year": 1970,
+        "?column?": 6520.591538461538
+      },
+      {
+        "year": 1971,
+        "?column?": 6111.991
+      },
+      {
+        "year": 1972,
+        "?column?": 6526.2095
+      },
+      {
+        "year": 1973,
+        "?column?": 6236.2320666666665
+      },
+      {
+        "year": 1974,
+        "?column?": 6047.1144
+      }
+    ],
+    "db_name": "passarinho",
+    "metadata": {
+      "latency_ms": 121919,
+      "tokens_in": null,
+      "tokens_out": null,
+      "model_name": null
+    },
+    "agent_trace": {
+      "status": "GENERATED",
+      "sql": "SELECT T2.\"year\", AVG(T1.\"milliseconds\")/1000.0 FROM results AS T1 INNER JOIN races AS T2 ON T1.\"raceid\" = T2.\"raceid\" WHERE T2.\"year\" < 1975 AND T1.\"position\" = 1 AND T1.\"milliseconds\" IS NOT NULL GROUP BY T2.\"year\" ORDER BY T2.\"year\" NULLS LAST",
+      "error": null,
+      "plan": "Return a table with one row per year (year INT, avg_time_seconds FLOAT) giving the average champion time in seconds for that year, for all years strictly before 1975. Computation pattern: GROUP BY year and AVG(time_in_seconds). Example SQL patterns (choose variant matching your schema):\n\n1) If you have a date column named event_date (DATE/TIMESTAMP) and a numeric column time_seconds:\n   SELECT EXTRACT(YEAR FROM event_date) AS year,\n          AVG(time_seconds) AS avg_time_seconds\n   FROM results\n   WHERE EXTRACT(YEAR FROM event_date) < 1975\n     AND role = 'champion'            -- or champion_flag = 1 depending on schema\n   GROUP BY year\n   ORDER BY year;\n\n2) If the date is stored as a string 'YYYYMMDD' in col date_str and time is an interval/time:\n   SELECT CAST(SUBSTR(date_str,1,4) AS INTEGER) AS year,\n          AVG(EXTRACT(EPOCH FROM time_col)) AS avg_time_seconds\n   FROM results\n   WHERE CAST(SUBSTR(date_str,1,4) AS INTEGER) < 1975\n     AND role = 'champion'\n   GROUP BY year\n   ORDER BY year;\n\nNotes on aggregation and filtering:\n- Use AVG(column) to compute the mean and GROUP BY year to produce one row per year.\n- Filter rows before aggregating: WHERE year < 1975 AND (role indicates champion).\n- NULL time values are ignored by AVG by default.\n- Do NOT divide by 12 or any other number (the question asks \"for each year\", so compute average across all champion records within that year).",
+      "feedback": "Query is syntactically valid and returns the requested per-year average champion time in seconds for years before 1975, but it is not optimal. The plan shows full sequential scans on results and races and a hash join; create indexes such as results(position, raceid) or results(position, raceid, milliseconds) and races(year) to enable index scans and speed the join, and optionally alias the aggregated column as avg_seconds. Re-run EXPLAIN after indexing to confirm improved plans.",
+      "attempts": 1,
+      "all_queries": [
+        "SELECT T2.\"year\", AVG(T1.\"milliseconds\")/1000.0 FROM results AS T1 INNER JOIN races AS T2 ON T1.\"raceid\" = T2.\"raceid\" WHERE T2.\"year\" < 1975 AND T1.\"position\" = 1 AND T1.\"milliseconds\" IS NOT NULL GROUP BY T2.\"year\" ORDER BY T2.\"year\" NULLS LAST"
+      ],
+      "interpreter_output": {
+        "clarified_question": "For each year earlier than 1975 (year < 1975), compute the average time, in seconds, of the champion entries.",
+        "sub_questions": [],
+        "explicit_intent": "Return a table with one row per year (year INT, avg_time_seconds FLOAT) giving the average champion time in seconds for that year, for all years strictly before 1975. Computation pattern: GROUP BY year and AVG(time_in_seconds). Example SQL patterns (choose variant matching your schema):\n\n1) If you have a date column named event_date (DATE/TIMESTAMP) and a numeric column time_seconds:\n   SELECT EXTRACT(YEAR FROM event_date) AS year,\n          AVG(time_seconds) AS avg_time_seconds\n   FROM results\n   WHERE EXTRACT(YEAR FROM event_date) < 1975\n     AND role = 'champion'            -- or champion_flag = 1 depending on schema\n   GROUP BY year\n   ORDER BY year;\n\n2) If the date is stored as a string 'YYYYMMDD' in col date_str and time is an interval/time:\n   SELECT CAST(SUBSTR(date_str,1,4) AS INTEGER) AS year,\n          AVG(EXTRACT(EPOCH FROM time_col)) AS avg_time_seconds\n   FROM results\n   WHERE CAST(SUBSTR(date_str,1,4) AS INTEGER) < 1975\n     AND role = 'champion'\n   GROUP BY year\n   ORDER BY year;\n\nNotes on aggregation and filtering:\n- Use AVG(column) to compute the mean and GROUP BY year to produce one row per year.\n- Filter rows before aggregating: WHERE year < 1975 AND (role indicates champion).\n- NULL time values are ignored by AVG by default.\n- Do NOT divide by 12 or any other number (the question asks \"for each year\", so compute average across all champion records within that year).",
+        "ambiguities_resolved": [
+          "Interpreted \"of champion\" to mean rows identifying the champion (e.g., role = 'champion' or champion_flag = 1). If your schema marks champions differently, replace that filter accordingly.",
+          "Interpreted \"before year 1975\" as strictly earlier than 1975 (year < 1975). If inclusive (<= 1975) was intended, change the filter accordingly.",
+          "Assumed there is either a date/datetime column to extract the year from (use EXTRACT(YEAR FROM ...)) or a string date in 'YYYYMMDD' format (use SUBSTR(...,1,4)).",
+          "Assumed the numeric time is stored in seconds (time_seconds). If time is stored as an interval or TIME, convert using EXTRACT(EPOCH FROM time_col).",
+          "Output shape clarified: return multiple rows (one per year) with columns: year, avg_time_seconds. This is NOT a single scalar.",
+          "If there are years with no champion rows, they will not appear in the result unless you left-join against a year table (not requested)."
+        ]
+      },
+      "mapper_output": "Selected tables (3) and why they were chosen\n1. results — Primary table for champion (race winner) data. It contains finishing position, overall race time both as a text string and as a numeric milliseconds column. This is the main source for the champion times (filter by position = 1).\n2. races — Required to get the year for each race (races.year). The question asks to compute averages by year, so we must join results → races on raceid.\n3. laptimes — Included for awareness because it contains lap-level times, but it is NOT needed for this question (we need total race champion time, which is in results). I selected it only as a possible alternative source; the preferred/primary time column is in results.\n\nKey columns (and why)\n- results.position (bigint) — indicates finishing position. Use position = 1 (or positionorder = 1 / positiontext = '1') to select champion entries.\n- results.milliseconds (bigint) — total race time in milliseconds for that result. This is the cleanest numeric field to compute seconds (milliseconds / 1000). Use this for averaging. It avoids parsing the textual time field.\n- results.time (text) — human-readable time string (sample: \"1:31:18.555\"). Useful as a fallback when milliseconds is NULL, but parsing is required to convert it to seconds.\n- races.year (bigint) — integer year of the race. Filter: year < 1975; group by this column to get per-year averages.\n- races.raceid and results.raceid — join key (results.raceid -> races.raceid).\n\nDate format & column types\n- races.year is an integer (bigint). Use numeric comparison (e.g., WHERE races.year < 1975).\n- results.milliseconds is an integer (bigint) representing total race time in milliseconds. Convert to seconds by dividing by 1000.0 in SQL to get fractional seconds.\n- results.time is text with format like \"H:MM:SS.mmm\" in sample_row (example below). Parsing text is more error-prone — prefer milliseconds.\n\nSample data (from get_table_info sample_row)\n- results sample_row:\n  - position = 1\n  - time = \"1:31:18.555\"\n  - milliseconds = 5478555\n  This shows milliseconds corresponds to the textual time (5478555 ms = 5478.555 s = 1:31:18.555).\n- races sample_row:\n  - year = 2009, date = \"2009-04-05\" (demonstrates year column exists and is numeric)\n- laptimes sample_row (not used here): time = \"1:52.965\", milliseconds = 112965 (lap-level milliseconds representation)\n\nRelationships\n- results.raceid -> races.raceid (required join to obtain race year).\n- laptimes.raceid -> races.raceid (not needed for the requested aggregate).\n\nValue insights / encodings\n- results.milliseconds: numeric milliseconds for the total race time — direct and reliable for arithmetic.\n- results.time: text in H:MM:SS.mmm (total race time) — consistent with milliseconds sample but requires parsing to use if milliseconds is NULL.\n- position and positionorder: integers representing finishing position; position = 1 selects the champion entries.\n\nCardinality & join warnings\n- This query can be answered using results joined to races only; that is sufficient and appropriate. Joining additional tables (drivers, constructors, etc.) is unnecessary and may restrict results unintentionally (e.g., joining only to drivers present in a specific table could filter out some results).\n- WARNING: Using an INNER JOIN between results and races restricts to results that have a matching races row (which is intended here). If you want to include years with no champion times, you would need to generate the year list separately and LEFT JOIN results — but for this question (average champion times per year where champion entries exist), INNER JOIN is appropriate.\n- WARNING: If some results.position = 1 rows have NULL milliseconds, they will be excluded from the numeric average unless you explicitly convert/parse results.time. I recommend using results.milliseconds and filtering out NULL milliseconds (or parsing textual time only when necessary).\n\nValidation notes / ambiguities\n- Confirmed columns exist: results.position, results.milliseconds, results.time, races.year, races.raceid, results.raceid.\n- Ambiguity handled: Use position = 1 (or positionorder = 1) to identify champions. Use milliseconds if present; otherwise fallback to parsing the text field.\n- If you want to include years where the champion time is only present as text (no milliseconds), we can add logic to parse results.time (H:MM:SS.mmm) into seconds — but that is more complex and unnecessary if milliseconds exists for most rows.\n\nRecommended SQL approach (logic summary for generator)\n- Join results -> races on raceid.\n- Filter races.year < 1975 and results.position = 1.\n- Exclude rows with NULL milliseconds (or parse results.time where milliseconds is NULL).\n- Compute AVG(results.milliseconds) / 1000.0 grouped by races.year to return average champion time in seconds per year.\n- Order by year ascending (optional).\n\nExample of the intended aggregation (natural-language form)\n- For each races.year earlier than 1975, compute AVG(results.milliseconds) / 1000.0 over all results rows where results.position = 1 and results.milliseconds IS NOT NULL, grouped by races.year.\n\nIf you want, I can now produce the exact SQL statement that implements this (including an optional fallback that parses results.time when milliseconds is NULL).",
+      "generator_output": {
+        "reasoning_steps": [
+          "Use the results table (T1) for champion times and races table (T2) for the year, joining on raceid.",
+          "Filter for races earlier than 1975 (T2.\"year\" < 1975) and champion rows (T1.\"position\" = 1) and exclude NULL milliseconds to rely on numeric field.",
+          "Compute the average of T1.\"milliseconds\" divided by 1000.0 to convert to seconds, group by T2.\"year\", and order by year for deterministic output."
+        ],
+        "sub_queries": [],
+        "confidence": 0.91,
+        "sql_query": "SELECT T2.\"year\", AVG(T1.\"milliseconds\")/1000.0\nFROM results AS T1\nINNER JOIN races AS T2 ON T1.\"raceid\" = T2.\"raceid\"\nWHERE T2.\"year\" < 1975 AND T1.\"position\" = 1 AND T1.\"milliseconds\" IS NOT NULL\nGROUP BY T2.\"year\"\nORDER BY T2.\"year\" NULLS LAST;"
+      },
+      "validator_output": {
+        "is_valid": true,
+        "is_optimal": false,
+        "syntax_errors": [],
+        "semantic_issues": [],
+        "efficiency_score": 0.6,
+        "efficiency_issues": [
+          "Sequential scan on results causing high cost instead of index scan",
+          "Sequential scan on races for year filter",
+          "No index usage on filter/join columns (results.position, results.raceid, races.year)",
+          "In-memory sort used (quicksort) though small"
+        ],
+        "refinement_feedback": "Query is syntactically valid and returns the requested per-year average champion time in seconds for years before 1975, but it is not optimal. The plan shows full sequential scans on results and races and a hash join; create indexes such as results(position, raceid) or results(position, raceid, milliseconds) and races(year) to enable index scans and speed the join, and optionally alias the aggregated column as avg_seconds. Re-run EXPLAIN after indexing to confirm improved plans."
+      },
+      "trace": {
+        "pipeline": "new",
+        "db_name": "passarinho",
+        "start_ts": "2025-11-14T13:23:22.110397+00:00",
+        "end_ts": "2025-11-14T13:25:23.980226+00:00",
+        "latency_ms": 121869,
+        "steps": [
+          {
+            "name": "interpreter",
+            "timing_ms": 27787,
+            "input_summary": {
+              "raw_question": "What is the average time in seconds of champion for each year, before year 1975?"
+            },
+            "output_summary": {
+              "clarified_question": "For each year earlier than 1975 (year < 1975), compute the average time, in seconds, of the champion entries.",
+              "intent": "Return a table with one row per year (year INT, avg_time_seconds FLOAT) giving the average champion time in seconds for that year, for all years strictly before 1975. Computation pattern: GROUP BY year and AVG(time_in_seconds). Example SQL patterns (choose variant matching your schema):\n\n1) If you h",
+              "sub_questions_count": 0
+            },
+            "error": null
+          },
+          {
+            "name": "mapper",
+            "timing_ms": 33158,
+            "input_summary": {
+              "clarified_question": "For each year earlier than 1975 (year < 1975), compute the average time, in seconds, of the champion entries.",
+              "all_tables_count": 75
+            },
+            "output_summary": {
+              "output_length": 5295,
+              "output_preview": "Selected tables (3) and why they were chosen\n1. results — Primary table for champion (race winner) data. It contains finishing position, overall race time both as a text string and as a numeric milliseconds column. This is the main source for the champion times (filter by position = 1).\n2. races — R"
+            },
+            "error": null
+          },
+          {
+            "name": "generator",
+            "timing_ms": 13390,
+            "input_summary": {
+              "clarified_question": "For each year earlier than 1975 (year < 1975), compute the average time, in seconds, of the champion entries.",
+              "attempt": 1
+            },
+            "output_summary": {
+              "sql_length": 247,
+              "reasoning_steps_count": 3,
+              "confidence": 0.91
+            },
+            "error": null
+          },
+          {
+            "name": "validator",
+            "timing_ms": 47332,
+            "input_summary": {
+              "sql_length": 246,
+              "attempt": 1
+            },
+            "output_summary": {
+              "is_valid": true,
+              "is_optimal": false,
+              "efficiency_score": 0.6,
+              "syntax_error_count": 0,
+              "semantic_issue_count": 0
+            },
+            "error": null
+          }
+        ],
+        "tools": [
+          {
+            "agent": "mapper",
+            "tool": "get_table_info",
+            "args_redacted": [
+              "results",
+              "races",
+              "laptimes"
+            ],
+            "result_preview": "Retrieved info for 3 tables",
+            "timing_ms": 78,
+            "error": null
+          }
+        ],
+        "generator": {
+          "sql_query": "SELECT T2.\"year\", AVG(T1.\"milliseconds\")/1000.0 FROM results AS T1 INNER JOIN races AS T2 ON T1.\"raceid\" = T2.\"raceid\" WHERE T2.\"year\" < 1975 AND T1.\"position\" = 1 AND T1.\"milliseconds\" IS NOT NULL GROUP BY T2.\"year\" ORDER BY T2.\"year\" NULLS LAST",
+          "reasoning_steps": [
+            "Use the results table (T1) for champion times and races table (T2) for the year, joining on raceid.",
+            "Filter for races earlier than 1975 (T2.\"year\" < 1975) and champion rows (T1.\"position\" = 1) and exclude NULL milliseconds to rely on numeric field.",
+            "Compute the average of T1.\"milliseconds\" divided by 1000.0 to convert to seconds, group by T2.\"year\", and order by year for deterministic output."
+          ],
+          "confidence": 0.91
+        },
+        "mapper": {
+          "all_tables_count": 75,
+          "selected_tables": [
+            "results",
+            "races",
+            "laptimes"
+          ]
+        }
+      }
+    },
+    "analyzer_output": {
+      "analyzer_match": true,
+      "approved": true,
+      "failure_step": "none",
+      "failure_reason": "Predicted results are semantically equivalent to the gold results: both queries compute the average champion (position=1) race time per year for years < 1975. Differences are cosmetic or stem from using a different source column for time (predicted uses results.milliseconds/1000.0, gold parses the textual results.time) and minor numeric rounding/mapping differences (position vs positionOrder naming). These produce only very small numerical differences (sub-second to a few-seconds) that do not change the business meaning or conclusions.",
+      "query_issues": "Cosmetic and non-impacting differences: (1) Predicted query uses results.milliseconds and divides by 1000.0 while gold parses results.time — this can cause small numeric differences if one column contains NULLs or differing values. (2) Column names differ (position vs positionOrder), and predicted AVG column is unnamed (\"?column?\") — presentation differences only. (3) Predicted adds ORDER BY; gold uses HAVING to exclude NULL averages. None of these change the per-year average champion times in any meaningful way.",
+      "root_cause": "The generator chose a different but valid time source (milliseconds) and slightly different column naming than the gold SQL; this leads to minor numeric discrepancies but preserves business impact (average champion time per year).",
+      "suggestions": []
+    }
+  },
+  {
+    "dataset": "bird",
+    "index": 238,
+    "question_id": 989,
+    "db_id": "formula_1",
+    "question": "Who is the champion of the Canadian Grand Prix in 2008? Indicate his finish time.",
+    "gold_sql": "SELECT T1.time FROM results AS T1 INNER JOIN races AS T2 ON T1.raceId = T2.raceId WHERE T2.name = 'Canadian Grand Prix' AND T2.year = 2008 AND T1.time LIKE '_:%:__.___'",
+    "predicted_sql": "SELECT T2.\"forename\" || ' ' || T2.\"surname\", T1.\"time\" FROM results AS T1 INNER JOIN drivers AS T2 ON T1.\"driverid\" = T2.\"driverid\" INNER JOIN races AS T3 ON T1.\"raceid\" = T3.\"raceid\" WHERE T3.\"year\" = 2008 AND T3.\"name\" ILIKE '%Canadian%' AND T1.\"position\" = 1 LIMIT 1",
+    "exact_match": false,
+    "execution_match": false,
+    "analyzer_match": true,
+    "error": null,
+    "execution_error": null,
+    "gold_execution_results": [
+      {
+        "time": "1:36:24.227"
+      }
+    ],
+    "predicted_execution_results": [
+      {
+        "?column?": "Robert Kubica",
+        "time": "1:36:24.227"
+      }
+    ],
+    "db_name": "passarinho",
+    "metadata": {
+      "latency_ms": 89029,
+      "tokens_in": null,
+      "tokens_out": null,
+      "model_name": null
+    },
+    "agent_trace": {
+      "status": "GENERATED",
+      "sql": "SELECT T2.\"forename\" || ' ' || T2.\"surname\", T1.\"time\" FROM results AS T1 INNER JOIN drivers AS T2 ON T1.\"driverid\" = T2.\"driverid\" INNER JOIN races AS T3 ON T1.\"raceid\" = T3.\"raceid\" WHERE T3.\"year\" = 2008 AND T3.\"name\" ILIKE '%Canadian%' AND T1.\"position\" = 1 LIMIT 1",
+      "error": null,
+      "plan": "Find the race result row for the Canadian Grand Prix in the year 2008 where the finishing position = 1 (the champion). Expected output shape: a single row with two columns: driver_name (string) and finish_time (string or duration). SQL pattern/formula: SELECT d.name AS driver_name, res.finish_time FROM results res JOIN drivers d ON res.driver_id = d.id JOIN races race ON res.race_id = race.id WHERE race.name = 'Canadian Grand Prix' AND race.year = 2008 AND res.position = 1 LIMIT 1; No aggregation, no GROUP BY. If finish time is stored as seconds (numeric), convert to a human-readable format (e.g., SEC_TO_TIME or formatting function) before returning; otherwise return the stored string as-is.",
+      "feedback": "Query is syntactically and semantically correct and returns the 2008 Canadian Grand Prix winner and time, but it is not optimal: the ILIKE '%Canadian%' forces a sequential scan and results is also scanned. Use an exact race name or raceid filter and add an index (e.g., results(raceid, position) or a trigram index on races.name), and remove or replace LIMIT 1 with an ORDER BY if deterministic selection is required.",
+      "attempts": 1,
+      "all_queries": [
+        "SELECT T2.\"forename\" || ' ' || T2.\"surname\", T1.\"time\" FROM results AS T1 INNER JOIN drivers AS T2 ON T1.\"driverid\" = T2.\"driverid\" INNER JOIN races AS T3 ON T1.\"raceid\" = T3.\"raceid\" WHERE T3.\"year\" = 2008 AND T3.\"name\" ILIKE '%Canadian%' AND T1.\"position\" = 1 LIMIT 1"
+      ],
+      "interpreter_output": {
+        "clarified_question": "Who won (finished 1st) the 2008 Canadian Grand Prix, and what was his recorded finish time? Return the driver's full name and the race finish time.",
+        "sub_questions": [],
+        "explicit_intent": "Find the race result row for the Canadian Grand Prix in the year 2008 where the finishing position = 1 (the champion). Expected output shape: a single row with two columns: driver_name (string) and finish_time (string or duration). SQL pattern/formula: SELECT d.name AS driver_name, res.finish_time FROM results res JOIN drivers d ON res.driver_id = d.id JOIN races race ON res.race_id = race.id WHERE race.name = 'Canadian Grand Prix' AND race.year = 2008 AND res.position = 1 LIMIT 1; No aggregation, no GROUP BY. If finish time is stored as seconds (numeric), convert to a human-readable format (e.g., SEC_TO_TIME or formatting function) before returning; otherwise return the stored string as-is.",
+        "ambiguities_resolved": [
+          "Interpreted 'champion' to mean the race winner (finishing position = 1) rather than championship points leader.",
+          "Interpreted 'Canadian Grand Prix' as the race whose name is 'Canadian Grand Prix' (alternatively could filter by event country = 'Canada' and round/year = 2008 if race name differs).",
+          "Interpreted the time requested as the race finish time recorded in the results table (column named finish_time, time, or total_time). If the schema stores elapsed time as numeric seconds, convert to human-readable time; if stored as a string, return that string.",
+          "Assumed drivers are in a drivers table with drivers.id = results.driver_id and the driver's full name is in drivers.name.",
+          "Output shape: single-row, two-column result (driver_name, finish_time)."
+        ]
+      },
+      "mapper_output": "Selected tables (3) and why they were chosen\n- drivers — direct match for the driver identity (forename, surname). We need the driver's full name, so this table is required.\n- results — primary race result metrics: contains driverid, raceid, position (who finished 1st), time (recorded finish time) and milliseconds. This is the core table that identifies the winner and stores the finish time.\n- races — contains race metadata (raceid, year, name, date). Use this to restrict to the 2008 Canadian Grand Prix (filter by year = 2008 and race name).\n\nKey columns (which map to the question)\n- drivers:\n  - driverid (PK) — joins to results.driverid\n  - forename, surname — combine to produce the driver's full name (PRIMARY choice)\n- results:\n  - raceid — FK to races.raceid (use to find the specific race)\n  - driverid — FK to drivers.driverid (use to get driver name)\n  - position (bigint) — numeric finishing position; use position = 1 to find the winner (preferred over positiontext)\n  - time (text) — recorded finish time as stored (e.g., \"1:31:18.555\" from sample_row)\n  - milliseconds (bigint) — numeric finish time in ms (useful if you want a numeric sort/compare)\n- races:\n  - raceid (PK) — join target for results.raceid\n  - year (bigint) — filter by 2008\n  - name (text) — filter the race by name, e.g., \"Canadian Grand Prix\" (use a case-insensitive match to be robust)\n  - date (date) — DATE type (sample: \"2009-04-05\")\n\nSample data & types (from sample_row)\n- drivers.sample_row: { driverid: 1, forename: \"Lewis\", surname: \"Hamilton\", driverref: \"hamilton\" }\n- results.sample_row: { position: 1, time: \"1:31:18.555\", milliseconds: 5478555, raceid: 19, driverid: 8 }\n  - Note: results.time is stored as text in hh:mm:ss.mmm-like format (example \"1:31:18.555\"). results.milliseconds is numeric (bigint) and represents the same time in milliseconds (example 5478555).\n- races.sample_row: { raceid: 2, year: 2009, name: \"Malaysian Grand Prix\", date: \"2009-04-05\" }\n  - races.date is a DATE column.\n\nDate format & column types (critical)\n- races.date is DATE (use DATE comparisons if needed).\n- races.year is numeric (bigint) — best for filtering by year (e.g., year = 2008).\n- results.time is TEXT (formatted like \"H:MM:SS.mmm\"). For any ordering or numeric comparison use results.milliseconds (bigint) instead.\n- Use position (bigint) = 1 to find the winner (preferred over string positiontext).\n\nRelationships (foreign keys)\n- results.driverid -> drivers.driverid (many results rows per driver; drivers is the PK side)\n- results.raceid -> races.raceid (many results per race; races is the PK side)\n\nValue encodings / domain notes\n- position: numeric (use position = 1). positiontext is redundant text (e.g., \"1\").\n- results.time: text representation of finish time; milliseconds gives numeric form. If you need to order by finishing time or compute differences, use milliseconds.\n- race name: stored in races.name; it may include the phrase \"Canadian Grand Prix\" exactly or variations. Use a case-insensitive match (ILIKE '%Canadian%') plus year = 2008 for robustness.\n\nCardinality warnings & query guidance\n- Joining results -> drivers (on driverid) is safe: drivers.driverid is PK, so joining will not create duplicate driver rows per result row. You will get exactly one driver row per matching result row.\n- Joining results -> races (on raceid) is also one-to-one from race side to each result for that race.\n- This query requires joining results to drivers (to get the full name) and to races (to filter to the specific race). You cannot answer with only one table because:\n  - results gives the winner and time but not the driver's forename/surname.\n  - drivers gives the name but not the race/time.\n- WARNING: If you join additional tables (e.g., constructors or status) be aware you might restrict to rows with matching entries — unnecessary for this question.\n\nValidation notes / recommended filters\n- Confirmed columns exist:\n  - drivers.forename and drivers.surname exist.\n  - results.position and results.time exist (time is text; milliseconds available).\n  - races.year and races.name exist.\n- Recommended filter to find the requested row:\n  - races.year = 2008\n  - races.name ILIKE '%Canadian%' OR races.name = 'Canadian Grand Prix' (use ILIKE for robustness)\n  - results.position = 1\n- Output fields to return:\n  - Driver full name: CONCAT(drivers.forename, ' ', drivers.surname) (or DB-specific concatenation)\n  - Finish time: use results.time (text) to return the recorded format, or results.milliseconds if a numeric value is desired. The question asks for \"his recorded finish time\" — so return results.time as stored.\n\nImportant notes for SQL generator\n- PRIMARY/BEST column choices:\n  - Use results.position = 1 (numeric) to find the winner (best match).\n  - Use races.year = 2008 plus name ILIKE '%Canadian%' to identify the 2008 Canadian GP.\n  - Use drivers.forename + drivers.surname for full name.\n  - Prefer results.time for the recorded string finish time (matches the sample_row format).\n- If you need deterministic filtering against the race name, prefer (races.year = 2008 AND races.name ILIKE '%Canadian%') to avoid selecting other races with similar names across years.\n\nSummary (succinct)\n- Use results (position = 1, time or milliseconds, driverid, raceid) joined to races (raceid) filtered by year = 2008 and name matching \"Canadian Grand Prix\", and joined to drivers (driverid) to return CONCAT(forename, ' ', surname) and results.time (the recorded finish time, text like \"1:31:18.555\").",
+      "generator_output": {
+        "reasoning_steps": [
+          "Choose results as primary table (T1) because it contains position and recorded finish time; join drivers (T2) to get forename and surname; join races (T3) to filter by race name and year.",
+          "Filter by T3.\"year\" = 2008 and T3.\"name\" ILIKE '%Canadian%' to identify the 2008 Canadian Grand Prix; use T1.\"position\" = 1 to get the winner.",
+          "Select the driver's full name by concatenating T2.\"forename\" || ' ' || T2.\"surname' and return the recorded finish time T1.\"time\"; use LIMIT 1 for a single-row result."
+        ],
+        "sub_queries": [],
+        "confidence": 0.9,
+        "sql_query": "SELECT T2.\"forename\" || ' ' || T2.\"surname\", T1.\"time\"\nFROM results AS T1\nINNER JOIN drivers AS T2 ON T1.\"driverid\" = T2.\"driverid\"\nINNER JOIN races AS T3 ON T1.\"raceid\" = T3.\"raceid\"\nWHERE T3.\"year\" = 2008 AND T3.\"name\" ILIKE '%Canadian%' AND T1.\"position\" = 1\nLIMIT 1;"
+      },
+      "validator_output": {
+        "is_valid": true,
+        "is_optimal": false,
+        "syntax_errors": [],
+        "semantic_issues": [
+          "LIMIT 1 without ORDER BY may return an arbitrary row if multiple races match; consider removing LIMIT or adding ORDER BY.",
+          "Using ILIKE '%Canadian%' can produce false positives and prevents index use; prefer exact match on race name or use raceid."
+        ],
+        "efficiency_score": 0.78,
+        "efficiency_issues": [
+          "Sequential scan on results (filter position = 1) indicates missing useful index on results(raceid, position) or results(position).",
+          "Sequential scan on races due to leading-wildcard ILIKE prevents B-tree index usage; consider exact equality or a trigram index for pattern searches."
+        ],
+        "refinement_feedback": "Query is syntactically and semantically correct and returns the 2008 Canadian Grand Prix winner and time, but it is not optimal: the ILIKE '%Canadian%' forces a sequential scan and results is also scanned. Use an exact race name or raceid filter and add an index (e.g., results(raceid, position) or a trigram index on races.name), and remove or replace LIMIT 1 with an ORDER BY if deterministic selection is required."
+      },
+      "trace": {
+        "pipeline": "new",
+        "db_name": "passarinho",
+        "start_ts": "2025-11-14T13:23:22.111366+00:00",
+        "end_ts": "2025-11-14T13:24:51.113226+00:00",
+        "latency_ms": 89001,
+        "steps": [
+          {
+            "name": "interpreter",
+            "timing_ms": 14443,
+            "input_summary": {
+              "raw_question": "Who is the champion of the Canadian Grand Prix in 2008? Indicate his finish time."
+            },
+            "output_summary": {
+              "clarified_question": "Who won (finished 1st) the 2008 Canadian Grand Prix, and what was his recorded finish time? Return the driver's full name and the race finish time.",
+              "intent": "Find the race result row for the Canadian Grand Prix in the year 2008 where the finishing position = 1 (the champion). Expected output shape: a single row with two columns: driver_name (string) and finish_time (string or duration). SQL pattern/formula: SELECT d.name AS driver_name, res.finish_time F",
+              "sub_questions_count": 0
+            },
+            "error": null
+          },
+          {
+            "name": "mapper",
+            "timing_ms": 29850,
+            "input_summary": {
+              "clarified_question": "Who won (finished 1st) the 2008 Canadian Grand Prix, and what was his recorded finish time? Return the driver's full name and the race finish time.",
+              "all_tables_count": 75
+            },
+            "output_summary": {
+              "output_length": 5532,
+              "output_preview": "Selected tables (3) and why they were chosen\n- drivers — direct match for the driver identity (forename, surname). We need the driver's full name, so this table is required.\n- results — primary race result metrics: contains driverid, raceid, position (who finished 1st), time (recorded finish time) a"
+            },
+            "error": null
+          },
+          {
+            "name": "generator",
+            "timing_ms": 15442,
+            "input_summary": {
+              "clarified_question": "Who won (finished 1st) the 2008 Canadian Grand Prix, and what was his recorded finish time? Return the driver's full name and the race finish time.",
+              "attempt": 1
+            },
+            "output_summary": {
+              "sql_length": 270,
+              "reasoning_steps_count": 3,
+              "confidence": 0.9
+            },
+            "error": null
+          },
+          {
+            "name": "validator",
+            "timing_ms": 28922,
+            "input_summary": {
+              "sql_length": 269,
+              "attempt": 1
+            },
+            "output_summary": {
+              "is_valid": true,
+              "is_optimal": false,
+              "efficiency_score": 0.78,
+              "syntax_error_count": 0,
+              "semantic_issue_count": 2
+            },
+            "error": null
+          }
+        ],
+        "tools": [
+          {
+            "agent": "mapper",
+            "tool": "get_table_info",
+            "args_redacted": [
+              "drivers",
+              "results",
+              "races"
+            ],
+            "result_preview": "Retrieved info for 3 tables",
+            "timing_ms": 83,
+            "error": null
+          }
+        ],
+        "generator": {
+          "sql_query": "SELECT T2.\"forename\" || ' ' || T2.\"surname\", T1.\"time\" FROM results AS T1 INNER JOIN drivers AS T2 ON T1.\"driverid\" = T2.\"driverid\" INNER JOIN races AS T3 ON T1.\"raceid\" = T3.\"raceid\" WHERE T3.\"year\" = 2008 AND T3.\"name\" ILIKE '%Canadian%' AND T1.\"position\" = 1 LIMIT 1",
+          "reasoning_steps": [
+            "Choose results as primary table (T1) because it contains position and recorded finish time; join drivers (T2) to get forename and surname; join races (T3) to filter by race name and year.",
+            "Filter by T3.\"year\" = 2008 and T3.\"name\" ILIKE '%Canadian%' to identify the 2008 Canadian Grand Prix; use T1.\"position\" = 1 to get the winner.",
+            "Select the driver's full name by concatenating T2.\"forename\" || ' ' || T2.\"surname' and return the recorded finish time T1.\"time\"; use LIMIT 1 for a single-row result."
+          ],
+          "confidence": 0.9
+        },
+        "mapper": {
+          "all_tables_count": 75,
+          "selected_tables": [
+            "drivers",
+            "results",
+            "races"
+          ]
+        }
+      }
+    },
+    "analyzer_output": {
+      "analyzer_match": true,
+      "approved": true,
+      "failure_step": "none",
+      "failure_reason": "Predicted results are semantically equivalent (and actually more informative). The predicted SQL returns the same finish time as the gold result ('1:36:24.227') and also includes the driver's full name ('Robert Kubica'), which does not contradict the gold result. Differences are presentation/extra fields only and do not change the business answer.",
+      "query_issues": "Differences: predicted output includes an extra column (driver full name) and uses a different column label ('?column?') for the name; predicted SQL uses ILIKE '%Canadian%' and LIMIT 1 which could be non-deterministic or less efficient, but these do not affect the correctness of this execution. The core value (finish time) matches exactly.",
+      "root_cause": "Generator chose to join the drivers table and concatenate forename/surname, returning an extra column; gold SQL selected only the time. This is a presentation difference, not a data mismatch.",
+      "suggestions": []
+    }
+  },
+  {
+    "dataset": "bird",
+    "index": 240,
+    "question_id": 717,
+    "db_id": "superhero",
+    "question": "Please list all the superpowers of 3-D Man.",
+    "gold_sql": "SELECT T3.power_name FROM superhero AS T1 INNER JOIN hero_power AS T2 ON T1.id = T2.hero_id INNER JOIN superpower AS T3 ON T2.power_id = T3.id WHERE T1.superhero_name = '3-D Man'",
+    "predicted_sql": "SELECT DISTINCT \"T3\".\"power_name\" FROM superhero AS T1 INNER JOIN hero_power AS T2 ON \"T1\".\"id\" = \"T2\".\"hero_id\" INNER JOIN superpower AS T3 ON \"T2\".\"power_id\" = \"T3\".\"id\" WHERE \"T1\".\"superhero_name\" = '3-D Man'",
+    "exact_match": false,
+    "execution_match": null,
+    "analyzer_match": false,
+    "error": "Erro de sintaxe: SQL error: missing FROM-clause entry for table \"T1\".",
+    "execution_error": "Predicted SQL execution error: missing FROM-clause entry for table \"T1\"",
+    "gold_execution_results": [
+      {
+        "power_name": "Agility"
+      },
+      {
+        "power_name": "Super Strength"
+      },
+      {
+        "power_name": "Stamina"
+      },
+      {
+        "power_name": "Super Speed"
+      }
+    ],
+    "predicted_execution_results": null,
+    "db_name": "passarinho",
+    "metadata": {
+      "latency_ms": 71424,
+      "tokens_in": null,
+      "tokens_out": null,
+      "model_name": null
+    },
+    "agent_trace": {
+      "status": "REJECTED",
+      "sql": "SELECT DISTINCT \"T3\".\"power_name\" FROM superhero AS T1 INNER JOIN hero_power AS T2 ON \"T1\".\"id\" = \"T2\".\"hero_id\" INNER JOIN superpower AS T3 ON \"T2\".\"power_id\" = \"T3\".\"id\" WHERE \"T1\".\"superhero_name\" = '3-D Man'",
+      "error": "Erro de sintaxe: SQL error: missing FROM-clause entry for table \"T1\".",
+      "plan": null,
+      "feedback": null,
+      "attempts": 1,
+      "all_queries": [
+        "SELECT DISTINCT \"T3\".\"power_name\" FROM superhero AS T1 INNER JOIN hero_power AS T2 ON \"T1\".\"id\" = \"T2\".\"hero_id\" INNER JOIN superpower AS T3 ON \"T2\".\"power_id\" = \"T3\".\"id\" WHERE \"T1\".\"superhero_name\" = '3-D Man'"
+      ],
+      "interpreter_output": {
+        "clarified_question": "Return a distinct list of all superpower names attributed to the comic-book character named '3-D Man'. If multiple incarnations (e.g., Chuck Chandler, Delroy Garrett) exist in the data, include powers for all incarnations unless the user asks to limit to a specific incarnation.",
+        "sub_questions": [],
+        "explicit_intent": "Find and return one row per distinct superpower name for the hero named '3-D Man'. Expected output shape: single-column result with column name 'power_name' (one row per distinct power). SQL pattern to compute this (example table/column names):\n\nSELECT DISTINCT p.name AS power_name\nFROM heroes h\nJOIN hero_powers hp ON h.id = hp.hero_id\nJOIN powers p ON p.id = hp.power_id\nWHERE h.name = '3-D Man';\n\nNotes: - Use DISTINCT to avoid duplicate power rows. - Do not GROUP BY or aggregate (no AVG/SUM). - If the database stores incarnations separately, allow matching by h.alias or h.real_name (e.g., WHERE h.name = '3-D Man' OR h.alias LIKE '%3-D Man%') or add additional WHERE clauses to restrict to a specific incarnation (e.g., h.real_name = 'Chuck Chandler'). - If powers have qualifiers (temporary, equipment-based), the query assumes the powers table lists canonical superpowers; if not, filter by p.type IN ('innate','mutant','powered') as needed.",
+        "ambiguities_resolved": [
+          "Interpreted '3-D Man' as the hero name/alias '3-D Man' in the heroes table. If the dataset contains multiple distinct incarnations under different rows, include all incarnations by default.",
+          "Interpreted 'all superpowers' to mean distinct canonical powers associated with the hero(s), not ephemeral items/gear unless the powers table explicitly lists those as powers.",
+          "Output shape: return a single column 'power_name' with one row per distinct power. Do not return extra aggregate columns.",
+          "Assumed typical schema: heroes(id,name,alias,real_name,...), hero_powers(hero_id,power_id), powers(id,name,type,...). If your schema differs, adjust JOINs/column names accordingly.",
+          "If the user actually wanted only a specific incarnation or powers with source citations (issue references), request that explicitly; default behavior is to include all incarnations and not include citation metadata."
+        ]
+      },
+      "mapper_output": "Selected tables (3–5) and why:\n1. superhero — PRIMARY table because the question names the character \"3-D Man\" (exact name match). The sample_row shows superhero_name = \"3-D Man\", so this table identifies all incarnations (rows) that share that hero name.\n2. hero_power — JOINT/association table linking heroes to powers (direct keyword match: \"hero\" + \"power\"). It maps superhero.id -> superpower.id.\n3. superpower — PRIMARY metric/name table that contains the power names (power_name). This is where the actual readable superpower strings live.\n4. hero_attribute — included as an auxiliary table I inspected (it stores attribute values per hero). It is not required to answer the question about power names, but I reviewed it because it's related to hero metadata.\n\nKey columns (and why they matter):\n- superhero.id (bigint, PK) — unique hero identifier used to join to hero_power.\n- superhero.superhero_name (text) — contains the hero name; filter by superhero_name = '3-D Man' to get all incarnations.\n- hero_power.hero_id (bigint) — foreign key to superhero.id; connects a hero row to one or more power rows.\n- hero_power.power_id (bigint) — foreign key to superpower.id; identifies which power is linked to a hero.\n- superpower.id (bigint, PK) — power identifier; joins to hero_power.power_id.\n- superpower.power_name (text) — readable name of the superpower; this is the final output column (use DISTINCT on this).\n\nColumn types & sample values:\n- superhero.id: bigint. Sample row: id = 1\n- superhero.superhero_name: text. Sample row: \"3-D Man\"\n- superhero.full_name: text. Sample row: \"Charles Chandler\" (illustrates an incarnation)\n- hero_power.hero_id / hero_power.power_id: bigint. Sample row: {\"hero_id\":1,\"power_id\":1}\n- superpower.power_name: text. Sample row: \"Agility\"\n\nDate format: Not applicable — no date columns are required for this question.\n\nRelationships (from schema inspection):\n- hero_power.hero_id -> superhero.id (maps powers to heroes)\n- hero_power.power_id -> superpower.id (maps the association to the power name)\n- superhero has other FKs (gender_id, publisher_id, etc.) but those are irrelevant for this query.\n\nValue insights / domain notes:\n- The sample data contains superhero_name = \"3-D Man\" and a corresponding sample power_name = \"Agility\". This confirms the encoding: superhero rows use text names, and superpower rows store human-readable power names.\n- There may be multiple superhero rows with superhero_name = '3-D Man' for different incarnations (e.g., full_name shows \"Charles Chandler\"). Filtering by superhero.superhero_name = '3-D Man' will match all incarnations; to limit to a specific incarnation you would filter by full_name or id.\n\nCardinality & JOIN warnings / recommendations:\n- hero_power is a many-to-many association (no single primary key shown) — joining superhero -> hero_power -> superpower can produce duplicate power_name rows if the same power is associated multiple times. Use DISTINCT on superpower.power_name to return unique power names.\n- Joining will restrict results to heroes that have power associations. For this question (list of powers), that's desired. If you wanted to show heroes even if they have no recorded powers, use a LEFT JOIN from superhero to hero_power -> superpower, but still use DISTINCT on power_name (and be prepared for NULLs).\n- This query can be answered using only the three tables: superhero, hero_power, superpower. hero_attribute is not needed to get power names.\n\nValidation / confirmation:\n- Confirmed columns exist: superhero.superhero_name, superhero.id, hero_power.hero_id, hero_power.power_id, superpower.power_name.\n- Confirmed example data: superhero sample_row shows \"3-D Man\" (id=1, full_name \"Charles Chandler\"); hero_power sample_row links hero_id=1 to power_id=1; superpower sample_row has power_name \"Agility\".\n\nImportant notes for SQL generation:\n- Primary approach: filter superhero by superhero.superhero_name = '3-D Man', join to hero_power on superhero.id = hero_power.hero_id, join to superpower on hero_power.power_id = superpower.id, and select DISTINCT superpower.power_name.\n- If you want to include only a specific incarnation, add a filter on superhero.full_name (e.g., full_name = 'Charles Chandler' or full_name = 'Delroy Garrett').\n- Use DISTINCT to avoid duplicates because hero_power may contain multiple rows linking the same hero to the same power.\n\nSummary / primary recommendation:\n- Use superhero, hero_power, superpower (primary tables). Filter superhero.superhero_name = '3-D Man' (this returns all incarnations). Join through hero_power to superpower and return DISTINCT superpower.power_name to produce the distinct list of all superpower names attributed to \"3-D Man\".",
+      "generator_output": {
+        "reasoning_steps": [
+          "Selected three tables: superhero (AS T1) to identify all incarnations named '3-D Man', hero_power (AS T2) to map heroes to powers, and superpower (AS T3) to get power names.",
+          "Joined T1.id to T2.hero_id and T2.power_id to T3.id using INNER JOINs to ensure only linked powers are returned.",
+          "Filtered by T1.superhero_name = '3-D Man' to include all incarnations with that superhero name.",
+          "Used SELECT DISTINCT on T3.power_name to return one row per unique superpower name."
+        ],
+        "sub_queries": [],
+        "confidence": 0.95,
+        "sql_query": "SELECT DISTINCT \"T3\".\"power_name\"\nFROM superhero AS T1\nINNER JOIN hero_power AS T2 ON \"T1\".\"id\" = \"T2\".\"hero_id\"\nINNER JOIN superpower AS T3 ON \"T2\".\"power_id\" = \"T3\".\"id\"\nWHERE \"T1\".\"superhero_name\" = '3-D Man'"
+      },
+      "validator_output": {
+        "is_valid": false,
+        "is_optimal": false,
+        "syntax_errors": [
+          "SQL error: missing FROM-clause entry for table \"T1\""
+        ],
+        "semantic_issues": [],
+        "efficiency_score": 0.0,
+        "efficiency_issues": [],
+        "refinement_feedback": "Erro de sintaxe: SQL error: missing FROM-clause entry for table \"T1\"."
+      },
+      "trace": {
+        "pipeline": "new",
+        "db_name": "passarinho",
+        "start_ts": "2025-11-14T13:23:22.112448+00:00",
+        "end_ts": "2025-11-14T13:24:33.528469+00:00",
+        "latency_ms": 71416,
+        "steps": [
+          {
+            "name": "interpreter",
+            "timing_ms": 36478,
+            "input_summary": {
+              "raw_question": "Please list all the superpowers of 3-D Man."
+            },
+            "output_summary": {
+              "clarified_question": "Return a distinct list of all superpower names attributed to the comic-book character named '3-D Man'. If multiple incarnations (e.g., Chuck Chandler, Delroy Garrett) exist in the data, include powers",
+              "intent": "Find and return one row per distinct superpower name for the hero named '3-D Man'. Expected output shape: single-column result with column name 'power_name' (one row per distinct power). SQL pattern to compute this (example table/column names):\n\nSELECT DISTINCT p.name AS power_name\nFROM heroes h\nJOI",
+              "sub_questions_count": 0
+            },
+            "error": null
+          },
+          {
+            "name": "mapper",
+            "timing_ms": 19790,
+            "input_summary": {
+              "clarified_question": "Return a distinct list of all superpower names attributed to the comic-book character named '3-D Man'. If multiple incarnations (e.g., Chuck Chandler, Delroy Garrett) exist in the data, include powers",
+              "all_tables_count": 75
+            },
+            "output_summary": {
+              "output_length": 4715,
+              "output_preview": "Selected tables (3–5) and why:\n1. superhero — PRIMARY table because the question names the character \"3-D Man\" (exact name match). The sample_row shows superhero_name = \"3-D Man\", so this table identifies all incarnations (rows) that share that hero name.\n2. hero_power — JOINT/association table link"
+            },
+            "error": null
+          },
+          {
+            "name": "generator",
+            "timing_ms": 14956,
+            "input_summary": {
+              "clarified_question": "Return a distinct list of all superpower names attributed to the comic-book character named '3-D Man'. If multiple incarnations (e.g., Chuck Chandler, Delroy Garrett) exist in the data, include powers",
+              "attempt": 1
+            },
+            "output_summary": {
+              "sql_length": 211,
+              "reasoning_steps_count": 4,
+              "confidence": 0.95
+            },
+            "error": null
+          },
+          {
+            "name": "validator",
+            "timing_ms": 11,
+            "input_summary": {
+              "sql_length": 211,
+              "attempt": 1
+            },
+            "output_summary": {
+              "is_valid": false,
+              "is_optimal": false,
+              "efficiency_score": 0.0,
+              "syntax_error_count": 1,
+              "semantic_issue_count": 0
+            },
+            "error": null
+          }
+        ],
+        "tools": [
+          {
+            "agent": "mapper",
+            "tool": "get_table_info",
+            "args_redacted": [
+              "superhero",
+              "hero_power",
+              "superpower",
+              "hero_attribute"
+            ],
+            "result_preview": "Retrieved info for 4 tables",
+            "timing_ms": 56,
+            "error": null
+          }
+        ],
+        "generator": {
+          "sql_query": "SELECT DISTINCT \"T3\".\"power_name\" FROM superhero AS T1 INNER JOIN hero_power AS T2 ON \"T1\".\"id\" = \"T2\".\"hero_id\" INNER JOIN superpower AS T3 ON \"T2\".\"power_id\" = \"T3\".\"id\" WHERE \"T1\".\"superhero_name\" = '3-D Man'",
+          "reasoning_steps": [
+            "Selected three tables: superhero (AS T1) to identify all incarnations named '3-D Man', hero_power (AS T2) to map heroes to powers, and superpower (AS T3) to get power names.",
+            "Joined T1.id to T2.hero_id and T2.power_id to T3.id using INNER JOINs to ensure only linked powers are returned.",
+            "Filtered by T1.superhero_name = '3-D Man' to include all incarnations with that superhero name.",
+            "Used SELECT DISTINCT on T3.power_name to return one row per unique superpower name."
+          ],
+          "confidence": 0.95
+        },
+        "mapper": {
+          "all_tables_count": 75,
+          "selected_tables": [
+            "superhero",
+            "hero_power",
+            "superpower",
+            "hero_attribute"
+          ]
+        }
+      }
+    },
+    "analyzer_output": {
+      "analyzer_match": false,
+      "approved": false,
+      "failure_step": "generator",
+      "failure_reason": "The SQL generator produced queries that mix quoted, case-sensitive identifiers (e.g., \"T1\") with unquoted alias declarations (AS T1). In PostgreSQL unquoted aliases are folded to lower-case (t1), so referencing \"T1\" (case-sensitive) yields a missing FROM-clause entry error. This syntax/casing error prevented execution and therefore no results were returned.",
+      "query_issues": "- The predicted SQL produced a syntax/runtime error and returned no results (execution error: missing FROM-clause entry for table \"T1\").\n- Root SQL logic (joins, DISTINCT, WHERE filter) otherwise matches the gold query, but the quoting/case mismatch in alias references makes the statement invalid.\n- No wrong filtering or aggregation; the issue is purely identifier quoting/case-sensitivity that blocks execution.",
+      "root_cause": "The generator emitted inconsistent identifier quoting and casing: aliases were declared unquoted (becoming lowercase) but later referenced with double quotes and mixed-case (e.g., \"T1\"), creating a name mismatch in a case-sensitive DB. This is a generation-level bug in SQL formatting/quoting rules.",
+      "suggestions": [
+        "Generator: Always produce consistent identifier casing/quoting. Prefer either unquoted lowercase aliases everywhere (e.g., t1,t2,t3) or quote aliases both at declaration and at every reference. Update generator prompts/templates to enforce this rule.",
+        "Validator: Perform a quick syntax/parse check or dry-run against the target SQL dialect after generation. If a syntax or missing-from error is detected, attempt an automated fix (normalize alias quoting/case) or request regeneration.",
+        "Post-generation linter: Add a linting step that checks for common pitfalls (quoted vs unquoted alias mismatch, reserved words, missing FROM references) and rejects or repairs invalid SQL before execution.",
+        "Mapper/Generator integration: Ensure mapper supplies canonical alias names (prefer lowercase) and that generator uses them verbatim. Add unit tests that validate generated SQL against a set of canonical schema patterns to catch these issues early.",
+        "Monitoring/tests: Add an automated test case that generates the query for this question and verifies it executes and returns the expected rows. This would have detected the failure in CI and prevented shipping the faulty SQL."
+      ]
+    }
+  }
+]

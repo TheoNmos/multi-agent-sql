@@ -1,0 +1,1029 @@
+[
+  {
+    "dataset": "bird",
+    "index": 95,
+    "question_id": 1187,
+    "db_id": "thrombosis_prediction",
+    "question": "How many patients who were examined between 1987/7/6 and 1996/1/31 had a GPT level greater than 30 and an ALB level less than 4? List them by their ID.",
+    "gold_sql": "SELECT DISTINCT ID FROM Laboratory WHERE Date BETWEEN '1987-07-06' AND '1996-01-31' AND GPT > 30 AND ALB < 4",
+    "predicted_sql": "SELECT COUNT(DISTINCT T1.id), array_agg(DISTINCT T1.id ORDER BY T1.id) FROM patient AS T1 INNER JOIN examination AS T2 ON T2.id = T1.id INNER JOIN laboratory AS T3 ON T3.id = T1.id WHERE T2.\"Examination Date\" BETWEEN '1987-07-06' AND '1996-01-31' AND T3.gpt IS NOT NULL AND T3.gpt > 30 AND T3.alb IS NOT NULL AND T3.alb < 4",
+    "exact_match": false,
+    "execution_match": false,
+    "error": null,
+    "execution_error": null,
+    "gold_execution_results": [
+      {
+        "id": 3299630
+      },
+      {
+        "id": 5397059
+      },
+      {
+        "id": 5115307
+      },
+      {
+        "id": 5302954
+      },
+      {
+        "id": 5296268
+      },
+      {
+        "id": 5186147
+      },
+      {
+        "id": 5162169
+      },
+      {
+        "id": 4417978
+      },
+      {
+        "id": 4415406
+      },
+      {
+        "id": 944797
+      },
+      {
+        "id": 4632825
+      },
+      {
+        "id": 5119703
+      },
+      {
+        "id": 4632421
+      },
+      {
+        "id": 4466840
+      },
+      {
+        "id": 5122312
+      },
+      {
+        "id": 5405581
+      },
+      {
+        "id": 2436816
+      },
+      {
+        "id": 2265184
+      },
+      {
+        "id": 4618443
+      },
+      {
+        "id": 912147
+      },
+      {
+        "id": 4792459
+      },
+      {
+        "id": 3334746
+      },
+      {
+        "id": 4649885
+      },
+      {
+        "id": 4884792
+      },
+      {
+        "id": 4843434
+      },
+      {
+        "id": 4865142
+      },
+      {
+        "id": 1078741
+      },
+      {
+        "id": 4652830
+      },
+      {
+        "id": 4466420
+      },
+      {
+        "id": 5179581
+      },
+      {
+        "id": 4927381
+      },
+      {
+        "id": 4790235
+      },
+      {
+        "id": 4413615
+      },
+      {
+        "id": 71417
+      },
+      {
+        "id": 2933261
+      },
+      {
+        "id": 3178036
+      },
+      {
+        "id": 4648912
+      },
+      {
+        "id": 5164396
+      },
+      {
+        "id": 4840422
+      },
+      {
+        "id": 4641445
+      },
+      {
+        "id": 5092228
+      },
+      {
+        "id": 3545964
+      },
+      {
+        "id": 27654
+      },
+      {
+        "id": 4792723
+      },
+      {
+        "id": 5181621
+      },
+      {
+        "id": 5064814
+      },
+      {
+        "id": 5105683
+      },
+      {
+        "id": 5176755
+      },
+      {
+        "id": 4425292
+      },
+      {
+        "id": 4894243
+      },
+      {
+        "id": 4471732
+      },
+      {
+        "id": 4794628
+      },
+      {
+        "id": 1650222
+      },
+      {
+        "id": 5093771
+      },
+      {
+        "id": 3399558
+      },
+      {
+        "id": 3182521
+      },
+      {
+        "id": 4432946
+      },
+      {
+        "id": 4878272
+      },
+      {
+        "id": 3353383
+      },
+      {
+        "id": 5126587
+      },
+      {
+        "id": 2371753
+      },
+      {
+        "id": 5184284
+      },
+      {
+        "id": 4643816
+      }
+    ],
+    "predicted_execution_results": [
+      {
+        "count": 2,
+        "array_agg": [
+          460574,
+          1043570
+        ]
+      }
+    ],
+    "db_name": "passarinho",
+    "metadata": {
+      "latency_ms": 68741,
+      "tokens_in": null,
+      "tokens_out": null,
+      "model_name": null
+    },
+    "agent_trace": {
+      "status": "GENERATED",
+      "sql": "SELECT COUNT(DISTINCT T1.id), array_agg(DISTINCT T1.id ORDER BY T1.id) FROM patient AS T1 INNER JOIN examination AS T2 ON T2.id = T1.id INNER JOIN laboratory AS T3 ON T3.id = T1.id WHERE T2.\"Examination Date\" BETWEEN '1987-07-06' AND '1996-01-31' AND T3.gpt IS NOT NULL AND T3.gpt > 30 AND T3.alb IS NOT NULL AND T3.alb < 4",
+      "error": null,
+      "plan": "Compute: 1) COUNT of distinct patient IDs meeting the filters (aggregation: COUNT(DISTINCT patient_id)); 2) the list of those patient IDs (SELECT DISTINCT patient_id). Apply filters: WHERE exam_date BETWEEN '1987-07-06' AND '1996-01-31' AND GPT > 30 AND ALB < 4. Do NOT GROUP BY (we want a single count across the whole date range). If multiple exam records exist for the same patient within the date range, count the patient only once (use DISTINCT). Example SQL patterns: \n- For count: SELECT COUNT(DISTINCT patient_id) AS patient_count FROM exams WHERE exam_date BETWEEN '1987-07-06' AND '1996-01-31' AND GPT > 30 AND ALB < 4; \n- For IDs: SELECT DISTINCT patient_id FROM exams WHERE exam_date BETWEEN '1987-07-06' AND '1996-01-31' AND GPT > 30 AND ALB < 4 ORDER BY patient_id;\nNotes: use appropriate table/column names in your schema (here I used 'exams' as the table and 'exam_date', 'GPT', 'ALB', 'patient_id' as column names).",
+      "feedback": "Query generated without validation",
+      "attempts": 1,
+      "all_queries": [
+        "SELECT COUNT(DISTINCT T1.id), array_agg(DISTINCT T1.id ORDER BY T1.id) FROM patient AS T1 INNER JOIN examination AS T2 ON T2.id = T1.id INNER JOIN laboratory AS T3 ON T3.id = T1.id WHERE T2.\"Examination Date\" BETWEEN '1987-07-06' AND '1996-01-31' AND T3.gpt IS NOT NULL AND T3.gpt > 30 AND T3.alb IS NOT NULL AND T3.alb < 4"
+      ],
+      "interpreter_output": {
+        "clarified_question": "Find the number of unique patients and list their patient IDs for patients who had an examination dated between 1987-07-06 and 1996-01-31 (inclusive) and whose laboratory results for GPT are greater than 30 and ALB are less than 4.",
+        "sub_questions": [],
+        "explicit_intent": "Compute: 1) COUNT of distinct patient IDs meeting the filters (aggregation: COUNT(DISTINCT patient_id)); 2) the list of those patient IDs (SELECT DISTINCT patient_id). Apply filters: WHERE exam_date BETWEEN '1987-07-06' AND '1996-01-31' AND GPT > 30 AND ALB < 4. Do NOT GROUP BY (we want a single count across the whole date range). If multiple exam records exist for the same patient within the date range, count the patient only once (use DISTINCT). Example SQL patterns: \n- For count: SELECT COUNT(DISTINCT patient_id) AS patient_count FROM exams WHERE exam_date BETWEEN '1987-07-06' AND '1996-01-31' AND GPT > 30 AND ALB < 4; \n- For IDs: SELECT DISTINCT patient_id FROM exams WHERE exam_date BETWEEN '1987-07-06' AND '1996-01-31' AND GPT > 30 AND ALB < 4 ORDER BY patient_id;\nNotes: use appropriate table/column names in your schema (here I used 'exams' as the table and 'exam_date', 'GPT', 'ALB', 'patient_id' as column names).",
+        "ambiguities_resolved": [
+          "Date format clarified to ISO (YYYY-MM-DD) and range interpreted as inclusive of both endpoints (1987-07-06 through 1996-01-31).",
+          "Clarified that GPT > 30 and ALB < 4 are strict inequalities (exclusive bounds), not inclusive (not >= or <=).",
+          "If a patient has multiple qualifying exam records in the period, count the patient only once (use DISTINCT).",
+          "Assumed column names: 'patient_id' for patient identifier and 'exam_date' for the exam date; assumed lab columns named 'GPT' and 'ALB'. These should be adjusted to match the actual schema."
+        ]
+      },
+      "retriever_output": "Relevant tables I selected (3) and why they're relevant\n1. patient — holds the patient identifier (primary key) that we need to report.\n2. examination — contains the examination date (column named \"Examination Date\"), which is the date filter in the question.\n3. laboratory — contains the laboratory results (gpt and alb) needed for the numeric filters.\n\nKey columns (name, type, and role)\n- patient.id (bigint, primary key) — the patient identifier to return and deduplicate.\n  - sample_row: id = 2110\n- examination.\"Examination Date\" (date) — the examination date to filter between 1987-07-06 and 1996-01-31 (inclusive).\n  - sample_row: \"Examination Date\" = 1997-05-27 (note: this sample is outside the requested range)\n- examination.id (bigint) — foreign-key reference to patient.id (nullable in table, according to schema).\n  - sample_row: id = 14872 (this is the patient id referenced by that sample row)\n- laboratory.date (date) — date of the lab record (not explicitly required by the question, but present).\n  - sample_row: date = 1991-09-11\n- laboratory.gpt (bigint) — GPT value to be filtered as > 30.\n  - sample_row: gpt = 36\n- laboratory.alb (real) — Albumin value to be filtered as < 4.\n  - sample_row: alb = 3.299999952316284\n\nRelationships (foreign keys)\n- examination.id → patient.id (examination_id_fkey)\n- laboratory.id → patient.id (laboratory_id_fkey)\nThese show both examination and laboratory rows are linked to a patient via the id column.\n\nValue insights and encodings\n- gpt is stored as an integer-like column (bigint). Sample shows gpt = 36, so numeric comparison gpt > 30 is straightforward.\n- alb is stored as real (float). Sample shows alb ≈ 3.3, so numeric comparison alb < 4 is straightforward.\n- Many columns are nullable; specifically gpt and alb are nullable, so you should guard against NULLs (e.g., WHERE gpt IS NOT NULL AND alb IS NOT NULL AND gpt > 30 AND alb < 4).\n- The examination date column name contains a space and mixed case (\"Examination Date\") — it will need quoting in SQL (e.g., \"Examination Date\") or proper escaping depending on SQL dialect.\n- There is no declared primary key on examination or laboratory tables (per get_table_info), so expect multiple rows per patient; use DISTINCT when counting patient ids.\n\nImportant notes / assumptions for SQL generation\n- The question asks for patients who \"had an examination dated between 1987-07-06 and 1996-01-31 (inclusive) AND whose laboratory results for GPT > 30 and ALB < 4.\" This can be interpreted two ways:\n  1. A patient must have at least one examination whose examination date is in the given range, and (separately) at least one laboratory row (on any date) with gpt > 30 and alb < 4.\n  2. Or the lab row must be on the same date (or within the same date range) as the examination. \n- The schema does not link a specific laboratory row to a specific examination row except via patient.id. If you want labs tied to the same date as the examination you must explicitly add a date-equality or date-range condition between laboratory.date and examination.\"Examination Date\".\n- To match the natural reading (any lab record for the patient that meets the numeric criteria, plus an exam in the given date range), the SQL should:\n  - Join patient → examination and filter examination.\"Examination Date\" BETWEEN '1987-07-06' AND '1996-01-31' (inclusive).\n  - Join patient → laboratory and filter laboratory.gpt > 30 AND laboratory.alb < 4 (and exclude NULLs).\n  - Use DISTINCT patient.id to list unique patients, and COUNT(DISTINCT patient.id) for the number of unique patients.\n- Quoting note: column names with spaces (Examination Date) must be quoted. Also be mindful of other special column names (e.g., \"T-BIL\", \"U-PRO\") though they are not needed here.\n\nSummary of the expected query logic for the SQL generator\n- FROM patient\n  JOIN examination ON examination.id = patient.id\n  JOIN laboratory ON laboratory.id = patient.id\n- WHERE examination.\"Examination Date\" BETWEEN '1987-07-06' AND '1996-01-31'\n  AND laboratory.gpt IS NOT NULL AND laboratory.gpt > 30\n  AND laboratory.alb IS NOT NULL AND laboratory.alb < 4\n- SELECT DISTINCT patient.id (and COUNT DISTINCT for the count)\n\nIf you want, I can now produce the precise SQL query for option (1) (lab and exam anywhere for the patient) and/or option (2) (require lab date to match or be within the exam date range). Which behavior do you prefer?",
+      "generator_output": {
+        "sql_query": "SELECT COUNT(DISTINCT T1.id), array_agg(DISTINCT T1.id ORDER BY T1.id)\nFROM patient AS T1\nINNER JOIN examination AS T2 ON T2.id = T1.id\nINNER JOIN laboratory AS T3 ON T3.id = T1.id\nWHERE T2.\"Examination Date\" BETWEEN '1987-07-06' AND '1996-01-31'\n  AND T3.gpt IS NOT NULL AND T3.gpt > 30\n  AND T3.alb IS NOT NULL AND T3.alb < 4",
+        "reasoning_steps": [
+          "Choose patient (T1) as the primary entity and join examination (T2) and laboratory (T3) on the patient id as described in the schema.",
+          "Filter examinations by T2.\"Examination Date\" BETWEEN '1987-07-06' AND '1996-01-31' (inclusive).",
+          "Filter laboratory rows to require non-NULL GPT > 30 and non-NULL ALB < 4.",
+          "Use COUNT(DISTINCT T1.id) to compute the number of unique patients and array_agg(DISTINCT T1.id ORDER BY T1.id) to return the list of unique patient ids in a single SELECT statement."
+        ],
+        "sub_queries": [],
+        "confidence": 0.9
+      },
+      "validator_output": null,
+      "trace": {
+        "pipeline": "new",
+        "db_name": "passarinho",
+        "start_ts": "2025-11-09T12:28:13.416395+00:00",
+        "end_ts": "2025-11-09T12:29:21.858828+00:00",
+        "latency_ms": 68442,
+        "steps": [
+          {
+            "name": "interpreter",
+            "timing_ms": 16535,
+            "input_summary": {
+              "raw_question": "How many patients who were examined between 1987/7/6 and 1996/1/31 had a GPT level greater than 30 and an ALB level less than 4? List them by their ID."
+            },
+            "output_summary": {
+              "clarified_question": "Find the number of unique patients and list their patient IDs for patients who had an examination dated between 1987-07-06 and 1996-01-31 (inclusive) and whose laboratory results for GPT are greater t",
+              "intent": "Compute: 1) COUNT of distinct patient IDs meeting the filters (aggregation: COUNT(DISTINCT patient_id)); 2) the list of those patient IDs (SELECT DISTINCT patient_id). Apply filters: WHERE exam_date BETWEEN '1987-07-06' AND '1996-01-31' AND GPT > 30 AND ALB < 4. Do NOT GROUP BY (we want a single cou",
+              "sub_questions_count": 0
+            },
+            "error": null
+          },
+          {
+            "name": "retriever",
+            "timing_ms": 29016,
+            "input_summary": {
+              "clarified_question": "Find the number of unique patients and list their patient IDs for patients who had an examination dated between 1987-07-06 and 1996-01-31 (inclusive) and whose laboratory results for GPT are greater t",
+              "all_tables_count": 75
+            },
+            "output_summary": {
+              "output_length": 4404,
+              "output_preview": "Relevant tables I selected (3) and why they're relevant\n1. patient — holds the patient identifier (primary key) that we need to report.\n2. examination — contains the examination date (column named \"Examination Date\"), which is the date filter in the question.\n3. laboratory — contains the laboratory "
+            },
+            "error": null
+          },
+          {
+            "name": "generator",
+            "timing_ms": 22762,
+            "input_summary": {
+              "clarified_question": "Find the number of unique patients and list their patient IDs for patients who had an examination dated between 1987-07-06 and 1996-01-31 (inclusive) and whose laboratory results for GPT are greater t",
+              "attempt": 1
+            },
+            "output_summary": {
+              "sql_length": 327,
+              "reasoning_steps_count": 4,
+              "confidence": 0.9
+            },
+            "error": null
+          }
+        ],
+        "tools": [
+          {
+            "agent": "retriever",
+            "tool": "get_table_info",
+            "args_redacted": [
+              "patient",
+              "examination",
+              "laboratory"
+            ],
+            "result_preview": "Retrieved info for 3 tables",
+            "timing_ms": 86,
+            "error": null
+          }
+        ],
+        "generator": {
+          "sql_query": "SELECT COUNT(DISTINCT T1.id), array_agg(DISTINCT T1.id ORDER BY T1.id) FROM patient AS T1 INNER JOIN examination AS T2 ON T2.id = T1.id INNER JOIN laboratory AS T3 ON T3.id = T1.id WHERE T2.\"Examination Date\" BETWEEN '1987-07-06' AND '1996-01-31' AND T3.gpt IS NOT NULL AND T3.gpt > 30 AND T3.alb IS NOT NULL AND T3.alb < 4",
+          "reasoning_steps": [
+            "Choose patient (T1) as the primary entity and join examination (T2) and laboratory (T3) on the patient id as described in the schema.",
+            "Filter examinations by T2.\"Examination Date\" BETWEEN '1987-07-06' AND '1996-01-31' (inclusive).",
+            "Filter laboratory rows to require non-NULL GPT > 30 and non-NULL ALB < 4.",
+            "Use COUNT(DISTINCT T1.id) to compute the number of unique patients and array_agg(DISTINCT T1.id ORDER BY T1.id) to return the list of unique patient ids in a single SELECT statement."
+          ],
+          "confidence": 0.9
+        },
+        "retriever": {
+          "all_tables_count": 75,
+          "selected_tables": [
+            "patient",
+            "examination",
+            "laboratory"
+          ]
+        }
+      }
+    }
+  },
+  {
+    "dataset": "bird",
+    "index": 139,
+    "question_id": 1040,
+    "db_id": "european_football_2",
+    "question": "List the top 10 players' names whose heights are above 180 in descending order of average heading accuracy.",
+    "gold_sql": "SELECT t1.player_name FROM Player AS t1 INNER JOIN Player_Attributes AS t2 ON t1.player_api_id = t2.player_api_id WHERE t1.height > 180 GROUP BY t1.id ORDER BY CAST(SUM(t2.heading_accuracy) AS REAL) / NULLIF(COUNT(t2.\"player_fifa_api_id\"), 0) DESC NULLS LAST LIMIT 10",
+    "predicted_sql": "SELECT T1.player_name, AVG(T2.heading_accuracy) FROM player AS T1 INNER JOIN player_attributes AS T2 ON T1.player_api_id = T2.player_api_id WHERE T1.height > 180 AND T2.heading_accuracy IS NOT NULL GROUP BY T1.player_api_id, T1.player_name ORDER BY AVG(T2.heading_accuracy) DESC NULLS LAST LIMIT 10",
+    "exact_match": false,
+    "execution_match": false,
+    "error": null,
+    "execution_error": null,
+    "gold_execution_results": [
+      {
+        "player_name": "Michael Ballack"
+      },
+      {
+        "player_name": "Fernando Llorente"
+      },
+      {
+        "player_name": "John Terry"
+      },
+      {
+        "player_name": "Naldo"
+      },
+      {
+        "player_name": "Per Mertesacker"
+      },
+      {
+        "player_name": "Luca Toni"
+      },
+      {
+        "player_name": "Didier Drogba"
+      },
+      {
+        "player_name": "Daniel van Buyten"
+      },
+      {
+        "player_name": "Miroslav Klose"
+      },
+      {
+        "player_name": "Fernando Morientes"
+      }
+    ],
+    "predicted_execution_results": [
+      {
+        "player_name": "Michael Ballack",
+        "avg": 91.8
+      },
+      {
+        "player_name": "Fernando Llorente",
+        "avg": 91.52380952380952
+      },
+      {
+        "player_name": "John Terry",
+        "avg": 91.33333333333333
+      },
+      {
+        "player_name": "Naldo",
+        "avg": 90.39285714285714
+      },
+      {
+        "player_name": "Luca Toni",
+        "avg": 90.26470588235294
+      },
+      {
+        "player_name": "Per Mertesacker",
+        "avg": 90.26470588235294
+      },
+      {
+        "player_name": "Didier Drogba",
+        "avg": 90.23529411764706
+      },
+      {
+        "player_name": "Miroslav Klose",
+        "avg": 90.17647058823529
+      },
+      {
+        "player_name": "Daniel van Buyten",
+        "avg": 90.17647058823529
+      },
+      {
+        "player_name": "Fernando Morientes",
+        "avg": 89.8
+      }
+    ],
+    "db_name": "passarinho",
+    "metadata": {
+      "latency_ms": 50583,
+      "tokens_in": null,
+      "tokens_out": null,
+      "model_name": null
+    },
+    "agent_trace": {
+      "status": "GENERATED",
+      "sql": "SELECT T1.player_name, AVG(T2.heading_accuracy) FROM player AS T1 INNER JOIN player_attributes AS T2 ON T1.player_api_id = T2.player_api_id WHERE T1.height > 180 AND T2.heading_accuracy IS NOT NULL GROUP BY T1.player_api_id, T1.player_name ORDER BY AVG(T2.heading_accuracy) DESC NULLS LAST LIMIT 10",
+      "error": null,
+      "plan": "Find players with height > 180 and compute each player's average heading accuracy, then return the top 10 player names ordered by that average descending. Aggregation: use AVG(heading_accuracy). Grouping: GROUP BY player identifier (player_name or player_id) so AVG is computed per player. Filter: WHERE height > 180. Ordering: ORDER BY AVG(heading_accuracy) DESC. Limit: LIMIT 10. Example SQL pattern: SELECT player_name, AVG(heading_accuracy) AS avg_heading_accuracy FROM players_table WHERE height > 180 GROUP BY player_name ORDER BY avg_heading_accuracy DESC LIMIT 10; If player_name is not unique, GROUP BY player_id and SELECT player_name via join or include player_id in SELECT/GROUP BY.",
+      "feedback": "Query generated without validation",
+      "attempts": 1,
+      "all_queries": [
+        "SELECT T1.player_name, AVG(T2.heading_accuracy) FROM player AS T1 INNER JOIN player_attributes AS T2 ON T1.player_api_id = T2.player_api_id WHERE T1.height > 180 AND T2.heading_accuracy IS NOT NULL GROUP BY T1.player_api_id, T1.player_name ORDER BY AVG(T2.heading_accuracy) DESC NULLS LAST LIMIT 10"
+      ],
+      "interpreter_output": {
+        "clarified_question": "Retrieve the top 10 players' names whose heights are greater than 180 (height > 180), ordered by their average heading accuracy in descending order.",
+        "sub_questions": [],
+        "explicit_intent": "Find players with height > 180 and compute each player's average heading accuracy, then return the top 10 player names ordered by that average descending. Aggregation: use AVG(heading_accuracy). Grouping: GROUP BY player identifier (player_name or player_id) so AVG is computed per player. Filter: WHERE height > 180. Ordering: ORDER BY AVG(heading_accuracy) DESC. Limit: LIMIT 10. Example SQL pattern: SELECT player_name, AVG(heading_accuracy) AS avg_heading_accuracy FROM players_table WHERE height > 180 GROUP BY player_name ORDER BY avg_heading_accuracy DESC LIMIT 10; If player_name is not unique, GROUP BY player_id and SELECT player_name via join or include player_id in SELECT/GROUP BY.",
+        "ambiguities_resolved": [
+          "Interpreted 'above 180' as strictly greater than 180 (height > 180), not >= 180.",
+          "Assumed height units are centimeters (cm) if units are not provided; query filters numeric column 'height'.",
+          "Assumed 'heading accuracy' is stored in a numeric column named 'heading_accuracy' and that multiple records per player may exist (hence AVG over those records).",
+          "Chosen grouping key: group by player_name (or player_id if available) to compute per-player averages; clarified how to handle non-unique names.",
+          "No temporal aggregation needed—average is across all available records for each player (no grouping by time)."
+        ]
+      },
+      "retriever_output": "Selected tables and why they're relevant\n- player: contains player names and heights required to filter players with height > 180.\n- player_attributes: contains heading_accuracy (and date-stamped attribute snapshots) which we must average per player.\n\nKey columns (per table)\n- player:\n  - player_api_id (bigint) — can be used to join to player_attributes.\n  - player_name (text) — the player name to return.\n  - height (bigint) — used for the filter height > 180 (sample shows 182, so heights appear to be in centimeters).\n- player_attributes:\n  - player_api_id (bigint) — FK to player.player_api_id.\n  - date (text) — snapshot date for the attribute row (multiple rows per player over time).\n  - heading_accuracy (bigint) — numeric heading accuracy values to be averaged.\n\nSample data (from sample_row)\n- player sample_row: { id: 1, player_api_id: 505942, player_name: \"Aaron Appindangoye\", birthday: \"1992-02-29 00:00:00\", height: 182, weight: 187 }\n- player_attributes sample_row: { id: 1, player_fifa_api_id: 218353, player_api_id: 505942, date: \"2016-02-18 00:00:00\", overall_rating: 67, heading_accuracy: 71, ... }\n\nRelationships\n- player_attributes.player_api_id → player.player_api_id (foreign key). Use this join to associate attribute snapshots (including heading_accuracy) with the player name and height.\n\nValue insights and domain notes\n- heading_accuracy is stored as an integer (e.g., 71). Average should be computed over the numeric values.\n- height appears to be in centimeters (sample: 182). Filter height > 180 will select players taller than 180 cm.\n- player_attributes contains multiple dated rows per player. The question requests the average heading accuracy per player, so compute AVG(player_attributes.heading_accuracy) grouped by player (using player_api_id).\n- Handle NULLs: heading_accuracy may be NULL for some rows; AVG in SQL will ignore NULLs. If a player has no non-NULL heading_accuracy rows, they will yield NULL and should typically be excluded (or you can explicitly filter heading_accuracy IS NOT NULL before aggregation).\n- Use player_api_id (rather than internal player.id) in the join because the FK is on player_api_id.\n\nImportant notes to produce accurate SQL\n- Join player and player_attributes on player.player_api_id = player_attributes.player_api_id.\n- Filter player.height > 180.\n- Exclude NULL heading_accuracy rows (or rely on AVG to ignore NULLs but ensure players with no values are not considered).\n- Compute AVG(player_attributes.heading_accuracy) per player_api_id (and include player_name), ORDER BY that average DESC, LIMIT 10.\n- If player names are not unique, include player_api_id in grouping/selection to disambiguate.\n\nWith this schema understanding, the SQL Generator can produce a query like:\nSELECT p.player_name, AVG(pa.heading_accuracy) AS avg_heading_accuracy\nFROM player p\nJOIN player_attributes pa ON p.player_api_id = pa.player_api_id\nWHERE p.height > 180 AND pa.heading_accuracy IS NOT NULL\nGROUP BY p.player_api_id, p.player_name\nORDER BY avg_heading_accuracy DESC\nLIMIT 10;",
+      "generator_output": {
+        "sql_query": "SELECT T1.player_name, AVG(T2.heading_accuracy)\nFROM player AS T1\nINNER JOIN player_attributes AS T2 ON T1.player_api_id = T2.player_api_id\nWHERE T1.height > 180 AND T2.heading_accuracy IS NOT NULL\nGROUP BY T1.player_api_id, T1.player_name\nORDER BY AVG(T2.heading_accuracy) DESC NULLS LAST\nLIMIT 10;",
+        "reasoning_steps": [
+          "Join player (T1) with player_attributes (T2) on player_api_id to associate heading_accuracy with each player.",
+          "Filter players by T1.height > 180 and exclude NULL heading_accuracy rows to ensure valid averages.",
+          "Aggregate heading_accuracy per player using AVG(T2.heading_accuracy) and group by T1.player_api_id and T1.player_name.",
+          "Order results by the computed average in descending order (NULLS LAST for deterministic ordering) and limit to the top 10 players."
+        ],
+        "sub_queries": [],
+        "confidence": 0.94
+      },
+      "validator_output": null,
+      "trace": {
+        "pipeline": "new",
+        "db_name": "passarinho",
+        "start_ts": "2025-11-09T12:28:13.418643+00:00",
+        "end_ts": "2025-11-09T12:29:03.987575+00:00",
+        "latency_ms": 50568,
+        "steps": [
+          {
+            "name": "interpreter",
+            "timing_ms": 10588,
+            "input_summary": {
+              "raw_question": "List the top 10 players' names whose heights are above 180 in descending order of average heading accuracy."
+            },
+            "output_summary": {
+              "clarified_question": "Retrieve the top 10 players' names whose heights are greater than 180 (height > 180), ordered by their average heading accuracy in descending order.",
+              "intent": "Find players with height > 180 and compute each player's average heading accuracy, then return the top 10 player names ordered by that average descending. Aggregation: use AVG(heading_accuracy). Grouping: GROUP BY player identifier (player_name or player_id) so AVG is computed per player. Filter: WH",
+              "sub_questions_count": 0
+            },
+            "error": null
+          },
+          {
+            "name": "retriever",
+            "timing_ms": 22252,
+            "input_summary": {
+              "clarified_question": "Retrieve the top 10 players' names whose heights are greater than 180 (height > 180), ordered by their average heading accuracy in descending order.",
+              "all_tables_count": 75
+            },
+            "output_summary": {
+              "output_length": 3048,
+              "output_preview": "Selected tables and why they're relevant\n- player: contains player names and heights required to filter players with height > 180.\n- player_attributes: contains heading_accuracy (and date-stamped attribute snapshots) which we must average per player.\n\nKey columns (per table)\n- player:\n  - player_api"
+            },
+            "error": null
+          },
+          {
+            "name": "generator",
+            "timing_ms": 17562,
+            "input_summary": {
+              "clarified_question": "Retrieve the top 10 players' names whose heights are greater than 180 (height > 180), ordered by their average heading accuracy in descending order.",
+              "attempt": 1
+            },
+            "output_summary": {
+              "sql_length": 299,
+              "reasoning_steps_count": 4,
+              "confidence": 0.94
+            },
+            "error": null
+          }
+        ],
+        "tools": [
+          {
+            "agent": "retriever",
+            "tool": "get_table_info",
+            "args_redacted": [
+              "player",
+              "player_attributes"
+            ],
+            "result_preview": "Retrieved info for 2 tables",
+            "timing_ms": 97,
+            "error": null
+          }
+        ],
+        "generator": {
+          "sql_query": "SELECT T1.player_name, AVG(T2.heading_accuracy) FROM player AS T1 INNER JOIN player_attributes AS T2 ON T1.player_api_id = T2.player_api_id WHERE T1.height > 180 AND T2.heading_accuracy IS NOT NULL GROUP BY T1.player_api_id, T1.player_name ORDER BY AVG(T2.heading_accuracy) DESC NULLS LAST LIMIT 10",
+          "reasoning_steps": [
+            "Join player (T1) with player_attributes (T2) on player_api_id to associate heading_accuracy with each player.",
+            "Filter players by T1.height > 180 and exclude NULL heading_accuracy rows to ensure valid averages.",
+            "Aggregate heading_accuracy per player using AVG(T2.heading_accuracy) and group by T1.player_api_id and T1.player_name.",
+            "Order results by the computed average in descending order (NULLS LAST for deterministic ordering) and limit to the top 10 players."
+          ],
+          "confidence": 0.94
+        },
+        "retriever": {
+          "all_tables_count": 75,
+          "selected_tables": [
+            "player",
+            "player_attributes"
+          ]
+        }
+      }
+    }
+  },
+  {
+    "dataset": "bird",
+    "index": 193,
+    "question_id": 875,
+    "db_id": "formula_1",
+    "question": "Show me the season page of year when the race No. 901 took place.",
+    "gold_sql": "SELECT T2.url FROM races AS T1 INNER JOIN seasons AS T2 ON T2.year = T1.year WHERE T1.raceId = 901",
+    "predicted_sql": "SELECT T1.url FROM seasons AS T1 INNER JOIN races AS T2 ON T1.year = T2.year WHERE T2.raceid = 901 LIMIT 1",
+    "exact_match": false,
+    "execution_match": true,
+    "error": null,
+    "execution_error": null,
+    "gold_execution_results": [
+      {
+        "url": "http://en.wikipedia.org/wiki/2014_Formula_One_season"
+      }
+    ],
+    "predicted_execution_results": [
+      {
+        "url": "http://en.wikipedia.org/wiki/2014_Formula_One_season"
+      }
+    ],
+    "db_name": "passarinho",
+    "metadata": {
+      "latency_ms": 76237,
+      "tokens_in": null,
+      "tokens_out": null,
+      "model_name": null
+    },
+    "agent_trace": {
+      "status": "GENERATED",
+      "sql": "SELECT T1.url FROM seasons AS T1 INNER JOIN races AS T2 ON T1.year = T2.year WHERE T2.raceid = 901 LIMIT 1",
+      "error": null,
+      "plan": "Find the year of the race record where race_no = 901, then return the season.page value for that year. Steps and SQL patterns:\n1) Identify race year:\n   - If races table has a 'year' column: SELECT year FROM races WHERE race_no = 901 LIMIT 1;\n   - If races table has a date column (e.g., race_date stored as 'YYYYMMDD' or a SQL DATE): extract year via SUBSTR(race_date,1,4) or EXTRACT(YEAR FROM race_date). Example: SELECT SUBSTR(race_date,1,4) AS race_year FROM races WHERE race_no = 901 LIMIT 1;\n2) Retrieve season page with that year:\n   - Example join pattern: SELECT s.page FROM seasons s JOIN races r ON s.year = (r.year OR SUBSTR(r.race_date,1,4)) WHERE r.race_no = 901;\nNotes on aggregation and grouping: No aggregation (AVG/SUM/COUNT) is needed. Do NOT use GROUP BY. This is a direct filter+join lookup. If multiple race rows match race_no = 901, return all matching season.page values (or apply LIMIT 1 if a single value is desired).",
+      "feedback": "Query generated without validation",
+      "attempts": 1,
+      "all_queries": [
+        "SELECT T1.url FROM seasons AS T1 INNER JOIN races AS T2 ON T1.year = T2.year WHERE T2.raceid = 901 LIMIT 1"
+      ],
+      "interpreter_output": {
+        "clarified_question": "Retrieve the season page (the 'page' field from the seasons table) for the season whose year equals the year when the race with race_no = 901 occurred.",
+        "sub_questions": [],
+        "explicit_intent": "Find the year of the race record where race_no = 901, then return the season.page value for that year. Steps and SQL patterns:\n1) Identify race year:\n   - If races table has a 'year' column: SELECT year FROM races WHERE race_no = 901 LIMIT 1;\n   - If races table has a date column (e.g., race_date stored as 'YYYYMMDD' or a SQL DATE): extract year via SUBSTR(race_date,1,4) or EXTRACT(YEAR FROM race_date). Example: SELECT SUBSTR(race_date,1,4) AS race_year FROM races WHERE race_no = 901 LIMIT 1;\n2) Retrieve season page with that year:\n   - Example join pattern: SELECT s.page FROM seasons s JOIN races r ON s.year = (r.year OR SUBSTR(r.race_date,1,4)) WHERE r.race_no = 901;\nNotes on aggregation and grouping: No aggregation (AVG/SUM/COUNT) is needed. Do NOT use GROUP BY. This is a direct filter+join lookup. If multiple race rows match race_no = 901, return all matching season.page values (or apply LIMIT 1 if a single value is desired).",
+        "ambiguities_resolved": [
+          "\"race No. 901\" interpreted as the column race_no = 901 in the races table.",
+          "\"season page\" interpreted as the 'page' column in a seasons (or season) table corresponding to the season's year.",
+          "\"year when the race ... took place\" clarified to mean the year associated with the race row: either races.year or the year extracted from races.race_date.",
+          "If race_no is not unique across years, the query will return all matching season.page values unless a single value is explicitly requested; I will return all by default."
+        ]
+      },
+      "retriever_output": "Relevant tables (selected and why)\n- races: This table stores race records including the race identifier and the year the race occurred — it's needed to find the year for race_no = 901.\n- seasons: This table stores season-level info keyed by year — it's needed to get the season \"page\" (the season-level URL) for the matching year.\n- (Not used) race: There is a small table named \"race\" but it contains unrelated id/race text and is not relevant to the question.\n\nKey columns (per table)\n- races: raceid (primary key), year (the season year for the race). These map the race identifier to the season year.\n- seasons: year (primary key), url. There is no column named page in this schema; the season page is stored in seasons.url.\n\nSample data (from get_table_info and value search)\n- races.sample_row: {\"raceid\": 2, \"year\": 2009, \"round\": 2, \"circuitid\": 2, \"name\": \"Malaysian Grand Prix\", \"date\":\"2009-04-05\", ...}. Also I confirmed that a raceid value 901 exists (search returned [901]), so race_no = 901 corresponds to races.raceid = 901.\n- seasons.sample_row: {\"year\": 1950, \"url\": \"http://en.wikipedia.org/wiki/1950_Formula_One_season\"} — showing that the season page is held in the url column.\n\nRelationships\n- There is a foreign-key relationship races.year -> seasons.year (races.year references seasons.year). So seasons can be joined to races on the year column.\n\nValue insights and mappings\n- The seasons table does not have a column named page; the season page is stored in seasons.url (example value shown above).\n- The question refers to race_no = 901; in this schema the race identifier column is races.raceid, and raceid = 901 exists in the table.\n\nImportant notes to generate correct SQL\n- Use seasons.url (not seasons.page) to retrieve the season page.\n- Match seasons.year to races.year (or use a subquery) where races.raceid = 901.\n- Two equivalent SQL patterns are possible:\n  - Join: SELECT s.url FROM seasons s JOIN races r ON s.year = r.year WHERE r.raceid = 901;\n  - Subquery: SELECT url FROM seasons WHERE year = (SELECT year FROM races WHERE raceid = 901);\n\nThese details should be sufficient for the SQL generator to produce the correct query.",
+      "generator_output": {
+        "sql_query": "SELECT T1.url\nFROM seasons AS T1\nINNER JOIN races AS T2 ON T1.year = T2.year\nWHERE T2.raceid = 901\nLIMIT 1;",
+        "reasoning_steps": [
+          "Identify the relevant tables: seasons (season pages) and races (race -> year mapping).",
+          "Join seasons to races on the year column so the season matches the race's year: T1.year = T2.year.",
+          "Filter to the specific race by its identifier: T2.raceid = 901.",
+          "Select the season page stored in seasons.url (T1.url).",
+          "Use LIMIT 1 since raceid is unique and will return a single matching season page."
+        ],
+        "sub_queries": [],
+        "confidence": 0.92
+      },
+      "validator_output": null,
+      "trace": {
+        "pipeline": "new",
+        "db_name": "passarinho",
+        "start_ts": "2025-11-09T12:28:13.420020+00:00",
+        "end_ts": "2025-11-09T12:29:29.641105+00:00",
+        "latency_ms": 76221,
+        "steps": [
+          {
+            "name": "interpreter",
+            "timing_ms": 23133,
+            "input_summary": {
+              "raw_question": "Show me the season page of year when the race No. 901 took place."
+            },
+            "output_summary": {
+              "clarified_question": "Retrieve the season page (the 'page' field from the seasons table) for the season whose year equals the year when the race with race_no = 901 occurred.",
+              "intent": "Find the year of the race record where race_no = 901, then return the season.page value for that year. Steps and SQL patterns:\n1) Identify race year:\n   - If races table has a 'year' column: SELECT year FROM races WHERE race_no = 901 LIMIT 1;\n   - If races table has a date column (e.g., race_date st",
+              "sub_questions_count": 0
+            },
+            "error": null
+          },
+          {
+            "name": "retriever",
+            "timing_ms": 35480,
+            "input_summary": {
+              "clarified_question": "Retrieve the season page (the 'page' field from the seasons table) for the season whose year equals the year when the race with race_no = 901 occurred.",
+              "all_tables_count": 75
+            },
+            "output_summary": {
+              "output_length": 2170,
+              "output_preview": "Relevant tables (selected and why)\n- races: This table stores race records including the race identifier and the year the race occurred — it's needed to find the year for race_no = 901.\n- seasons: This table stores season-level info keyed by year — it's needed to get the season \"page\" (the season-le"
+            },
+            "error": null
+          },
+          {
+            "name": "generator",
+            "timing_ms": 17482,
+            "input_summary": {
+              "clarified_question": "Retrieve the season page (the 'page' field from the seasons table) for the season whose year equals the year when the race with race_no = 901 occurred.",
+              "attempt": 1
+            },
+            "output_summary": {
+              "sql_length": 107,
+              "reasoning_steps_count": 5,
+              "confidence": 0.92
+            },
+            "error": null
+          }
+        ],
+        "tools": [
+          {
+            "agent": "retriever",
+            "tool": "get_table_info",
+            "args_redacted": [
+              "races",
+              "race",
+              "seasons"
+            ],
+            "result_preview": "Retrieved info for 3 tables",
+            "timing_ms": 81,
+            "error": null
+          },
+          {
+            "agent": "retriever",
+            "tool": "search_column_values",
+            "args_redacted": {
+              "table_name": "races",
+              "column_name": "raceid",
+              "keyword": "901",
+              "limit": 10
+            },
+            "result_preview": "Found 1 matching values",
+            "timing_ms": 11,
+            "error": null
+          }
+        ],
+        "generator": {
+          "sql_query": "SELECT T1.url FROM seasons AS T1 INNER JOIN races AS T2 ON T1.year = T2.year WHERE T2.raceid = 901 LIMIT 1",
+          "reasoning_steps": [
+            "Identify the relevant tables: seasons (season pages) and races (race -> year mapping).",
+            "Join seasons to races on the year column so the season matches the race's year: T1.year = T2.year.",
+            "Filter to the specific race by its identifier: T2.raceid = 901.",
+            "Select the season page stored in seasons.url (T1.url).",
+            "Use LIMIT 1 since raceid is unique and will return a single matching season page."
+          ],
+          "confidence": 0.92
+        },
+        "retriever": {
+          "all_tables_count": 75,
+          "selected_tables": [
+            "races",
+            "race",
+            "seasons"
+          ]
+        }
+      }
+    }
+  },
+  {
+    "dataset": "bird",
+    "index": 239,
+    "question_id": 990,
+    "db_id": "formula_1",
+    "question": "What is the constructor reference name of the champion in the 2009 Singapore Grand Prix? Please give its website.",
+    "gold_sql": "SELECT T3.constructorRef, T3.url FROM results AS T1 INNER JOIN races AS T2 ON T1.raceId = T2.raceId INNER JOIN constructors AS T3 ON T1.constructorId = T3.constructorId WHERE T2.name = 'Singapore Grand Prix' AND T2.year = 2009 AND T1.time LIKE '_:%:__.___'",
+    "predicted_sql": "SELECT T3.constructorref, T3.url FROM races AS T1 INNER JOIN results AS T2 ON T1.raceid = T2.raceid INNER JOIN constructors AS T3 ON T2.constructorid = T3.constructorid WHERE T1.year = 2009 AND T1.name = 'Singapore Grand Prix' AND (T2.position = 1 OR T2.positionorder = 1) LIMIT 1",
+    "exact_match": false,
+    "execution_match": true,
+    "error": null,
+    "execution_error": null,
+    "gold_execution_results": [
+      {
+        "constructorref": "mclaren",
+        "url": "http://en.wikipedia.org/wiki/McLaren"
+      }
+    ],
+    "predicted_execution_results": [
+      {
+        "constructorref": "mclaren",
+        "url": "http://en.wikipedia.org/wiki/McLaren"
+      }
+    ],
+    "db_name": "passarinho",
+    "metadata": {
+      "latency_ms": 68884,
+      "tokens_in": null,
+      "tokens_out": null,
+      "model_name": null
+    },
+    "agent_trace": {
+      "status": "GENERATED",
+      "sql": "SELECT T3.constructorref, T3.url FROM races AS T1 INNER JOIN results AS T2 ON T1.raceid = T2.raceid INNER JOIN constructors AS T3 ON T2.constructorid = T3.constructorid WHERE T1.year = 2009 AND T1.name = 'Singapore Grand Prix' AND (T2.position = 1 OR T2.positionorder = 1) LIMIT 1",
+      "error": null,
+      "plan": "Identify the race record for the 2009 Singapore Grand Prix, find the result record with position = 1 (the race winner), join that result to the constructors table, and return constructors.constructorRef and constructors.url. No aggregation or GROUP BY is required. SQL pattern: SELECT c.constructorRef, c.url FROM races r JOIN results res ON r.raceId = res.raceId JOIN constructors c ON res.constructorId = c.constructorId WHERE r.year = 2009 AND r.name LIKE '%Singapore%' AND (res.position = '1' OR res.positionOrder = 1); If the schema uses different columns, use res.positionOrder=1 or res.positionText='1' as equivalent. If multiple matches (unlikely), limit 1. ",
+      "feedback": "Query generated without validation",
+      "attempts": 1,
+      "all_queries": [
+        "SELECT T3.constructorref, T3.url FROM races AS T1 INNER JOIN results AS T2 ON T1.raceid = T2.raceid INNER JOIN constructors AS T3 ON T2.constructorid = T3.constructorid WHERE T1.year = 2009 AND T1.name = 'Singapore Grand Prix' AND (T2.position = 1 OR T2.positionorder = 1) LIMIT 1"
+      ],
+      "interpreter_output": {
+        "clarified_question": "Find the constructor reference name (constructorRef) and the website (url) for the constructor associated with the race winner of the 2009 Singapore Grand Prix (i.e., the constructor of the driver who finished first in that specific 2009 race).",
+        "sub_questions": [],
+        "explicit_intent": "Identify the race record for the 2009 Singapore Grand Prix, find the result record with position = 1 (the race winner), join that result to the constructors table, and return constructors.constructorRef and constructors.url. No aggregation or GROUP BY is required. SQL pattern: SELECT c.constructorRef, c.url FROM races r JOIN results res ON r.raceId = res.raceId JOIN constructors c ON res.constructorId = c.constructorId WHERE r.year = 2009 AND r.name LIKE '%Singapore%' AND (res.position = '1' OR res.positionOrder = 1); If the schema uses different columns, use res.positionOrder=1 or res.positionText='1' as equivalent. If multiple matches (unlikely), limit 1. ",
+        "ambiguities_resolved": [
+          "Interpreted 'champion' to mean the race winner (the driver who finished first) of the 2009 Singapore Grand Prix, not the season champion.",
+          "Mapped 'constructor reference name' to the constructors.constructorRef field.",
+          "Mapped 'website' to constructors.url (or constructors.website) field.",
+          "Clarified race identification to filter by year = 2009 and race name containing 'Singapore' (use r.name LIKE '%Singapore%'), noting exact name matching may vary in DB.",
+          "Specified to use result position = 1 (or positionOrder = 1) to identify the winner.",
+          "Stated there is no aggregation or GROUP BY needed; query returns a single constructorRef and website."
+        ]
+      },
+      "retriever_output": "Selected tables and why they're relevant\n- races — identifies the specific event (year + name) we must filter for (2009 Singapore Grand Prix) and provides raceid to join to results.\n- results — contains finishing positions for each race (position / positionorder) and the constructorid for the driver who finished first.\n- constructors — contains constructor metadata including constructorref and url (the requested output).\n\nKey columns (per table) and why they matter\n- races: raceid (PK) — used to join to results.raceid; year — filter for 2009; name — filter for \"Singapore Grand Prix\" (or use url). Sample row: {raceid: 2, year: 2009, name: \"Malaysian Grand Prix\", url: \"http://en.wikipedia.org/wiki/2009_Malaysian_Grand_Prix\"} — shows event names are stored like \"Malaysian Grand Prix\" and url pattern is Wikipedia pages with the year.\n- results: raceid (FK → races.raceid), constructorid (FK → constructors.constructorid), position (integer finishing position), positiontext (text), positionorder. Sample row: {resultid: 23, raceid: 19, driverid: 8, constructorid: 6, position: 1, positiontext: \"1\", points: 10.0, ...} — confirms position=1 indicates the race winner and constructorid points to the constructor of that finishing driver.\n- constructors: constructorid (PK), constructorref (text), url (text). Sample row: {constructorid: 1, constructorref: \"mclaren\", name: \"McLaren\", url: \"http://en.wikipedia.org/wiki/McLaren\"} — shows constructorref is the short text ref and url holds the website/Wikipedia link.\n\nRelationships (foreign keys)\n- results.raceid → races.raceid (results references races)\n- results.constructorid → constructors.constructorid (results references constructors)\n\nValue/encoding insights and recommendations\n- Use races.year = 2009 and races.name = 'Singapore Grand Prix' to identify the target race. Alternatively, if name matching is uncertain, filter on races.url LIKE '%2009_Singapore_Grand_Prix%'.\n- Use results.position = 1 (or positionorder = 1) to identify the race winner. position is numeric (sample shows 1); positiontext is textual and may contain non-numeric codes for special cases, so prefer numeric position.\n- constructors.constructorref is the requested short reference string (e.g., \"mclaren\"); constructors.url is the requested website link.\n\nImportant notes to help build the SQL\n- Join chain: races -> results -> constructors via races.raceid = results.raceid and results.constructorid = constructors.constructorid.\n- Select constructors.constructorref and constructors.url, filtered to the race with year = 2009 and name = 'Singapore Grand Prix' and results.position = 1.\n- If exact event name is uncertain, use the races.url pattern (contains the year and event) as an alternative filter.\n\nExample join columns to use in the SQL generator:\n- WHERE races.year = 2009\n- AND races.name = 'Singapore Grand Prix'  (or races.url ILIKE '%2009_Singapore_Grand_Prix%')\n- AND results.position = 1\n\nThis schema/context is sufficient to write a query that returns the constructorref and url for the constructor of the driver who finished first at the 2009 Singapore Grand Prix.",
+      "generator_output": {
+        "sql_query": "SELECT T3.constructorref, T3.url\nFROM races AS T1\nINNER JOIN results AS T2 ON T1.raceid = T2.raceid\nINNER JOIN constructors AS T3 ON T2.constructorid = T3.constructorid\nWHERE T1.year = 2009\n  AND T1.name = 'Singapore Grand Prix'\n  AND (T2.position = 1 OR T2.positionorder = 1)\nLIMIT 1;",
+        "reasoning_steps": [
+          "Identify the relevant tables: races (T1) to find the 2009 Singapore Grand Prix, results (T2) to find the race winner, and constructors (T3) to get constructorRef and url.",
+          "Join races to results on raceid, and results to constructors on constructorid to link the race winner to its constructor.",
+          "Filter races by year = 2009 and name = 'Singapore Grand Prix' to target the specific event.",
+          "Filter results for the winner using numeric position indicators: T2.position = 1 or T2.positionorder = 1.",
+          "Select T3.constructorref and T3.url, and LIMIT 1 to return the single expected constructor record."
+        ],
+        "sub_queries": [],
+        "confidence": 0.9
+      },
+      "validator_output": null,
+      "trace": {
+        "pipeline": "new",
+        "db_name": "passarinho",
+        "start_ts": "2025-11-09T12:28:13.421071+00:00",
+        "end_ts": "2025-11-09T12:29:22.295099+00:00",
+        "latency_ms": 68874,
+        "steps": [
+          {
+            "name": "interpreter",
+            "timing_ms": 18807,
+            "input_summary": {
+              "raw_question": "What is the constructor reference name of the champion in the 2009 Singapore Grand Prix? Please give its website."
+            },
+            "output_summary": {
+              "clarified_question": "Find the constructor reference name (constructorRef) and the website (url) for the constructor associated with the race winner of the 2009 Singapore Grand Prix (i.e., the constructor of the driver who",
+              "intent": "Identify the race record for the 2009 Singapore Grand Prix, find the result record with position = 1 (the race winner), join that result to the constructors table, and return constructors.constructorRef and constructors.url. No aggregation or GROUP BY is required. SQL pattern: SELECT c.constructorRe",
+              "sub_questions_count": 0
+            },
+            "error": null
+          },
+          {
+            "name": "retriever",
+            "timing_ms": 32364,
+            "input_summary": {
+              "clarified_question": "Find the constructor reference name (constructorRef) and the website (url) for the constructor associated with the race winner of the 2009 Singapore Grand Prix (i.e., the constructor of the driver who",
+              "all_tables_count": 75
+            },
+            "output_summary": {
+              "output_length": 3124,
+              "output_preview": "Selected tables and why they're relevant\n- races — identifies the specific event (year + name) we must filter for (2009 Singapore Grand Prix) and provides raceid to join to results.\n- results — contains finishing positions for each race (position / positionorder) and the constructorid for the driver"
+            },
+            "error": null
+          },
+          {
+            "name": "generator",
+            "timing_ms": 17582,
+            "input_summary": {
+              "clarified_question": "Find the constructor reference name (constructorRef) and the website (url) for the constructor associated with the race winner of the 2009 Singapore Grand Prix (i.e., the constructor of the driver who",
+              "attempt": 1
+            },
+            "output_summary": {
+              "sql_length": 285,
+              "reasoning_steps_count": 5,
+              "confidence": 0.9
+            },
+            "error": null
+          }
+        ],
+        "tools": [
+          {
+            "agent": "retriever",
+            "tool": "get_table_info",
+            "args_redacted": [
+              "races",
+              "results",
+              "constructors"
+            ],
+            "result_preview": "Retrieved info for 3 tables",
+            "timing_ms": 80,
+            "error": null
+          }
+        ],
+        "generator": {
+          "sql_query": "SELECT T3.constructorref, T3.url FROM races AS T1 INNER JOIN results AS T2 ON T1.raceid = T2.raceid INNER JOIN constructors AS T3 ON T2.constructorid = T3.constructorid WHERE T1.year = 2009 AND T1.name = 'Singapore Grand Prix' AND (T2.position = 1 OR T2.positionorder = 1) LIMIT 1",
+          "reasoning_steps": [
+            "Identify the relevant tables: races (T1) to find the 2009 Singapore Grand Prix, results (T2) to find the race winner, and constructors (T3) to get constructorRef and url.",
+            "Join races to results on raceid, and results to constructors on constructorid to link the race winner to its constructor.",
+            "Filter races by year = 2009 and name = 'Singapore Grand Prix' to target the specific event.",
+            "Filter results for the winner using numeric position indicators: T2.position = 1 or T2.positionorder = 1.",
+            "Select T3.constructorref and T3.url, and LIMIT 1 to return the single expected constructor record."
+          ],
+          "confidence": 0.9
+        },
+        "retriever": {
+          "all_tables_count": 75,
+          "selected_tables": [
+            "races",
+            "results",
+            "constructors"
+          ]
+        }
+      }
+    }
+  },
+  {
+    "dataset": "bird",
+    "index": 409,
+    "question_id": 215,
+    "db_id": "toxicology",
+    "question": "How many atoms with iodine and with sulfur type elements are there in single bond molecules?",
+    "gold_sql": "SELECT COUNT(DISTINCT CASE WHEN T1.element = 'i' THEN T1.atom_id ELSE NULL END) AS iodine_nums, COUNT(DISTINCT CASE WHEN T1.element = 's' THEN T1.atom_id ELSE NULL END) AS sulfur_nums FROM atom AS T1 INNER JOIN connected AS T2 ON T1.atom_id = T2.atom_id INNER JOIN bond AS T3 ON T2.bond_id = T3.bond_id WHERE T3.bond_type = '-'",
+    "predicted_sql": "SELECT SUM(CASE WHEN LOWER(T1.element) = 'i' THEN 1 ELSE 0 END), SUM(CASE WHEN LOWER(T1.element) = 's' THEN 1 ELSE 0 END) FROM atom AS T1 INNER JOIN molecule AS T2 ON T1.molecule_id = T2.molecule_id WHERE NOT EXISTS ( SELECT 1 FROM bond AS T3 WHERE T3.molecule_id = T2.molecule_id AND T3.bond_type <> '-' ) AND EXISTS ( SELECT 1 FROM bond AS T3 WHERE T3.molecule_id = T2.molecule_id )",
+    "exact_match": false,
+    "execution_match": false,
+    "error": null,
+    "execution_error": null,
+    "gold_execution_results": [
+      {
+        "iodine_nums": 3,
+        "sulfur_nums": 77
+      }
+    ],
+    "predicted_execution_results": [
+      {
+        "sum": 5
+      }
+    ],
+    "db_name": "passarinho",
+    "metadata": {
+      "latency_ms": 114971,
+      "tokens_in": null,
+      "tokens_out": null,
+      "model_name": null
+    },
+    "agent_trace": {
+      "status": "GENERATED",
+      "sql": "SELECT SUM(CASE WHEN LOWER(T1.element) = 'i' THEN 1 ELSE 0 END), SUM(CASE WHEN LOWER(T1.element) = 's' THEN 1 ELSE 0 END) FROM atom AS T1 INNER JOIN molecule AS T2 ON T1.molecule_id = T2.molecule_id WHERE NOT EXISTS ( SELECT 1 FROM bond AS T3 WHERE T3.molecule_id = T2.molecule_id AND T3.bond_type <> '-' ) AND EXISTS ( SELECT 1 FROM bond AS T3 WHERE T3.molecule_id = T2.molecule_id )",
+      "error": null,
+      "plan": "Return two counts (one for iodine atoms, one for sulfur atoms) among atoms that belong to molecules where all bonds are single bonds. Aggregation: use COUNT(*) per element (or SUM(CASE WHEN element = 'I' THEN 1 ELSE 0 END) and SUM(CASE WHEN element = 'S' THEN 1 ELSE 0 END) over the filtered set). Filtering: include only molecules whose bonds have bond_order = 1 (or bond_type = 'single'). Do NOT group by time. GROUP BY element to get separate counts, e.g.: SELECT a.element, COUNT(*) FROM atoms a JOIN molecules m ON a.molecule_id = m.id WHERE a.element IN ('I','S') AND a.molecule_id IN (SELECT b.molecule_id FROM bonds b GROUP BY b.molecule_id HAVING MAX(b.bond_order) = 1) GROUP BY a.element; Alternatively: SELECT SUM(CASE WHEN a.element='I' THEN 1 ELSE 0 END) AS iodine_count, SUM(CASE WHEN a.element='S' THEN 1 ELSE 0 END) AS sulfur_count FROM atoms a WHERE a.molecule_id IN (SELECT b.molecule_id FROM bonds b GROUP BY b.molecule_id HAVING MAX(b.bond_order)=1);",
+      "feedback": "Query generated without validation",
+      "attempts": 1,
+      "all_queries": [
+        "SELECT SUM(CASE WHEN LOWER(T1.element) = 'i' THEN 1 ELSE 0 END), SUM(CASE WHEN LOWER(T1.element) = 's' THEN 1 ELSE 0 END) FROM atom AS T1 INNER JOIN molecule AS T2 ON T1.molecule_id = T2.molecule_id WHERE NOT EXISTS ( SELECT 1 FROM bond AS T3 WHERE T3.molecule_id = T2.molecule_id AND T3.bond_type <> '-' ) AND EXISTS ( SELECT 1 FROM bond AS T3 WHERE T3.molecule_id = T2.molecule_id )"
+      ],
+      "interpreter_output": {
+        "clarified_question": "Count the number of iodine (I) atoms and the number of sulfur (S) atoms that appear in molecules that contain only single bonds (i.e., every bond in the molecule is a single bond).",
+        "sub_questions": [],
+        "explicit_intent": "Return two counts (one for iodine atoms, one for sulfur atoms) among atoms that belong to molecules where all bonds are single bonds. Aggregation: use COUNT(*) per element (or SUM(CASE WHEN element = 'I' THEN 1 ELSE 0 END) and SUM(CASE WHEN element = 'S' THEN 1 ELSE 0 END) over the filtered set). Filtering: include only molecules whose bonds have bond_order = 1 (or bond_type = 'single'). Do NOT group by time. GROUP BY element to get separate counts, e.g.: SELECT a.element, COUNT(*) FROM atoms a JOIN molecules m ON a.molecule_id = m.id WHERE a.element IN ('I','S') AND a.molecule_id IN (SELECT b.molecule_id FROM bonds b GROUP BY b.molecule_id HAVING MAX(b.bond_order) = 1) GROUP BY a.element; Alternatively: SELECT SUM(CASE WHEN a.element='I' THEN 1 ELSE 0 END) AS iodine_count, SUM(CASE WHEN a.element='S' THEN 1 ELSE 0 END) AS sulfur_count FROM atoms a WHERE a.molecule_id IN (SELECT b.molecule_id FROM bonds b GROUP BY b.molecule_id HAVING MAX(b.bond_order)=1);",
+        "ambiguities_resolved": [
+          "Interpreted 'single bond molecules' as molecules where every bond is a single bond (no double/triple bonds).",
+          "Interpreted 'atoms with iodine and with sulfur type elements' as asking for separate counts of iodine (I) atoms and sulfur (S) atoms.",
+          "Assumed element identifiers are atomic symbols 'I' and 'S' in the atoms table. If the schema uses full names (e.g., 'iodine','sulfur'), adjust the element filter accordingly.",
+          "Assumed bond single-ness is indicated by bond_order = 1 or bond_type = 'single'; adjust filter for the schema available."
+        ]
+      },
+      "retriever_output": "Selected tables (3) and why they're relevant\n- molecule: contains molecule identifiers; needed to identify which atoms/bonds belong to the same molecule.\n- bond: holds bond records and bond types (single/double/triple). We must use this to test the condition \"every bond in the molecule is a single bond\".\n- atom: holds atoms and their element types; used to count iodine and sulfur atoms in the molecules that meet the bond condition.\n\nKey columns (per table)\n- molecule.molecule_id (primary key) — links to atoms and bonds.\n- atom.atom_id (primary key), atom.molecule_id (FK → molecule.molecule_id), atom.element — element symbol (used to filter for iodine / sulfur).\n- bond.bond_id (primary key), bond.molecule_id (FK → molecule.molecule_id), bond.bond_type — encodes single/double/triple bond.\n\nSample data (from the sample_row values)\n- molecule.sample_row: {molecule_id: \"TR000\", label: \"+\"}\n- atom.sample_row: {atom_id: \"TR000_1\", molecule_id: \"TR000\", element: \"cl\"}\n- bond.sample_row: {bond_id: \"TR000_1_2\", molecule_id: \"TR000\", bond_type: \"-\"}\n\nRelationships\n- atom.molecule_id → molecule.molecule_id (atoms belong to molecules)\n- bond.molecule_id → molecule.molecule_id (bonds belong to molecules)\n(There is also a connected table in the schema linking bonds and atoms, but for this task atom.molecule_id and bond.molecule_id suffice to relate atoms and bonds to the same molecule.)\n\nValue insights / encodings\n- bond.bond_type sample_values returned [\"#\", \"=\", \"-\"]. These map to: \"#\" = triple bond, \"=\" = double bond, \"-\" = single bond. So single bonds are encoded as '-' and we should select molecules where all bond_type = '-'.\n- atom.element sample_values show lowercase element symbols (e.g., \"i\" for iodine, \"s\" for sulfur). When filtering for iodine and sulfur, use lowercase 'i' and 's' (or apply a case-insensitive comparison).\n\nImportant notes and assumptions for constructing SQL\n- To find molecules that contain only single bonds, select molecules for which no bond exists with bond_type != '-' (i.e., NOT EXISTS bonds with bond_type <> '-') — or equivalently where COUNT(*) = COUNT(CASE WHEN bond_type = '-' THEN 1 END). This ensures every bond in the molecule is single.\n- Decision about molecules with no bonds: logically a molecule with zero bonds would trivially satisfy \"every bond is a single bond\" (vacuously true). If you do NOT want to include such single-atom molecules, add a condition to require the molecule has at least one bond (e.g., EXISTS bond rows for that molecule). I recommend explicitly choosing which behavior you want; by default I would require at least one bond to avoid counting isolated atoms unintentionally.\n- Count atoms by counting rows in atom where atom.element = 'i' (iodine) or 's' (sulfur) and atom.molecule_id is in the set of molecules that satisfy the \"only single bonds\" condition. Use atom.atom_id (unique) or COUNT(*) on atom filtered rows; if you prefer distinct counting ensure uniqueness by atom_id.\n\nThis summary provides the schema fields, sample values, and the encoding conventions you need to write SQL that:\n1) finds molecules where every bond is '-', and (optionally) has at least one bond, and\n2) counts atoms with element = 'i' and element = 's' within those molecules.",
+      "generator_output": {
+        "sql_query": "SELECT SUM(CASE WHEN LOWER(T1.element) = 'i' THEN 1 ELSE 0 END), SUM(CASE WHEN LOWER(T1.element) = 's' THEN 1 ELSE 0 END)\nFROM atom AS T1\nINNER JOIN molecule AS T2 ON T1.molecule_id = T2.molecule_id\nWHERE NOT EXISTS (\n  SELECT 1 FROM bond AS T3 WHERE T3.molecule_id = T2.molecule_id AND T3.bond_type <> '-'\n) AND EXISTS (\n  SELECT 1 FROM bond AS T3 WHERE T3.molecule_id = T2.molecule_id\n)",
+        "reasoning_steps": [
+          "Join atoms to their molecules so we can filter molecules by their bonds.",
+          "Identify molecules that have only single bonds by ensuring there does NOT exist any bond for the molecule with bond_type <> '-' and that at least one bond exists for the molecule.",
+          "Count iodine and sulfur atoms among atoms that belong to those filtered molecules using conditional SUMs with a case-insensitive element check (LOWER(element))."
+        ],
+        "sub_queries": [],
+        "confidence": 0.9
+      },
+      "validator_output": null,
+      "trace": {
+        "pipeline": "new",
+        "db_name": "passarinho",
+        "start_ts": "2025-11-09T12:28:13.421982+00:00",
+        "end_ts": "2025-11-09T12:30:08.365869+00:00",
+        "latency_ms": 114943,
+        "steps": [
+          {
+            "name": "interpreter",
+            "timing_ms": 28374,
+            "input_summary": {
+              "raw_question": "How many atoms with iodine and with sulfur type elements are there in single bond molecules?"
+            },
+            "output_summary": {
+              "clarified_question": "Count the number of iodine (I) atoms and the number of sulfur (S) atoms that appear in molecules that contain only single bonds (i.e., every bond in the molecule is a single bond).",
+              "intent": "Return two counts (one for iodine atoms, one for sulfur atoms) among atoms that belong to molecules where all bonds are single bonds. Aggregation: use COUNT(*) per element (or SUM(CASE WHEN element = 'I' THEN 1 ELSE 0 END) and SUM(CASE WHEN element = 'S' THEN 1 ELSE 0 END) over the filtered set). Fi",
+              "sub_questions_count": 0
+            },
+            "error": null
+          },
+          {
+            "name": "retriever",
+            "timing_ms": 47750,
+            "input_summary": {
+              "clarified_question": "Count the number of iodine (I) atoms and the number of sulfur (S) atoms that appear in molecules that contain only single bonds (i.e., every bond in the molecule is a single bond).",
+              "all_tables_count": 75
+            },
+            "output_summary": {
+              "output_length": 3251,
+              "output_preview": "Selected tables (3) and why they're relevant\n- molecule: contains molecule identifiers; needed to identify which atoms/bonds belong to the same molecule.\n- bond: holds bond records and bond types (single/double/triple). We must use this to test the condition \"every bond in the molecule is a single b"
+            },
+            "error": null
+          },
+          {
+            "name": "generator",
+            "timing_ms": 38714,
+            "input_summary": {
+              "clarified_question": "Count the number of iodine (I) atoms and the number of sulfur (S) atoms that appear in molecules that contain only single bonds (i.e., every bond in the molecule is a single bond).",
+              "attempt": 1
+            },
+            "output_summary": {
+              "sql_length": 388,
+              "reasoning_steps_count": 3,
+              "confidence": 0.9
+            },
+            "error": null
+          }
+        ],
+        "tools": [
+          {
+            "agent": "retriever",
+            "tool": "get_table_info",
+            "args_redacted": [
+              "molecule",
+              "atom",
+              "bond"
+            ],
+            "result_preview": "Retrieved info for 3 tables",
+            "timing_ms": 94,
+            "error": null
+          },
+          {
+            "agent": "retriever",
+            "tool": "sample_values",
+            "args_redacted": {
+              "table_name": "bond",
+              "column_name": "bond_type",
+              "limit": 10
+            },
+            "result_preview": "Retrieved 3 sample values",
+            "timing_ms": 29,
+            "error": null
+          },
+          {
+            "agent": "retriever",
+            "tool": "sample_values",
+            "args_redacted": {
+              "table_name": "atom",
+              "column_name": "element",
+              "limit": 20
+            },
+            "result_preview": "Retrieved 18 sample values",
+            "timing_ms": 30,
+            "error": null
+          }
+        ],
+        "generator": {
+          "sql_query": "SELECT SUM(CASE WHEN LOWER(T1.element) = 'i' THEN 1 ELSE 0 END), SUM(CASE WHEN LOWER(T1.element) = 's' THEN 1 ELSE 0 END) FROM atom AS T1 INNER JOIN molecule AS T2 ON T1.molecule_id = T2.molecule_id WHERE NOT EXISTS ( SELECT 1 FROM bond AS T3 WHERE T3.molecule_id = T2.molecule_id AND T3.bond_type <> '-' ) AND EXISTS ( SELECT 1 FROM bond AS T3 WHERE T3.molecule_id = T2.molecule_id )",
+          "reasoning_steps": [
+            "Join atoms to their molecules so we can filter molecules by their bonds.",
+            "Identify molecules that have only single bonds by ensuring there does NOT exist any bond for the molecule with bond_type <> '-' and that at least one bond exists for the molecule.",
+            "Count iodine and sulfur atoms among atoms that belong to those filtered molecules using conditional SUMs with a case-insensitive element check (LOWER(element))."
+          ],
+          "confidence": 0.9
+        },
+        "retriever": {
+          "all_tables_count": 75,
+          "selected_tables": [
+            "molecule",
+            "atom",
+            "bond"
+          ]
+        }
+      }
+    }
+  }
+]

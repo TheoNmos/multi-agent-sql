@@ -1,0 +1,682 @@
+[
+  {
+    "dataset": "livraria",
+    "index": 2,
+    "question_id": 2,
+    "db_id": null,
+    "question": "Quantos empréstimos foram realizados em 2024?",
+    "gold_sql": "SELECT COUNT(*) FROM emprestimos WHERE EXTRACT(YEAR FROM data_emprestimo) = 2024;",
+    "predicted_sql": "SELECT COUNT(T1.emprestimo_id) FROM emprestimos AS T1 WHERE EXTRACT(YEAR FROM T1.data_emprestimo) = 2024",
+    "exact_match": false,
+    "execution_match": true,
+    "analyzer_match": true,
+    "error": null,
+    "execution_error": null,
+    "gold_execution_results": [
+      {
+        "count": 5
+      }
+    ],
+    "predicted_execution_results": [
+      {
+        "count": 5
+      }
+    ],
+    "db_name": "livraria",
+    "metadata": {
+      "latency_ms": 82702,
+      "tokens_in": null,
+      "tokens_out": null,
+      "model_name": null
+    },
+    "agent_trace": {
+      "status": "GENERATED",
+      "sql": "SELECT COUNT(T1.emprestimo_id) FROM emprestimos AS T1 WHERE EXTRACT(YEAR FROM T1.data_emprestimo) = 2024",
+      "error": null,
+      "plan": "Retornar um único escalar: total de empréstimos realizados em 2024. Cálculo/SQL pattern: COUNT de registros de empréstimos filtrados pelo ano=2024. Exemplo de consultas (escolher conforme tipo da coluna de data):\n- Se loan_date é um timestamp/date: SELECT COUNT(*) AS total_loans_2024 FROM loans WHERE EXTRACT(YEAR FROM loan_date) = 2024;\n- Se loan_date é string no formato 'YYYYMMDD' ou 'YYYY-MM-DD': SELECT COUNT(*) AS total_loans_2024 FROM loans WHERE SUBSTR(loan_date,1,4) = '2024';\n- Se houver possibilidade de registros duplicados, usar COUNT(DISTINCT loan_id) em vez de COUNT(*): SELECT COUNT(DISTINCT loan_id) AS total_loans_2024 FROM loans WHERE EXTRACT(YEAR FROM loan_date) = 2024;\nAgregação: COUNT (nenhum GROUP BY). Output esperado: uma única linha/coluna contendo o total (inteiro).",
+      "feedback": "Consulta é sintaticamente válida e responde corretamente à pergunta, mas o uso de EXTRACT no WHERE impede o uso de índices e força um seq scan; substitua o filtro por um intervalo de datas (data_emprestimo >= '2024-01-01' AND data_emprestimo < '2025-01-01') ou crie um índice apropriado para melhorar desempenho.",
+      "attempts": 1,
+      "all_queries": [
+        "SELECT COUNT(T1.emprestimo_id) FROM emprestimos AS T1 WHERE EXTRACT(YEAR FROM T1.data_emprestimo) = 2024"
+      ],
+      "interpreter_output": {
+        "clarified_question": "Quantos empréstimos (registros de empréstimos desembolsados/concedidos) foram realizados no ano civil de 2024?",
+        "sub_questions": [],
+        "explicit_intent": "Retornar um único escalar: total de empréstimos realizados em 2024. Cálculo/SQL pattern: COUNT de registros de empréstimos filtrados pelo ano=2024. Exemplo de consultas (escolher conforme tipo da coluna de data):\n- Se loan_date é um timestamp/date: SELECT COUNT(*) AS total_loans_2024 FROM loans WHERE EXTRACT(YEAR FROM loan_date) = 2024;\n- Se loan_date é string no formato 'YYYYMMDD' ou 'YYYY-MM-DD': SELECT COUNT(*) AS total_loans_2024 FROM loans WHERE SUBSTR(loan_date,1,4) = '2024';\n- Se houver possibilidade de registros duplicados, usar COUNT(DISTINCT loan_id) em vez de COUNT(*): SELECT COUNT(DISTINCT loan_id) AS total_loans_2024 FROM loans WHERE EXTRACT(YEAR FROM loan_date) = 2024;\nAgregação: COUNT (nenhum GROUP BY). Output esperado: uma única linha/coluna contendo o total (inteiro).",
+        "ambiguities_resolved": [
+          "Interpretei 'empréstimos realizados' como empréstimos desembolsados/concedidos (não como pedidos submetidos/solicitações). Se o usuário quiser contar outro estado (ex.: aprovados, solicitados), deve especificar.",
+          "Assumi uma tabela principal chamada 'loans' e uma coluna de data chamada 'loan_date' ou 'disbursement_date'. Se seus nomes diferem, substituir pelos nomes reais.",
+          "Output shape: um único escalar (one row, one column) com o total de empréstimos em 2024, conforme diretriz de perguntas que pedem um único valor.",
+          "Temporal filter: aplicar WHERE year = 2024 (EXTRACT or SUBSTR) e NÃO agrupar por mês, porque a pergunta pede o total no ano, não por mês.",
+          "Se existirem registros duplicados por loan_id, recomendo usar COUNT(DISTINCT loan_id) — assumi que cada registro representa um empréstimo distinto, então COUNT(*) é adequado."
+        ]
+      },
+      "mapper_output": "Resumo de mapeamento de esquema para responder: \"Quantos empréstimos foram realizados no ano civil de 2024?\"\n\n1) Tabelas selecionadas e por quê\n- emprestimos (PRIMÁRIA) — selecionada porque a pergunta fala explicitamente de registros de empréstimos (quantos empréstimos foram realizados). Esta tabela contém a data do empréstimo e o identificador do empréstimo, logo é a fonte direta e suficiente para contar empréstimos por ano.\n- membros — incluída como tabela auxiliar (liga-se por membro_id) apenas para contexto/possível detalhamento por membro; não é necessária para a contagem total.\n- livros — incluída como tabela auxiliar (liga-se por livro_id) apenas para contexto/possível detalhamento por livro; também não é necessária para a contagem total.\n\nPor prioridade: emprestimos é a melhor/única tabela necessária (tabela com os eventos que estamos contando). membros/livros são opcionais apenas se quiser filtros/agrupamentos adicionais.\n\n2) Colunas chave (por tabela) e relevância\n- emprestimos:\n  - emprestimo_id (integer, PK) — identifica cada registro; conte as linhas/IDs para obter número de empréstimos.\n  - data_emprestimo (date, NOT NULL) — coluna de data que determina quando o empréstimo foi concedido; é a coluna usada para filtrar pelo ano civil 2024 (PRINCIPAL).\n  - data_devolucao (date, nullable) — informação adicional, não necessária para contar empréstimos concedidos.\n  - livro_id, membro_id (integers, FKs) — relacionam o empréstimo a livros e membros; úteis só para joins/relatórios adicionais.\n- membros:\n  - membro_id (PK), nome, data_cadastro — não necessários para a contagem total, servem para detalhar por membro.\n- livros:\n  - livro_id (PK), titulo, ano_publicacao, etc. — não necessários para a contagem total, servem para detalhar por livro.\n\n3) Formato de data e tipos de coluna (crítico)\n- data_emprestimo é do tipo DATE (ex.: sample_row mostra \"2024-01-15\").\n  - Conclusão: usar comparação por ano com funções de data (EXTRACT(YEAR FROM data_emprestimo) = 2024) ou filtrar por intervalo de datas BETWEEN '2024-01-01' AND '2024-12-31'.\n- emprestimo_id é integer (contagem direta segura).\n- Não há necessidade de tratar YYYYMM strings — a coluna já é DATE.\n\n4) Exemplo de sample_row (mostra formatos reais)\n- emprestimos.sample_row: { emprestimo_id: 1, livro_id: 1, membro_id: 1, data_emprestimo: \"2024-01-15\", data_devolucao: \"2024-02-01\" }\n  - Isso confirma: data_emprestimo armazenamento em formato DATE e presença de um empréstimo em 2024.\n\n5) Relacionamentos (foreign keys)\n- emprestimos.livro_id → livros.livro_id\n- emprestimos.membro_id → membros.membro_id\nEsses FKs permitem juntar para enriquecer resultados, mas não são necessários para a contagem total.\n\n6) Insights sobre valores / codificações\n- Nenhuma codificação especial detectada. Datas e IDs usam tipos padrão (DATE, integer). Nenhum valor de enum/flag identificado no contexto de contagem.\n\n7) Avisos de cardinalidade / recomendações sobre joins\n- Esta pergunta pode ser respondida exclusivamente com a tabela emprestimos — recomendo usar só essa tabela para evitar qualquer alteração indesejada da contagem.\n- WARNING: Se você fizer JOIN com membros ou livros, o JOIN não deve alterar a contagem se a integridade referencial estiver garantida e você usar contagem sobre emprestimos. Porém, se existirem empréstimos com referências ausentes (FK quebrada) ou se você usar JOINs que inadvertidamente convertam para LEFT/INNER e aplicar filtros nas tabelas joinadas, o resultado pode ser reduzido. Portanto: conte diretamente em emprestimos para segurança (por ex. COUNT(*) ou COUNT(emprestimo_id) filtrando por ano).\n\n8) Validação final / notas para gerar SQL\n- Confirmado: a coluna necessária (data_emprestimo) existe em emprestimos e é do tipo DATE; emprestimos contém o registro de cada empréstimo (PK emprestimo_id).\n- Filtros recomendados:\n  - EXTRACT(YEAR FROM data_emprestimo) = 2024\n  - OU data_emprestimo BETWEEN DATE '2024-01-01' AND DATE '2024-12-31'\n- Consulta pode ser simples e suficiente, por exemplo:\n  - SELECT COUNT(*) FROM emprestimos WHERE EXTRACT(YEAR FROM data_emprestimo) = 2024;\n  - Ou: SELECT COUNT(*) FROM emprestimos WHERE data_emprestimo BETWEEN '2024-01-01' AND '2024-12-31';\n\nSe quiser, eu posso agora gerar a consulta SQL exata para executar no banco (escolha se prefere EXTRACT(YEAR...) ou BETWEEN por intervalo).",
+      "generator_output": {
+        "reasoning_steps": [
+          "Identified the primary table 'emprestimos' as the single source of truth for loan records and used only it (minimal-table principle).",
+          "Chose to count distinct loan records via COUNT(T1.emprestimo_id) to safely count each loan row.",
+          "Filtered by calendar year 2024 using EXTRACT(YEAR FROM T1.data_emprestimo) = 2024 because data_emprestimo is of type DATE.",
+          "Followed dataset rules: single SELECT, use table alias AS T1, fully qualified columns, no column aliases, no CTEs, and no LIMIT on aggregate queries."
+        ],
+        "sub_queries": [],
+        "confidence": 0.95,
+        "sql_query": "SELECT COUNT(T1.emprestimo_id)\nFROM emprestimos AS T1\nWHERE EXTRACT(YEAR FROM T1.data_emprestimo) = 2024;"
+      },
+      "validator_output": {
+        "is_valid": true,
+        "is_optimal": false,
+        "syntax_errors": [],
+        "semantic_issues": [],
+        "efficiency_score": 0.75,
+        "efficiency_issues": [
+          "Filtro usando EXTRACT(YEAR FROM data_emprestimo) impede uso de índice e provoca seq scan na tabela emprestimos",
+          "Recomenda-se usar filtro por intervalo de datas (data_emprestimo >= '2024-01-01' AND data_emprestimo < '2025-01-01') para permitir uso de índices ou criar índice apropriado",
+          "Verificar se emprestimo_id é NOT NULL; se for, usar COUNT(*) é mais idiomático (COUNT(emprestimo_id) funciona, mas pode ocultar NULLs)"
+        ],
+        "refinement_feedback": "Consulta é sintaticamente válida e responde corretamente à pergunta, mas o uso de EXTRACT no WHERE impede o uso de índices e força um seq scan; substitua o filtro por um intervalo de datas (data_emprestimo >= '2024-01-01' AND data_emprestimo < '2025-01-01') ou crie um índice apropriado para melhorar desempenho."
+      },
+      "trace": {
+        "pipeline": "new",
+        "db_name": "livraria",
+        "start_ts": "2025-11-14T21:28:04.675343+00:00",
+        "end_ts": "2025-11-14T21:29:27.314776+00:00",
+        "latency_ms": 82639,
+        "steps": [
+          {
+            "name": "interpreter",
+            "timing_ms": 15124,
+            "input_summary": {
+              "raw_question": "Quantos empréstimos foram realizados em 2024?"
+            },
+            "output_summary": {
+              "clarified_question": "Quantos empréstimos (registros de empréstimos desembolsados/concedidos) foram realizados no ano civil de 2024?",
+              "intent": "Retornar um único escalar: total de empréstimos realizados em 2024. Cálculo/SQL pattern: COUNT de registros de empréstimos filtrados pelo ano=2024. Exemplo de consultas (escolher conforme tipo da coluna de data):\n- Se loan_date é um timestamp/date: SELECT COUNT(*) AS total_loans_2024 FROM loans WHER",
+              "sub_questions_count": 0
+            },
+            "error": null
+          },
+          {
+            "name": "mapper",
+            "timing_ms": 22317,
+            "input_summary": {
+              "clarified_question": "Quantos empréstimos (registros de empréstimos desembolsados/concedidos) foram realizados no ano civil de 2024?",
+              "all_tables_count": 6
+            },
+            "output_summary": {
+              "output_length": 4352,
+              "output_preview": "Resumo de mapeamento de esquema para responder: \"Quantos empréstimos foram realizados no ano civil de 2024?\"\n\n1) Tabelas selecionadas e por quê\n- emprestimos (PRIMÁRIA) — selecionada porque a pergunta fala explicitamente de registros de empréstimos (quantos empréstimos foram realizados). Esta tabela"
+            },
+            "error": null
+          },
+          {
+            "name": "generator",
+            "timing_ms": 11101,
+            "input_summary": {
+              "clarified_question": "Quantos empréstimos (registros de empréstimos desembolsados/concedidos) foram realizados no ano civil de 2024?",
+              "attempt": 1
+            },
+            "output_summary": {
+              "sql_length": 105,
+              "reasoning_steps_count": 4,
+              "confidence": 0.95
+            },
+            "error": null
+          },
+          {
+            "name": "validator",
+            "timing_ms": 33794,
+            "input_summary": {
+              "sql_length": 104,
+              "attempt": 1
+            },
+            "output_summary": {
+              "is_valid": true,
+              "is_optimal": false,
+              "efficiency_score": 0.75,
+              "syntax_error_count": 0,
+              "semantic_issue_count": 0
+            },
+            "error": null
+          }
+        ],
+        "tools": [
+          {
+            "agent": "mapper",
+            "tool": "get_table_info",
+            "args_redacted": [
+              "emprestimos",
+              "membros",
+              "livros"
+            ],
+            "result_preview": "Retrieved info for 3 tables",
+            "timing_ms": 204,
+            "error": null
+          }
+        ],
+        "generator": {
+          "sql_query": "SELECT COUNT(T1.emprestimo_id) FROM emprestimos AS T1 WHERE EXTRACT(YEAR FROM T1.data_emprestimo) = 2024",
+          "reasoning_steps": [
+            "Identified the primary table 'emprestimos' as the single source of truth for loan records and used only it (minimal-table principle).",
+            "Chose to count distinct loan records via COUNT(T1.emprestimo_id) to safely count each loan row.",
+            "Filtered by calendar year 2024 using EXTRACT(YEAR FROM T1.data_emprestimo) = 2024 because data_emprestimo is of type DATE.",
+            "Followed dataset rules: single SELECT, use table alias AS T1, fully qualified columns, no column aliases, no CTEs, and no LIMIT on aggregate queries."
+          ],
+          "confidence": 0.95
+        },
+        "mapper": {
+          "all_tables_count": 6,
+          "selected_tables": [
+            "emprestimos",
+            "membros",
+            "livros"
+          ]
+        }
+      }
+    },
+    "analyzer_output": {
+      "analyzer_match": true,
+      "approved": true,
+      "failure_step": "none",
+      "failure_reason": "Result is correct - rule-based match (EM or RM) confirms correctness",
+      "query_issues": "No issues found - query matches expected results",
+      "root_cause": "Result is correct - validated by exact match or execution match",
+      "suggestions": []
+    }
+  },
+  {
+    "dataset": "livraria",
+    "index": 6,
+    "question_id": 6,
+    "db_id": null,
+    "question": "Conte quantos livros por gênero existem.",
+    "gold_sql": "SELECT g.nome AS genero, COUNT(*) AS qtd FROM livros l JOIN generos g ON g.genero_id = l.genero_id GROUP BY g.nome ORDER BY qtd DESC, genero;",
+    "predicted_sql": "SELECT T1.nome, COUNT(T2.livro_id) FROM generos AS T1 LEFT JOIN livros AS T2 ON T2.genero_id = T1.genero_id GROUP BY T1.nome ORDER BY COUNT(T2.livro_id) DESC NULLS LAST",
+    "exact_match": false,
+    "execution_match": true,
+    "analyzer_match": true,
+    "error": null,
+    "execution_error": null,
+    "gold_execution_results": [
+      {
+        "genero": "Romance",
+        "qtd": 6
+      },
+      {
+        "genero": "Ficção Científica",
+        "qtd": 5
+      },
+      {
+        "genero": "Thriller",
+        "qtd": 3
+      },
+      {
+        "genero": "Educação",
+        "qtd": 2
+      },
+      {
+        "genero": "Fantasia",
+        "qtd": 2
+      },
+      {
+        "genero": "História",
+        "qtd": 2
+      },
+      {
+        "genero": "Infantojuvenil",
+        "qtd": 2
+      },
+      {
+        "genero": "Mistério",
+        "qtd": 2
+      },
+      {
+        "genero": "Poesia",
+        "qtd": 2
+      },
+      {
+        "genero": "Tecnologia",
+        "qtd": 2
+      },
+      {
+        "genero": "Biografia",
+        "qtd": 1
+      },
+      {
+        "genero": "Não Ficção",
+        "qtd": 1
+      }
+    ],
+    "predicted_execution_results": [
+      {
+        "nome": "Romance",
+        "count": 6
+      },
+      {
+        "nome": "Ficção Científica",
+        "count": 5
+      },
+      {
+        "nome": "Thriller",
+        "count": 3
+      },
+      {
+        "nome": "História",
+        "count": 2
+      },
+      {
+        "nome": "Mistério",
+        "count": 2
+      },
+      {
+        "nome": "Educação",
+        "count": 2
+      },
+      {
+        "nome": "Infantojuvenil",
+        "count": 2
+      },
+      {
+        "nome": "Tecnologia",
+        "count": 2
+      },
+      {
+        "nome": "Poesia",
+        "count": 2
+      },
+      {
+        "nome": "Fantasia",
+        "count": 2
+      },
+      {
+        "nome": "Biografia",
+        "count": 1
+      },
+      {
+        "nome": "Não Ficção",
+        "count": 1
+      }
+    ],
+    "db_name": "livraria",
+    "metadata": {
+      "latency_ms": 74812,
+      "tokens_in": null,
+      "tokens_out": null,
+      "model_name": null
+    },
+    "agent_trace": {
+      "status": "GENERATED",
+      "sql": "SELECT T1.nome, COUNT(T2.livro_id) FROM generos AS T1 LEFT JOIN livros AS T2 ON T2.genero_id = T1.genero_id GROUP BY T1.nome ORDER BY COUNT(T2.livro_id) DESC NULLS LAST",
+      "error": null,
+      "plan": "Retornar múltiplas linhas — uma por gênero — com duas colunas: 'genre' (valor do gênero) e 'book_count' (número de livros desse gênero). Cálculo/SQL pattern: SELECT genre, COUNT(*) AS book_count FROM books GROUP BY genre ORDER BY book_count DESC; - Agregação: COUNT(*) por grupo. - GROUP BY: agrupar por genre. - Ordenação opcional: ORDER BY book_count DESC. Variações/considerações: (a) Para excluir valores NULL: adicionar WHERE genre IS NOT NULL antes do GROUP BY. (b) Para incluir gêneros com zero livros (se existir tabela de gêneros separada): usar LEFT JOIN, por exemplo: SELECT g.genre, COALESCE(COUNT(b.id),0) AS book_count FROM genres g LEFT JOIN books b ON b.genre = g.genre GROUP BY g.genre ORDER BY book_count DESC; Esperado formato de saída: tabela com colunas (genre, book_count), tipo de book_count = inteiro.",
+      "feedback": "Consulta é sintaticamente válida e responde corretamente à pergunta; inclua t1.genero_id no GROUP BY (ou selecione o id junto com o nome) e dê aliases às colunas (por exemplo AS genre, AS book_count). Para melhorar desempenho, crie um índice em livros.genero_id e atualize as estatísticas; remova o NULLS LAST (COUNT nunca retorna NULL).",
+      "attempts": 1,
+      "all_queries": [
+        "SELECT T1.nome, COUNT(T2.livro_id) FROM generos AS T1 LEFT JOIN livros AS T2 ON T2.genero_id = T1.genero_id GROUP BY T1.nome ORDER BY COUNT(T2.livro_id) DESC NULLS LAST"
+      ],
+      "interpreter_output": {
+        "clarified_question": "Conte quantos livros existem para cada gênero, retornando uma linha por gênero com as colunas (genre, book_count).",
+        "sub_questions": [],
+        "explicit_intent": "Retornar múltiplas linhas — uma por gênero — com duas colunas: 'genre' (valor do gênero) e 'book_count' (número de livros desse gênero). Cálculo/SQL pattern: SELECT genre, COUNT(*) AS book_count FROM books GROUP BY genre ORDER BY book_count DESC; - Agregação: COUNT(*) por grupo. - GROUP BY: agrupar por genre. - Ordenação opcional: ORDER BY book_count DESC. Variações/considerações: (a) Para excluir valores NULL: adicionar WHERE genre IS NOT NULL antes do GROUP BY. (b) Para incluir gêneros com zero livros (se existir tabela de gêneros separada): usar LEFT JOIN, por exemplo: SELECT g.genre, COALESCE(COUNT(b.id),0) AS book_count FROM genres g LEFT JOIN books b ON b.genre = g.genre GROUP BY g.genre ORDER BY book_count DESC; Esperado formato de saída: tabela com colunas (genre, book_count), tipo de book_count = inteiro.",
+        "ambiguities_resolved": [
+          "Interpretei 'por gênero' como por cada valor distinto da coluna 'genre' na tabela de livros.",
+          "Assumi que a tabela que contém os livros se chama 'books' e que a coluna de gênero se chama 'genre'. Se seus nomes forem diferentes, substituir pelos nomes reais (por exemplo: tabela 'livros' e coluna 'genero').",
+          "Decidi que a consulta deve AGRUPAR por genre (GROUP BY genre) e usar COUNT(*) como agregação.",
+          "Esclareci o tratamento de NULL: por padrão a consulta proposta inclui NULL como um grupo separado; se preferir excluir NULL, usar WHERE genre IS NOT NULL.",
+          "Esclareci que listar gêneros com zero livros exige uma tabela separada de gêneros e um LEFT JOIN; caso contrário, só serão retornados gêneros presentes em 'books'.",
+          "Saída esperada: múltiplas linhas (uma por gênero). Não foi solicitado um único escalar; portanto não agreguei tudo em um único valor."
+        ]
+      },
+      "mapper_output": "Resumo de mapeamento de esquema para a pergunta: \"Conte quantos livros existem para cada gênero, retornando uma linha por gênero com as colunas (genre, book_count).\"\n\n1) Tabelas selecionadas e por quê\n- generos — selecionada porque contém o nome do gênero (corresponde diretamente à coluna de saída \"genre\") e é a tabela de referência para gêneros. É a tabela primária para garantir que gêneros sem livros também possam aparecer.\n- livros — selecionada porque contém os registros de livros e a chave estrangeira genero_id que liga cada livro a um gênero. É a fonte do número de livros (book_count).\n\nEscolhi apenas essas duas porque elas já contêm toda a informação necessária; não é preciso juntar com autores, editoras ou membros para contar livros por gênero.\n\n2) Colunas-chave (e por que são relevantes)\n- generos.genero_id (integer, PK) — chave primária do gênero; usada para juntar com livros.\n- generos.nome (text) — o rótulo do gênero; será retornado como \"genre\".\n- livros.genero_id (integer, FK, nullable) — chave estrangeira apontando para generos.genero_id; liga cada livro a um gênero.\n- livros.livro_id (integer, PK) — identificador único do livro; deve ser usado em COUNT(...) para contar livros.\n\n3) Formatos e tipos de coluna / datas\n- Não há colunas de data relevantes para esta consulta.\n- Tipos observados (exemplos): genero_id integer, nome text, livro_id integer, preco numeric. Para agregação, conte-se um inteiro (COUNT retorna bigint/integer dependendo do SGBD).\n\n4) Exemplo de dados (sample_row)\n- generos.sample_row: { genero_id: 1, nome: 'Ficção Científica' }\n- livros.sample_row: { livro_id: 1, titulo: 'Dom Casmurro', ano_publicacao: 1899, isbn: '978-85-12345-01-0', autor_id: 1, editora_id: 1, genero_id: 3, preco: '39.90' }\nObservações: livros.genero_id pode ter valores inteiros que correspondem a generos.genero_id; no padrão de data a considerar aqui.\n\n5) Relacionamentos (foreign keys)\n- livros.genero_id -> generos.genero_id (um-para-muitos: um gênero pode ter muitos livros; cada livro referencia zero/um gênero — coluna nullable).\nTambém existem FKs de livros para autores e editoras, mas não relevantes aqui.\n\n6) Insights de valores / codificações\n- generos.nome é textual e contém nomes legíveis (ex.: 'Ficção Científica').\n- livros.genero_id é nullable (conforme metadata) — alguns livros podem não ter gênero atribuído; isso deve ser considerado ao contar.\n\n7) Advertências de cardinalidade / recomendações de JOIN\n- Se você fizer um INNER JOIN de generos com livros, gêneros sem livros serão omitidos. Se a intenção é listar todos os gêneros com a contagem (incluindo zero), use LEFT JOIN de generos para livros.\n- Para evitar contar linhas nulas quando usar LEFT JOIN, conte a coluna pk do livro: COUNT(livros.livro_id). Ex.: COUNT(livros.livro_id) retornará 0 para gêneros sem livros.\n- Alternativa (quando não interessa mostrar gêneros sem livros): pode-se usar apenas livros e agrupar por livros.genero_id, mas então será necessário mapear o id para o nome do gênero (join) e gêneros sem livros ficarão ausentes.\n\n8) Validação\n- Verificado: as colunas necessárias existem:\n  - generos.nome existe e é o campo apropriado para \"genre\".\n  - livros.livro_id e livros.genero_id existem para contagem e junção.\n- Ambiguidade: nenhuma; o mapeamento livro -> genero é direto.\n\n9) Notas importantes para gerar SQL\n- SQL recomendado (para incluir gêneros sem livros):\n  SELECT g.nome AS genre, COUNT(l.livro_id) AS book_count\n  FROM generos g\n  LEFT JOIN livros l ON l.genero_id = g.genero_id\n  GROUP BY g.nome\n  ORDER BY g.nome;  -- (opcional)\n- Use COUNT(l.livro_id) (não COUNT(*)) para garantir que gêneros sem livros apareçam com book_count = 0.\n- Se preferir omitir gêneros com zero livros, use INNER JOIN ou filtrar COUNT > 0.\n\nConclusão (primária/ melhor escolha)\n- As tabelas primárias são generos (para o nome do gênero) e livros (para contar livros). A query pode ser resolvida apenas com essas duas tabelas; recomenda-se LEFT JOIN de generos para livros e COUNT(livros.livro_id) para contar corretamente incluindo zeros.",
+      "generator_output": {
+        "reasoning_steps": [
+          "Identified the two tables needed: generos for the genre name and livros for counting books linked by genero_id.",
+          "Chose a LEFT JOIN from generos (T1) to livros (T2) so genres with zero books are included.",
+          "Counted books using COUNT(T2.livro_id) to ensure genres with no books return 0 instead of being omitted.",
+          "Grouped by T1.nome (the genre name) and ordered results by the count descending for convenience."
+        ],
+        "sub_queries": [],
+        "confidence": 0.92,
+        "sql_query": "SELECT T1.nome, COUNT(T2.livro_id)\nFROM generos AS T1\nLEFT JOIN livros AS T2 ON T2.genero_id = T1.genero_id\nGROUP BY T1.nome\nORDER BY COUNT(T2.livro_id) DESC NULLS LAST"
+      },
+      "validator_output": {
+        "is_valid": true,
+        "is_optimal": false,
+        "syntax_errors": [],
+        "semantic_issues": [
+          "Agrupamento somente por nome pode juntar gêneros com nomes idênticos; incluir genero_id no GROUP BY para garantir unicidade."
+        ],
+        "efficiency_score": 0.8,
+        "efficiency_issues": [
+          "Seq Scan em 'livros' e 'generos' detectado; considere índice em livros.genero_id.",
+          "Estimativa de linhas do planejador (1270) difere muito do real (12), indicando estatísticas possivelmente desatualizadas.",
+          "ORDER BY sobre a agregação força uma ordenação em memória que pode ser custosa em tabelas grandes."
+        ],
+        "refinement_feedback": "Consulta é sintaticamente válida e responde corretamente à pergunta; inclua t1.genero_id no GROUP BY (ou selecione o id junto com o nome) e dê aliases às colunas (por exemplo AS genre, AS book_count). Para melhorar desempenho, crie um índice em livros.genero_id e atualize as estatísticas; remova o NULLS LAST (COUNT nunca retorna NULL)."
+      },
+      "trace": {
+        "pipeline": "new",
+        "db_name": "livraria",
+        "start_ts": "2025-11-14T21:28:04.695731+00:00",
+        "end_ts": "2025-11-14T21:29:19.394444+00:00",
+        "latency_ms": 74698,
+        "steps": [
+          {
+            "name": "interpreter",
+            "timing_ms": 17561,
+            "input_summary": {
+              "raw_question": "Conte quantos livros por gênero existem."
+            },
+            "output_summary": {
+              "clarified_question": "Conte quantos livros existem para cada gênero, retornando uma linha por gênero com as colunas (genre, book_count).",
+              "intent": "Retornar múltiplas linhas — uma por gênero — com duas colunas: 'genre' (valor do gênero) e 'book_count' (número de livros desse gênero). Cálculo/SQL pattern: SELECT genre, COUNT(*) AS book_count FROM books GROUP BY genre ORDER BY book_count DESC; - Agregação: COUNT(*) por grupo. - GROUP BY: agrupar ",
+              "sub_questions_count": 0
+            },
+            "error": null
+          },
+          {
+            "name": "mapper",
+            "timing_ms": 20913,
+            "input_summary": {
+              "clarified_question": "Conte quantos livros existem para cada gênero, retornando uma linha por gênero com as colunas (genre, book_count).",
+              "all_tables_count": 6
+            },
+            "output_summary": {
+              "output_length": 4069,
+              "output_preview": "Resumo de mapeamento de esquema para a pergunta: \"Conte quantos livros existem para cada gênero, retornando uma linha por gênero com as colunas (genre, book_count).\"\n\n1) Tabelas selecionadas e por quê\n- generos — selecionada porque contém o nome do gênero (corresponde diretamente à coluna de saída \""
+            },
+            "error": null
+          },
+          {
+            "name": "generator",
+            "timing_ms": 9456,
+            "input_summary": {
+              "clarified_question": "Conte quantos livros existem para cada gênero, retornando uma linha por gênero com as colunas (genre, book_count).",
+              "attempt": 1
+            },
+            "output_summary": {
+              "sql_length": 168,
+              "reasoning_steps_count": 4,
+              "confidence": 0.92
+            },
+            "error": null
+          },
+          {
+            "name": "validator",
+            "timing_ms": 26476,
+            "input_summary": {
+              "sql_length": 168,
+              "attempt": 1
+            },
+            "output_summary": {
+              "is_valid": true,
+              "is_optimal": false,
+              "efficiency_score": 0.8,
+              "syntax_error_count": 0,
+              "semantic_issue_count": 1
+            },
+            "error": null
+          }
+        ],
+        "tools": [
+          {
+            "agent": "mapper",
+            "tool": "get_table_info",
+            "args_redacted": [
+              "generos",
+              "livros"
+            ],
+            "result_preview": "Retrieved info for 2 tables",
+            "timing_ms": 71,
+            "error": null
+          }
+        ],
+        "generator": {
+          "sql_query": "SELECT T1.nome, COUNT(T2.livro_id) FROM generos AS T1 LEFT JOIN livros AS T2 ON T2.genero_id = T1.genero_id GROUP BY T1.nome ORDER BY COUNT(T2.livro_id) DESC NULLS LAST",
+          "reasoning_steps": [
+            "Identified the two tables needed: generos for the genre name and livros for counting books linked by genero_id.",
+            "Chose a LEFT JOIN from generos (T1) to livros (T2) so genres with zero books are included.",
+            "Counted books using COUNT(T2.livro_id) to ensure genres with no books return 0 instead of being omitted.",
+            "Grouped by T1.nome (the genre name) and ordered results by the count descending for convenience."
+          ],
+          "confidence": 0.92
+        },
+        "mapper": {
+          "all_tables_count": 6,
+          "selected_tables": [
+            "generos",
+            "livros"
+          ]
+        }
+      }
+    },
+    "analyzer_output": {
+      "analyzer_match": true,
+      "approved": true,
+      "failure_step": "none",
+      "failure_reason": "Result is correct - rule-based match (EM or RM) confirms correctness",
+      "query_issues": "No issues found - query matches expected results",
+      "root_cause": "Result is correct - validated by exact match or execution match",
+      "suggestions": []
+    }
+  },
+  {
+    "dataset": "livraria",
+    "index": 10,
+    "question_id": 10,
+    "db_id": null,
+    "question": "Liste os livros do autor 'Machado de Assis'.",
+    "gold_sql": "SELECT titulo FROM livros l JOIN autores a ON a.autor_id = l.autor_id WHERE a.nome ILIKE 'Machado de Assis' ORDER BY titulo;",
+    "predicted_sql": "SELECT DISTINCT T1.titulo FROM livros AS T1 INNER JOIN autores AS T2 ON T1.autor_id = T2.autor_id WHERE T2.nome = 'Machado de Assis' ORDER BY T1.titulo NULLS LAST",
+    "exact_match": false,
+    "execution_match": false,
+    "analyzer_match": false,
+    "error": null,
+    "execution_error": null,
+    "gold_execution_results": [
+      {
+        "titulo": "Dom Casmurro"
+      },
+      {
+        "titulo": "História do Brasil"
+      },
+      {
+        "titulo": "Memórias Póstumas de Brás Cubas"
+      },
+      {
+        "titulo": "Quincas Borba"
+      }
+    ],
+    "predicted_execution_results": [
+      {
+        "titulo": "Dom Casmurro"
+      },
+      {
+        "titulo": "História do Brasil"
+      },
+      {
+        "titulo": "Memórias Póstumas de Brás Cubas"
+      }
+    ],
+    "db_name": "livraria",
+    "metadata": {
+      "latency_ms": 59110,
+      "tokens_in": null,
+      "tokens_out": null,
+      "model_name": null
+    },
+    "agent_trace": {
+      "status": "GENERATED",
+      "sql": "SELECT DISTINCT T1.titulo FROM livros AS T1 INNER JOIN autores AS T2 ON T1.autor_id = T2.autor_id WHERE T2.nome = 'Machado de Assis' ORDER BY T1.titulo NULLS LAST",
+      "error": null,
+      "plan": "Retornar uma lista (uma coluna) com os títulos distintos dos livros escritos por 'Machado de Assis'. Output shape: uma coluna 'title' com cada título por linha. SQL padrão sugerido: SELECT DISTINCT title FROM books WHERE author = 'Machado de Assis' ORDER BY publication_year, title; Para corresponder sem considerar maiúsculas/minúsculas e variações de acento, alternativa: SELECT DISTINCT title FROM books WHERE LOWER(author) = LOWER('Machado de Assis') ORDER BY publication_year, title; Se o nome do autor estiver separado em tabela authors: SELECT DISTINCT b.title FROM books b JOIN authors a ON b.author_id = a.id WHERE a.name = 'Machado de Assis'; Evitar duplicados usando DISTINCT; incluir obras coautoria (se quiser incluir, remover condição de igualdade exata e usar LIKE/IN ou checar tabela de relação book_authors).",
+      "feedback": "Erro de sintaxe: SQL error: for SELECT DISTINCT, ORDER BY expressions must appear in select list.",
+      "attempts": 2,
+      "all_queries": [
+        "SELECT DISTINCT T1.titulo FROM livros AS T1 INNER JOIN autores AS T2 ON T1.autor_id = T2.autor_id WHERE T2.nome = 'Machado de Assis' ORDER BY T1.ano_publicacao NULLS LAST, T1.titulo NULLS LAST",
+        "SELECT DISTINCT T1.titulo FROM livros AS T1 INNER JOIN autores AS T2 ON T1.autor_id = T2.autor_id WHERE T2.nome = 'Machado de Assis' ORDER BY T1.titulo NULLS LAST"
+      ],
+      "interpreter_output": {
+        "clarified_question": "Listar, em formato SQL-friendly, os títulos distintos dos livros cujo autor é exatamente 'Machado de Assis'.",
+        "sub_questions": [],
+        "explicit_intent": "Retornar uma lista (uma coluna) com os títulos distintos dos livros escritos por 'Machado de Assis'. Output shape: uma coluna 'title' com cada título por linha. SQL padrão sugerido: SELECT DISTINCT title FROM books WHERE author = 'Machado de Assis' ORDER BY publication_year, title; Para corresponder sem considerar maiúsculas/minúsculas e variações de acento, alternativa: SELECT DISTINCT title FROM books WHERE LOWER(author) = LOWER('Machado de Assis') ORDER BY publication_year, title; Se o nome do autor estiver separado em tabela authors: SELECT DISTINCT b.title FROM books b JOIN authors a ON b.author_id = a.id WHERE a.name = 'Machado de Assis'; Evitar duplicados usando DISTINCT; incluir obras coautoria (se quiser incluir, remover condição de igualdade exata e usar LIKE/IN ou checar tabela de relação book_authors).",
+        "ambiguities_resolved": [
+          "Interpretei 'livros' como títulos de obras publicadas (romances, contos, coleções) — não inclui entradas administrativas como edições/reimpressões separadas; por isso uso DISTINCT para títulos.",
+          "Assumi existência de uma tabela 'books' com colunas 'title', 'author' e opcionalmente 'publication_year'. Se o esquema real usar tabela separada de autores, ofereci join alternativo.",
+          "Interpretei correspondência de autor como igualdade exata em 'author = \\\"Machado de Assis\\\"' (caso sensível ao conteúdo). Sugeri uso de LOWER(...) para comparação case-insensitive ou uso de ILIKE dependendo do SGBD.",
+          "Assumi que se existirem obras coautoras e quiser incluí-las, o usuário deve explicitar — por padrão incluo obras onde o campo author contém exatamente 'Machado de Assis'.",
+          "Output shape disambiguation: retornar apenas uma coluna de títulos (SELECT DISTINCT title)."
+        ]
+      },
+      "mapper_output": "Resumo de mapeamento do esquema e contexto — para listar títulos distintos dos livros cujo autor é exatamente 'Machado de Assis'\n\n1) Tabelas selecionadas (3-5 exigido; selecionei 2):\n- livros — selecionada porque contém o título dos livros (coluna primaria para a resposta).\n- autores — selecionada porque o nome do autor está nesta tabela; necessário para filtrar por nome exato \"Machado de Assis\".\n\nMotivo: A pergunta pede títulos cujos autores tenham nome exato 'Machado de Assis'. Não há coluna de nome do autor na tabela livros; portanto é necessário relacionar livros → autores via a FK livros.autor_id = autores.autor_id.\n\n2) Colunas chave (por tabela) e por que são relevantes:\n- livros.titulo (text, NOT NULL) — coluna primária de interesse: contém o título do livro; usar DISTINCT sobre esta coluna para obter títulos distintos.\n- livros.autor_id (integer, NOT NULL) — chave estrangeira que liga um livro ao seu autor; usada para fazer JOIN com autores.\n- autores.autor_id (integer, PK) — chave primária da tabela autores; usada no JOIN.\n- autores.nome (text, NOT NULL) — coluna que contém o nome do autor; será filtrada por igualdade exata com 'Machado de Assis'.\n\n3) Tipos de coluna e formato de dados relevantes:\n- livros.titulo: text (string) — tratar como texto; DISTINCT funciona normalmente.\n- autores.nome: text (string) — comparação por igualdade de string. Observação: comparação exata ('Machado de Assis') é sensível a espaços/acentos; se for necessário case-insensitive, use LOWER(...)=LOWER(...), mas a requisição pediu nome exatamente 'Machado de Assis'.\n\nNão há colunas de data relevantes para esta consulta.\n\n4) Exemplo de sample_row (mostra formatos reais):\n- livros sample_row: { livro_id: 1, titulo: \"Dom Casmurro\", ano_publicacao: 1899, isbn: \"978-85-12345-01-0\", autor_id: 1, ... }\n- autores sample_row: { autor_id: 1, nome: \"Machado de Assis\", pais_origem: \"Brasil\" }\n\nIsto confirma que o nome do autor aparece na coluna autores.nome como \"Machado de Assis\" e que livros.titulo guarda títulos como \"Dom Casmurro\".\n\n5) Relacionamentos / chaves estrangeiras:\n- livros.autor_id → autores.autor_id (FK). Também há FKs de livros para editoras e generos, mas eles não são necessários aqui.\n\n6) Insights sobre valores:\n- O sample mostra exatamente o valor 'Machado de Assis' em autores.nome — portanto filtrar por autores.nome = 'Machado de Assis' é válido.\n- Não há codificações especiais observadas (p.ex. códigos numéricos para autor); nomes estão em texto legível.\n\n7) Advertência de cardinalidade (IMPORTANTE):\n- JOIN recomendado: INNER JOIN entre livros e autores usando autor_id.\n- WARNING: Um INNER JOIN restringe o resultado aos livros que têm um autor correspondente em autores. Se existirem linhas em livros com autor_id nulo ou sem correspondência em autores, essas serão excluídas. Neste caso isso é desejado (queremos apenas livros com autor conhecido e cujo nome é 'Machado de Assis').  \n- Alternativa sem JOIN (se preferir): usar livros WHERE autor_id = (SELECT autor_id FROM autores WHERE nome = 'Machado de Assis') — funcionalmente equivalente, mas exige que o autor exista e que a subconsulta retorne um único autor_id (ou tratar múltiplos retornos).\n\n8) Validações e ambiguidade:\n- Confirmei que autores.nome existe e contém o exemplo 'Machado de Assis'.\n- Ambiguidade potencial: se houver mais de um autor com o mesmo nome (mesmo texto), a consulta retornará livros de todos esses autores — isto está alinhado com “autor é exatamente 'Machado de Assis'” como string; se for necessário distinguir autores homônimos, usar autor_id específico seria necessário.\n- Caso se deseje comparação case-insensitive ou tolerância a espaços, ajustar a cláusula WHERE (por ex. WHERE TRIM(LOWER(autores.nome)) = 'machado de assis').\n\n9) Nota final / recomendação primária:\n- A combinação PRIMARY/BEST para esta pergunta é JOIN entre livros e autores, filtrando autores.nome = 'Machado de Assis', e retornando DISTINCT livros.titulo.\n- Não há necessidade de outras tabelas (editoras, generos, emprestimos, membros) para responder a pergunta.\n\nSugestão SQL-friendly (exemplo que o gerador SQL pode usar):\nSELECT DISTINCT livros.titulo\nFROM livros\nJOIN autores ON livros.autor_id = autores.autor_id\nWHERE autores.nome = 'Machado de Assis';\n\n(Observação: se quiser comparação case-insensitive: use WHERE LOWER(autores.nome) = LOWER('Machado de Assis').)\n\nSe quiser que eu gere diretamente o SQL final pronto para execução (já com DISTINCT, ordenação, etc.), posso fornecê-lo agora.",
+      "generator_output": {
+        "reasoning_steps": [
+          "Identifiquei as tabelas necessárias: livros (T1) e autores (T2) para filtrar por autores.nome = 'Machado de Assis'.",
+          "Usei INNER JOIN via T1.autor_id = T2.autor_id conforme o mapeamento indicado.",
+          "Retornei apenas a coluna de interesse T1.titulo com DISTINCT para eliminar duplicados.",
+          "Para evitar o erro anterior (ORDER BY expressions must appear in select list) removi a ordenação por ano_publicacao e ordenei apenas por T1.titulo (que está na lista de seleção).",
+          "Adotei NULLS LAST em ORDER BY para resultado determinístico."
+        ],
+        "sub_queries": [],
+        "confidence": 0.9,
+        "sql_query": "SELECT DISTINCT T1.titulo\nFROM livros AS T1\nINNER JOIN autores AS T2 ON T1.autor_id = T2.autor_id\nWHERE T2.nome = 'Machado de Assis'\nORDER BY T1.titulo NULLS LAST;"
+      },
+      "validator_output": {
+        "is_valid": false,
+        "is_optimal": false,
+        "syntax_errors": [
+          "SQL error: for SELECT DISTINCT, ORDER BY expressions must appear in select list"
+        ],
+        "semantic_issues": [],
+        "efficiency_score": 0.0,
+        "efficiency_issues": [],
+        "refinement_feedback": "Erro de sintaxe: SQL error: for SELECT DISTINCT, ORDER BY expressions must appear in select list."
+      },
+      "trace": {
+        "pipeline": "new",
+        "db_name": "livraria",
+        "start_ts": "2025-11-14T21:28:04.708324+00:00",
+        "end_ts": "2025-11-14T21:29:03.745696+00:00",
+        "latency_ms": 59037,
+        "steps": [
+          {
+            "name": "interpreter",
+            "timing_ms": 9884,
+            "input_summary": {
+              "raw_question": "Liste os livros do autor 'Machado de Assis'."
+            },
+            "output_summary": {
+              "clarified_question": "Listar, em formato SQL-friendly, os títulos distintos dos livros cujo autor é exatamente 'Machado de Assis'.",
+              "intent": "Retornar uma lista (uma coluna) com os títulos distintos dos livros escritos por 'Machado de Assis'. Output shape: uma coluna 'title' com cada título por linha. SQL padrão sugerido: SELECT DISTINCT title FROM books WHERE author = 'Machado de Assis' ORDER BY publication_year, title; Para corresponder",
+              "sub_questions_count": 0
+            },
+            "error": null
+          },
+          {
+            "name": "mapper",
+            "timing_ms": 20829,
+            "input_summary": {
+              "clarified_question": "Listar, em formato SQL-friendly, os títulos distintos dos livros cujo autor é exatamente 'Machado de Assis'.",
+              "all_tables_count": 6
+            },
+            "output_summary": {
+              "output_length": 4507,
+              "output_preview": "Resumo de mapeamento do esquema e contexto — para listar títulos distintos dos livros cujo autor é exatamente 'Machado de Assis'\n\n1) Tabelas selecionadas (3-5 exigido; selecionei 2):\n- livros — selecionada porque contém o título dos livros (coluna primaria para a resposta).\n- autores — selecionada p"
+            },
+            "error": null
+          },
+          {
+            "name": "generator",
+            "timing_ms": 8935,
+            "input_summary": {
+              "clarified_question": "Listar, em formato SQL-friendly, os títulos distintos dos livros cujo autor é exatamente 'Machado de Assis'.",
+              "attempt": 1
+            },
+            "output_summary": {
+              "sql_length": 192,
+              "reasoning_steps_count": 4,
+              "confidence": 0.95
+            },
+            "error": null
+          },
+          {
+            "name": "validator",
+            "timing_ms": 25,
+            "input_summary": {
+              "sql_length": 192,
+              "attempt": 1
+            },
+            "output_summary": {
+              "is_valid": false,
+              "is_optimal": false,
+              "efficiency_score": 0.0,
+              "syntax_error_count": 1,
+              "semantic_issue_count": 0
+            },
+            "error": null
+          },
+          {
+            "name": "generator",
+            "timing_ms": 18872,
+            "input_summary": {
+              "clarified_question": "Listar, em formato SQL-friendly, os títulos distintos dos livros cujo autor é exatamente 'Machado de Assis'.",
+              "attempt": 2
+            },
+            "output_summary": {
+              "sql_length": 163,
+              "reasoning_steps_count": 5,
+              "confidence": 0.9
+            },
+            "error": null
+          }
+        ],
+        "tools": [
+          {
+            "agent": "mapper",
+            "tool": "get_table_info",
+            "args_redacted": [
+              "livros",
+              "autores"
+            ],
+            "result_preview": "Retrieved info for 2 tables",
+            "timing_ms": 72,
+            "error": null
+          }
+        ],
+        "generator": {
+          "sql_query": "SELECT DISTINCT T1.titulo FROM livros AS T1 INNER JOIN autores AS T2 ON T1.autor_id = T2.autor_id WHERE T2.nome = 'Machado de Assis' ORDER BY T1.titulo NULLS LAST",
+          "reasoning_steps": [
+            "Identifiquei as tabelas necessárias: livros (T1) e autores (T2) para filtrar por autores.nome = 'Machado de Assis'.",
+            "Usei INNER JOIN via T1.autor_id = T2.autor_id conforme o mapeamento indicado.",
+            "Retornei apenas a coluna de interesse T1.titulo com DISTINCT para eliminar duplicados.",
+            "Para evitar o erro anterior (ORDER BY expressions must appear in select list) removi a ordenação por ano_publicacao e ordenei apenas por T1.titulo (que está na lista de seleção).",
+            "Adotei NULLS LAST em ORDER BY para resultado determinístico."
+          ],
+          "confidence": 0.9
+        },
+        "mapper": {
+          "all_tables_count": 6,
+          "selected_tables": [
+            "livros",
+            "autores"
+          ]
+        }
+      }
+    },
+    "analyzer_output": {
+      "analyzer_match": false,
+      "approved": false,
+      "failure_step": "generator",
+      "failure_reason": "A consulta prevista retornou um conjunto incompleto: faltou o título 'Quincas Borba' presente no resultado gold. Isso altera o impacto de negócio (lista de obras do autor). O gerador produziu uma cláusula WHERE e estrutura (uso de DISTINCT e ORDER BY ... NULLS LAST) que resultaram em uma saída diferente da esperada. Embora o mapper e o intérprete tenham identificado corretamente as tabelas e a intenção, o gerador não preservou a semântica completa do filtro/retorno; o validador também não impediu que a query final fosse aceite/executada sem garantir equivalência de resultados.",
+      "query_issues": "Predicted SQL issues compared to gold:\n- Missing row: 'Quincas Borba' is absent from predicted results (gold has 4 titles, predicted 3).\n- Different filter operator: predicted uses T2.nome = 'Machado de Assis' while gold uses ILIKE 'Machado de Assis' (case-insensitive). This can change matching if case/spacing/accents differ.\n- Use of DISTINCT (not present in gold) — may hide duplicates but not expected to remove legitimate rows; however its use shows a semantic change.\n- ORDER BY T1.titulo NULLS LAST is cosmetic but unnecessary; not responsible for missing row.\nOverall effect: the predicted query returns incomplete/incorrect data for the user's request.",
+      "root_cause": "O gerador construiu SQL com diferenças semânticas no filtro/seleção (== vs ILIKE e adição de DISTINCT) que levaram à perda de um registro crítico. Além disso, a validação do pipeline não comparou resultados executados com o gold para detectar discrepância; portanto a discrepância não foi capturada antes da saída.",
+      "suggestions": [
+        "Gerador: Respeitar a semântica definida pelo intérprete — use ILIKE ou LOWER(...)=LOWER(...) quando o intérprete indicar comparação insensível a maiúsculas/minúsculas; evite adicionar DISTINCT a menos que necessário. Validar logicamente que a cláusula WHERE preserva o conjunto esperado.",
+        "Validador: Implementar checagem de equivalência de execução (comparar contagem de linhas e valores-chave) entre query gerada e um resultado de referência / gold para sinalizar divergências antes de aprovar a saída.",
+        "Pipeline: Adicionar teste de regressão/executivo que executa both gold and predicted queries in a safe sandbox and diffs results (linha a linha) para detectar perdas/ganhos de registros.",
+        "Mapper/Interpreter: Tornar explícito quando a correspondência de nomes deve ser case-insensitive ou permitir variantes (acentos/espacos) para que o gerador saiba usar ILIKE/LOWER.",
+        "Logs/Feedback: Quando o validador detecta erros sintáticos ou potenciais semânticos (como mensagens sobre ORDER BY com DISTINCT), bloquear a publicação da query final até que o gerador corrija e revalide; fornecer exemplos de resultados esperados para facilitar debug."
+      ]
+    }
+  }
+]

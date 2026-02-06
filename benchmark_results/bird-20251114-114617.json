@@ -1,0 +1,857 @@
+[
+  {
+    "dataset": "bird",
+    "index": 14,
+    "question_id": 1498,
+    "db_id": "debit_card_specializing",
+    "question": "What is the highest monthly consumption in the year 2012?",
+    "gold_sql": "SELECT SUM(CAST(Consumption AS float)) FROM yearmonth WHERE SUBSTR(Date, 1, 4) = '2012' GROUP BY SUBSTR(Date, 5, 2) ORDER BY SUM(Consumption) DESC NULLS LAST LIMIT 1",
+    "predicted_sql": "SELECT SUM(COALESCE(T1.consumption, 0)) FROM yearmonth AS T1 WHERE T1.date BETWEEN '201201' AND '201212' GROUP BY T1.date ORDER BY SUM(COALESCE(T1.consumption, 0)) DESC NULLS LAST LIMIT 1",
+    "exact_match": false,
+    "execution_match": false,
+    "analyzer_match": true,
+    "error": null,
+    "execution_error": null,
+    "gold_execution_results": [
+      {
+        "sum": 51787161.71440923
+      }
+    ],
+    "predicted_execution_results": [
+      {
+        "sum": 51787104.0
+      }
+    ],
+    "db_name": "passarinho",
+    "metadata": {
+      "latency_ms": 215650,
+      "tokens_in": null,
+      "tokens_out": null,
+      "model_name": null
+    },
+    "agent_trace": {
+      "status": "GENERATED",
+      "sql": "SELECT SUM(COALESCE(T1.consumption, 0)) FROM yearmonth AS T1 WHERE T1.date BETWEEN '201201' AND '201212' GROUP BY T1.date ORDER BY SUM(COALESCE(T1.consumption, 0)) DESC NULLS LAST LIMIT 1",
+      "error": null,
+      "plan": "Return a single scalar: the highest monthly consumption value observed in 2012. If the raw data is at a finer granularity (e.g., daily or per-transaction), first aggregate consumption per month for all months in 2012 (SUM(consumption) grouped by year+month), then take the maximum of those monthly sums. If the table already stores one row per month with a column like monthly_consumption, simply take MAX(monthly_consumption) filtered to year = 2012. SQL patterns:\n- Daily/transactional rows ->\n  SELECT MAX(month_total) FROM (\n    SELECT SUBSTR(date_col,1,6) AS year_month, SUM(consumption) AS month_total\n    FROM consumption_table\n    WHERE SUBSTR(date_col,1,4) = '2012'\n    GROUP BY SUBSTR(date_col,1,6)\n  ) t;\n- Monthly rows ->\n  SELECT MAX(monthly_consumption) FROM consumption_table WHERE year = 2012;\nExpected output shape: one row, one column (single scalar value: highest monthly consumption). Do NOT divide by 12 or AVG unless the question asked for an average monthly value.",
+      "feedback": "Query is syntactically valid but may not return calendar-month totals and is inefficient; group by the month (e.g., SUBSTR(date,1,7) or date_trunc('month', date)) and replace SUBSTR(year) filter with a date-range predicate (date >= '2012-01-01' AND date < '2013-01-01') to allow index use and improve performance.",
+      "attempts": 2,
+      "all_queries": [
+        "SELECT SUM(COALESCE(T1.consumption, 0)) FROM yearmonth AS T1 WHERE SUBSTR(T1.date, 1, 4) = '2012' GROUP BY T1.date ORDER BY SUM(COALESCE(T1.consumption, 0)) DESC NULLS LAST LIMIT 1",
+        "SELECT SUM(COALESCE(T1.consumption, 0)) FROM yearmonth AS T1 WHERE T1.date BETWEEN '201201' AND '201212' GROUP BY T1.date ORDER BY SUM(COALESCE(T1.consumption, 0)) DESC NULLS LAST LIMIT 1"
+      ],
+      "interpreter_output": {
+        "clarified_question": "What is the maximum total consumption for any calendar month during the year 2012?",
+        "sub_questions": [],
+        "explicit_intent": "Return a single scalar: the highest monthly consumption value observed in 2012. If the raw data is at a finer granularity (e.g., daily or per-transaction), first aggregate consumption per month for all months in 2012 (SUM(consumption) grouped by year+month), then take the maximum of those monthly sums. If the table already stores one row per month with a column like monthly_consumption, simply take MAX(monthly_consumption) filtered to year = 2012. SQL patterns:\n- Daily/transactional rows ->\n  SELECT MAX(month_total) FROM (\n    SELECT SUBSTR(date_col,1,6) AS year_month, SUM(consumption) AS month_total\n    FROM consumption_table\n    WHERE SUBSTR(date_col,1,4) = '2012'\n    GROUP BY SUBSTR(date_col,1,6)\n  ) t;\n- Monthly rows ->\n  SELECT MAX(monthly_consumption) FROM consumption_table WHERE year = 2012;\nExpected output shape: one row, one column (single scalar value: highest monthly consumption). Do NOT divide by 12 or AVG unless the question asked for an average monthly value.",
+        "ambiguities_resolved": [
+          "Interpreted 'monthly consumption' as the total consumption per calendar month (aggregate SUM over each month).",
+          "If source data is per day or per transaction, we will GROUP BY year+month (e.g., SUBSTR(date_col,1,6)) to produce monthly totals before taking the maximum.",
+          "If source data already has one row per month (e.g., columns year and monthly_consumption), we assume using MAX(monthly_consumption) with WHERE year = 2012 is sufficient.",
+          "Output shape: return a single scalar (the numeric highest monthly consumption). If the user also wants the month that achieved this value, they should request 'which month' or 'month and value'.",
+          "Assumed column/table names for SQL examples: consumption_table, date_col, consumption, monthly_consumption, year. Replace with actual names in your schema."
+        ]
+      },
+      "mapper_output": "Selected tables (3-5):  \n- yearmonth (PRIMARY) — selected because the question explicitly mentions \"yearmonth\" and \"consumption\" and this table contains a direct Consumption column (exact name match and pre-aggregated monthly data).  \n- transactions_1k (SECONDARY, considered but not needed) — considered only as a raw-transaction alternative; it contains a DATE column but no direct \"consumption\" column, so it's lower priority.\n\nWhy these choices:  \n- yearmonth is the best and only needed table: it directly contains a per-customer, per-calendar-month consumption metric so you can aggregate to monthly totals without joining raw transactions. transactions_1k is a generic transaction table (date, amount, price) and would require additional interpretation/aggregation; therefore yearmonth is preferred.\n\nKey columns (from get_table_info):  \n- yearmonth.date (type: text) — sample value: \"201207\". This is the month identifier stored in YYYYMM string format. Use string comparisons or pattern matching on this column to select months in 2012.  \n- yearmonth.consumption (type: real) — sample value: 528.2999877929688. This is the numeric metric to sum/aggregate.  \n- yearmonth.customerid (type: bigint) — present but not required for the requested aggregate (it identifies the per-customer row).\n\nDate format & column types (critical):  \n- Date column format: YYYYMM stored as text (example \"201207\"). Important: treat as a YYYYMM string. Filtering for year 2012 should use either date LIKE '2012%' or BETWEEN '201201' AND '201212' on this text column. Do NOT attempt to cast to a DATE without handling the YYYYMM format.  \n- consumption is numeric (real). It can be summed across rows. The column is nullable per schema, so handle NULLs (e.g., SUM(COALESCE(consumption, 0))) to be safe.\n\nSample data (from sample_row):  \n- yearmonth sample_row: { customerid: 5, date: \"201207\", consumption: 528.2999877929688 } — confirms YYYYMM string format and numeric consumption values.\n\nRelationships:  \n- No foreign keys shown for yearmonth. No joins are required to answer this question.\n\nValue encodings / domain notes:  \n- Date stored as YYYYMM string (e.g., \"201207\").  \n- consumption stored as floating real values (units not altered in sample). No special categorical encodings observed.\n\nCardinality warnings / query guidance:  \n- This query can be answered using only the yearmonth table without joins — this avoids any join-induced filtering or cardinality changes.  \n- WARNING: yearmonth appears to be per-customer-per-month. To get the total consumption per calendar month you must SUM(consumption) over all customer rows for each date (YYYYMM), then take the MAX of those monthly totals.  \n- Also handle NULL consumption values (use COALESCE) to avoid undercounting.\n\nValidation notes / ambiguities:  \n- Confirmed yearmonth.date and yearmonth.consumption exist and match question terms.  \n- If some months in 2012 are missing in the table, the aggregation will only consider months present in yearmonth. If you need months with zero totals included, you would need a months/calendar table (not present here).\n\nImportant final implementation hints for the SQL generator:  \n- Filter months for 2012 by date BETWEEN '201201' AND '201212' or date LIKE '2012%'.  \n- Aggregate with SUM(COALESCE(consumption,0)) GROUP BY date, then take the MAX of these summed totals.  \n- Because date is YYYYMM text, lexical ordering equals chronological ordering for these values.",
+      "generator_output": {
+        "reasoning_steps": [
+          "Use only the yearmonth table because it contains per-customer monthly consumption and no joins are needed.",
+          "Filter months in 2012 using the YYYYMM text range BETWEEN '201201' AND '201212' — this avoids SUBSTR and can use an index on the text date column.",
+          "Aggregate consumption per calendar month by grouping on T1.date (YYYYMM) and summing COALESCE(T1.consumption, 0) to handle NULLs.",
+          "Return the maximum monthly total by ordering the monthly sums descending and taking the top row with LIMIT 1."
+        ],
+        "sub_queries": [],
+        "confidence": 0.9,
+        "sql_query": "SELECT SUM(COALESCE(T1.consumption, 0))\nFROM yearmonth AS T1\nWHERE T1.date BETWEEN '201201' AND '201212'\nGROUP BY T1.date\nORDER BY SUM(COALESCE(T1.consumption, 0)) DESC NULLS LAST\nLIMIT 1"
+      },
+      "validator_output": {
+        "is_valid": false,
+        "is_optimal": false,
+        "syntax_errors": [],
+        "semantic_issues": [
+          "Grouping by T1.date may produce daily aggregates if the date column contains full dates; the query should group by month (e.g., SUBSTR(date,1,7) or date_trunc('month', date) ) to return calendar-month totals.",
+          "Filtering with SUBSTR(T1.date,1,4) prevents use of a date index and may be inefficient; prefer a date-range predicate (date >= '2012-01-01' AND date < '2013-01-01') or an indexed year column."
+        ],
+        "efficiency_score": 0.5,
+        "efficiency_issues": [
+          "Sequential scan on yearmonth due to function on date in WHERE (substr) preventing index usage.",
+          "Planner row estimates are significantly off (plan expected far fewer rows than actual), indicating stale or insufficient statistics.",
+          "Sort and aggregation are performed in memory with moderate cost; top-N heapsort used but overall cost could be reduced by enabling index-supported filtering."
+        ],
+        "refinement_feedback": "Query is syntactically valid but may not return calendar-month totals and is inefficient; group by the month (e.g., SUBSTR(date,1,7) or date_trunc('month', date)) and replace SUBSTR(year) filter with a date-range predicate (date >= '2012-01-01' AND date < '2013-01-01') to allow index use and improve performance."
+      },
+      "trace": {
+        "pipeline": "new",
+        "db_name": "passarinho",
+        "start_ts": "2025-11-14T14:46:17.673161+00:00",
+        "end_ts": "2025-11-14T14:49:53.304485+00:00",
+        "latency_ms": 215631,
+        "steps": [
+          {
+            "name": "interpreter",
+            "timing_ms": 32254,
+            "input_summary": {
+              "raw_question": "What is the highest monthly consumption in the year 2012?"
+            },
+            "output_summary": {
+              "clarified_question": "What is the maximum total consumption for any calendar month during the year 2012?",
+              "intent": "Return a single scalar: the highest monthly consumption value observed in 2012. If the raw data is at a finer granularity (e.g., daily or per-transaction), first aggregate consumption per month for all months in 2012 (SUM(consumption) grouped by year+month), then take the maximum of those monthly su",
+              "sub_questions_count": 0
+            },
+            "error": null
+          },
+          {
+            "name": "mapper",
+            "timing_ms": 35566,
+            "input_summary": {
+              "clarified_question": "What is the maximum total consumption for any calendar month during the year 2012?",
+              "all_tables_count": 75
+            },
+            "output_summary": {
+              "output_length": 3464,
+              "output_preview": "Selected tables (3-5):  \n- yearmonth (PRIMARY) — selected because the question explicitly mentions \"yearmonth\" and \"consumption\" and this table contains a direct Consumption column (exact name match and pre-aggregated monthly data).  \n- transactions_1k (SECONDARY, considered but not needed) — consid"
+            },
+            "error": null
+          },
+          {
+            "name": "generator",
+            "timing_ms": 23536,
+            "input_summary": {
+              "clarified_question": "What is the maximum total consumption for any calendar month during the year 2012?",
+              "attempt": 1
+            },
+            "output_summary": {
+              "sql_length": 181,
+              "reasoning_steps_count": 4,
+              "confidence": 0.93
+            },
+            "error": null
+          },
+          {
+            "name": "validator",
+            "timing_ms": 87831,
+            "input_summary": {
+              "sql_length": 180,
+              "attempt": 1
+            },
+            "output_summary": {
+              "is_valid": false,
+              "is_optimal": false,
+              "efficiency_score": 0.5,
+              "syntax_error_count": 0,
+              "semantic_issue_count": 2
+            },
+            "error": null
+          },
+          {
+            "name": "generator",
+            "timing_ms": 36200,
+            "input_summary": {
+              "clarified_question": "What is the maximum total consumption for any calendar month during the year 2012?",
+              "attempt": 2
+            },
+            "output_summary": {
+              "sql_length": 187,
+              "reasoning_steps_count": 4,
+              "confidence": 0.9
+            },
+            "error": null
+          }
+        ],
+        "tools": [
+          {
+            "agent": "mapper",
+            "tool": "get_table_info",
+            "args_redacted": [
+              "yearmonth",
+              "transactions_1k"
+            ],
+            "result_preview": "Retrieved info for 2 tables",
+            "timing_ms": 88,
+            "error": null
+          }
+        ],
+        "generator": {
+          "sql_query": "SELECT SUM(COALESCE(T1.consumption, 0)) FROM yearmonth AS T1 WHERE T1.date BETWEEN '201201' AND '201212' GROUP BY T1.date ORDER BY SUM(COALESCE(T1.consumption, 0)) DESC NULLS LAST LIMIT 1",
+          "reasoning_steps": [
+            "Use only the yearmonth table because it contains per-customer monthly consumption and no joins are needed.",
+            "Filter months in 2012 using the YYYYMM text range BETWEEN '201201' AND '201212' — this avoids SUBSTR and can use an index on the text date column.",
+            "Aggregate consumption per calendar month by grouping on T1.date (YYYYMM) and summing COALESCE(T1.consumption, 0) to handle NULLs.",
+            "Return the maximum monthly total by ordering the monthly sums descending and taking the top row with LIMIT 1."
+          ],
+          "confidence": 0.9
+        },
+        "mapper": {
+          "all_tables_count": 75,
+          "selected_tables": [
+            "yearmonth",
+            "transactions_1k"
+          ]
+        }
+      }
+    },
+    "analyzer_output": {
+      "analyzer_match": true,
+      "approved": true,
+      "failure_step": "none",
+      "failure_reason": "Predicted result is semantically equivalent to the gold result for the user’s question. Both queries compute the maximum monthly consumption for 2012 by summing consumption at the YYYYMM (month) granularity and returning the largest monthly total. Differences are limited to predicate and aggregation expression style (BETWEEN '201201' AND '201212' + GROUP BY date vs. SUBSTR(date,1,4) = '2012' + GROUP BY SUBSTR(date,5,2')) and minor numeric precision/rounding (51787161.71440923 vs 51787104.0). Given the schema's date format (YYYYMM) these are equivalent in business meaning; the small numeric discrepancy (≈57.7 on ≈5.18e7) is attributable to floating-point/aggregation/NULL-handling differences and does not change the business impact or the answer.",
+      "query_issues": "Cosmetic/implementation differences only: 1) Different month-selection/filter style (BETWEEN '201201' AND '201212' vs SUBSTR(date,1,4)='2012')—semantically equivalent for YYYYMM text. 2) GROUP BY T1.date vs GROUP BY SUBSTR(date,5,2) — equivalent because date is stored as YYYYMM. 3) Use of COALESCE(consumption,0) vs CAST(consumption AS float) — may cause tiny numeric/precision differences. 4) Result values differ slightly (51787161.71440923 vs 51787104.0) likely due to floating-point/aggregation rounding, not a logical error.",
+      "root_cause": "Results deliver equivalent business impact: predicted SQL uses equivalent filtering and grouping given the documented YYYYMM text format; small numeric discrepancy arises from implementation details (casting/COALESCE/float precision) rather than a semantic mistake.",
+      "suggestions": []
+    }
+  },
+  {
+    "dataset": "bird",
+    "index": 319,
+    "question_id": 586,
+    "db_id": "codebase_community",
+    "question": "Which user added a bounty amount of 50 to the post title mentioning variance?",
+    "gold_sql": "SELECT T3.DisplayName, T1.Title FROM posts AS T1 INNER JOIN votes AS T2 ON T1.Id = T2.PostId INNER JOIN users AS T3 ON T3.Id = T2.UserId WHERE T2.BountyAmount = 50 AND T1.Title LIKE '%variance%'",
+    "predicted_sql": "SELECT DISTINCT T3.id, T3.displayname FROM votes AS T1 INNER JOIN posts AS T2 ON T1.postid = T2.id INNER JOIN users AS T3 ON T1.userid = T3.id WHERE T1.bountyamount = 50 AND T1.userid IS NOT NULL AND T2.title ILIKE '%variance%'",
+    "exact_match": false,
+    "execution_match": false,
+    "analyzer_match": false,
+    "error": null,
+    "execution_error": null,
+    "gold_execution_results": [
+      {
+        "displayname": "chl",
+        "title": "How to combine confidence intervals for a variance component of a mixed-effects model when using multiple imputation"
+      },
+      {
+        "displayname": "shabbychef",
+        "title": "Unbiased estimation of covariance matrix for multiply censored data"
+      }
+    ],
+    "predicted_execution_results": [
+      {
+        "id": 795,
+        "displayname": "shabbychef"
+      },
+      {
+        "id": 930,
+        "displayname": "chl"
+      }
+    ],
+    "db_name": "passarinho",
+    "metadata": {
+      "latency_ms": 140220,
+      "tokens_in": null,
+      "tokens_out": null,
+      "model_name": null
+    },
+    "agent_trace": {
+      "status": "GENERATED",
+      "sql": "SELECT DISTINCT T3.id, T3.displayname FROM votes AS T1 INNER JOIN posts AS T2 ON T1.postid = T2.id INNER JOIN users AS T3 ON T1.userid = T3.id WHERE T1.bountyamount = 50 AND T1.userid IS NOT NULL AND T2.title ILIKE '%variance%'",
+      "error": null,
+      "plan": "Find all users who added a bounty record with amount exactly 50 on posts whose title contains 'variance'. Expected output shape: multiple rows with columns (user_id, display_name). SQL pattern: SELECT DISTINCT users.id AS user_id, users.display_name FROM bounties JOIN posts ON bounties.post_id = posts.id JOIN users ON bounties.user_id = users.id WHERE bounties.amount = 50 AND LOWER(posts.title) LIKE '%variance%'; Use DISTINCT to avoid duplicate users if they added multiple matching bounties. No GROUP BY or aggregation is required. If only one (most recent) bounty is wanted, add ORDER BY bounties.created_at DESC LIMIT 1.",
+      "feedback": "Query is syntactically valid and returns the requested users but it's not optimal and may include non-offer vote types; add a vote-type filter for 'bounty offered' if available. The EXPLAIN shows a sequential scan on votes and the ILIKE '%variance%' prevents index usage; create an index on votes(bountyamount) and use a trigram/full-text index on posts.title or rewrite the query with EXISTS to avoid DISTINCT/sort. Remove the redundant \"T1.userid IS NOT NULL\" condition.",
+      "attempts": 1,
+      "all_queries": [
+        "SELECT DISTINCT T3.id, T3.displayname FROM votes AS T1 INNER JOIN posts AS T2 ON T1.postid = T2.id INNER JOIN users AS T3 ON T1.userid = T3.id WHERE T1.bountyamount = 50 AND T1.userid IS NOT NULL AND T2.title ILIKE '%variance%'"
+      ],
+      "interpreter_output": {
+        "clarified_question": "Which user(s) offered (added) a bounty with amount = 50 on any post whose title contains the word 'variance' (case-insensitive)? Return the user identifier and display name for each matching bounty.",
+        "sub_questions": [],
+        "explicit_intent": "Find all users who added a bounty record with amount exactly 50 on posts whose title contains 'variance'. Expected output shape: multiple rows with columns (user_id, display_name). SQL pattern: SELECT DISTINCT users.id AS user_id, users.display_name FROM bounties JOIN posts ON bounties.post_id = posts.id JOIN users ON bounties.user_id = users.id WHERE bounties.amount = 50 AND LOWER(posts.title) LIKE '%variance%'; Use DISTINCT to avoid duplicate users if they added multiple matching bounties. No GROUP BY or aggregation is required. If only one (most recent) bounty is wanted, add ORDER BY bounties.created_at DESC LIMIT 1.",
+        "ambiguities_resolved": [
+          "Interpreted 'added a bounty amount of 50' as a bounty record where bounties.amount = 50 (numeric equality). Did not assume currency conversion or cents; if amount is stored in cents, query should use 5000 instead.",
+          "Interpreted 'the post title mentioning variance' as posts.title ILIKE '%variance%' (case-insensitive substring match). If exact word matching or word-boundary is required, adjust to use regex or full-text search.",
+          "Interpreted 'Which user' to mean return the user who offered the bounty (bounties.user_id), not the post owner. If you meant the post owner, change the JOIN to use posts.owner_user_id.",
+          "No temporal restriction implied. Returned all matching records across all time. If you want the most recent bounty only, specify 'most recent' or provide a time window.",
+          "Output shape: rows with columns (user_id, display_name). Use DISTINCT to return unique users; omit DISTINCT if you want one row per matching bounty."
+        ]
+      },
+      "mapper_output": "Relevant tables I selected (3) and why\n1. votes — PRIMARY. The question asks for users who \"offered (added) a bounty with amount = 50\". The votes table contains the bountyamount column (bigint) and userid (who cast the vote / offered bounty). This is the table that records bounty amounts and the user who offered them.\n2. posts — REQUIRED to filter by post title. The posts table contains id (primary key) and title (text) so we can find posts whose title contains \"variance\" (case‑insensitive). votes.postid is a foreign key to posts.id.\n3. users — REQUIRED to return user identifier and display name. The users table contains id (primary key) and displayname (text). votes.userid is a foreign key to users.id.\n\nKey columns (which map directly to the question)\n- votes.bountyamount (bigint) — the numeric bounty amount; filter WHERE bountyamount = 50.\n- votes.userid (bigint) — the user who offered the bounty; join to users.id to get the display name.\n- votes.postid (bigint) — FK to posts.id; used to find which post the bounty was attached to.\n- posts.id (bigint) and posts.title (text) — filter posts where title contains 'variance' (case-insensitive).\n- users.id (bigint) and users.displayname (text) — return these as the result (user identifier and display name).\n\nColumn types & sample data (from sample_row) and date format notes\n- votes.bountyamount: bigint (sample_row shows null for a non-bounty vote). Numeric equality comparison is appropriate (bountyamount = 50).\n- votes.userid: bigint (sample_row had userid = null for non-bounty votes); for bounty offers this should be non-null.\n- votes.creationdate: date (sample_row: \"2010-07-19\") — stored as DATE. Not required for the current filter but noted.\n- posts.title: text (sample_row: \"Eliciting priors from experts\"). Use text matching for title.\n- posts.creaiondate: timestamp with time zone (note column name typo \"creaiondate\") — not needed here.\n- users.displayname: text (sample_row: \"Community\").\n\nTitle matching / case-insensitive behavior\n- posts.title is text. For a case-insensitive search use ILIKE '%variance%' (Postgres) or lower(title) LIKE '%variance%' if ILIKE is not available. This will match any title containing the substring \"variance\" regardless of case.\n\nRelationships / foreign keys\n- votes.postid -> posts.id (provided in get_table_info).\n- votes.userid -> users.id (provided).\nThese allow the needed joins: votes JOIN posts ON votes.postid = posts.id, and votes JOIN users ON votes.userid = users.id.\n\nCardinality & join warnings\n- WARNING: Joining votes to posts restricts results to posts that have votes (bounties). This is intentional here because we only want posts with bounty records. Joining users to votes restricts results to votes that have a non-null userid (some vote rows have userid NULL for anonymous/system votes). To avoid missing data, ensure you filter votes.bountyamount = 50 and votes.userid IS NOT NULL.\n- This query can be answered using only the votes table + posts (to filter titles) and users (to get displayname). There is no need to join additional tables. The join will intentionally reduce rows to only bounty events.\n\nValidation notes and potential ambiguity\n- The votes table contains both votetypeid and bountyamount. votetypeid can indicate different vote types (e.g., upvote, downvote, bounty start, bounty award), but because bountyamount is present on bounty-related vote records, filtering on bountyamount = 50 is appropriate to find offered bounties of amount 50. If you want to be extra strict you could also filter votetypeid to the code that represents \"bounty offered\", but the schema here does not include the votetype mapping — using bountyamount is sufficient.\n- Confirmed columns exist: posts.title, posts.id, votes.bountyamount, votes.postid, votes.userid, users.id, users.displayname — all present.\n\nSuggested SQL logic (conceptual)\n- Join votes -> posts (on postid = id), filter posts.title ILIKE '%variance%', filter votes.bountyamount = 50, ensure votes.userid IS NOT NULL, then join to users on users.id = votes.userid and return users.id and users.displayname (distinct if you want each user once, or return one row per bounty if you want each bounty instance).\n\nImportant notes for the SQL generator\n- Use a case-insensitive match on posts.title (e.g., posts.title ILIKE '%variance%').\n- Filter votes.bountyamount = 50 (bigint numeric equality).\n- Ensure votes.userid IS NOT NULL (to avoid system/anonymous entries).\n- Join order: votes -> posts (to apply title filter) -> users (to get displayname).\n- Consider selecting DISTINCT users.id, users.displayname if a user offered multiple separate bounties of 50 and you only want each user once.\n\nIf you want, I can now generate the exact SQL statement for this (Postgres-flavored) query.",
+      "generator_output": {
+        "reasoning_steps": [
+          "Identify tables: votes stores bountyamount and userid, posts stores title, users stores id and displayname.",
+          "Use table aliases in order: votes AS T1, posts AS T2, users AS T3.",
+          "Join T1.postid to T2.id and T1.userid to T3.id and filter for bounties of amount 50 and post titles containing 'variance' case-insensitively.",
+          "Ensure T1.userid IS NOT NULL and use DISTINCT on T3.id and T3.displayname to return each user only once."
+        ],
+        "sub_queries": [],
+        "confidence": 0.9,
+        "sql_query": "SELECT DISTINCT T3.id, T3.displayname\nFROM votes AS T1\nINNER JOIN posts AS T2 ON T1.postid = T2.id\nINNER JOIN users AS T3 ON T1.userid = T3.id\nWHERE T1.bountyamount = 50\n  AND T1.userid IS NOT NULL\n  AND T2.title ILIKE '%variance%';"
+      },
+      "validator_output": {
+        "is_valid": true,
+        "is_optimal": false,
+        "syntax_errors": [],
+        "semantic_issues": [
+          "Query lacks a filter for vote type to ensure only bounty 'offers' are selected (may include awards/system entries); add the appropriate voteTypeId if the schema uses one for bounty-start events.",
+          "Redundant condition: T1.userid IS NOT NULL is unnecessary because the INNER JOIN to users already excludes NULL userids."
+        ],
+        "efficiency_score": 0.6,
+        "efficiency_issues": [
+          "Sequential scan on votes (filter on bountyamount not using an index).",
+          "ILIKE '%variance%' forces a full scan on posts.title (leading wildcard prevents standard index use).",
+          "DISTINCT triggers a sort/unique step; consider rewriting to avoid global sort (e.g., EXISTS or DISTINCT ON)."
+        ],
+        "refinement_feedback": "Query is syntactically valid and returns the requested users but it's not optimal and may include non-offer vote types; add a vote-type filter for 'bounty offered' if available. The EXPLAIN shows a sequential scan on votes and the ILIKE '%variance%' prevents index usage; create an index on votes(bountyamount) and use a trigram/full-text index on posts.title or rewrite the query with EXISTS to avoid DISTINCT/sort. Remove the redundant \"T1.userid IS NOT NULL\" condition."
+      },
+      "trace": {
+        "pipeline": "new",
+        "db_name": "passarinho",
+        "start_ts": "2025-11-14T14:46:17.685274+00:00",
+        "end_ts": "2025-11-14T14:48:37.879897+00:00",
+        "latency_ms": 140194,
+        "steps": [
+          {
+            "name": "interpreter",
+            "timing_ms": 31322,
+            "input_summary": {
+              "raw_question": "Which user added a bounty amount of 50 to the post title mentioning variance?"
+            },
+            "output_summary": {
+              "clarified_question": "Which user(s) offered (added) a bounty with amount = 50 on any post whose title contains the word 'variance' (case-insensitive)? Return the user identifier and display name for each matching bounty.",
+              "intent": "Find all users who added a bounty record with amount exactly 50 on posts whose title contains 'variance'. Expected output shape: multiple rows with columns (user_id, display_name). SQL pattern: SELECT DISTINCT users.id AS user_id, users.display_name FROM bounties JOIN posts ON bounties.post_id = pos",
+              "sub_questions_count": 0
+            },
+            "error": null
+          },
+          {
+            "name": "mapper",
+            "timing_ms": 45413,
+            "input_summary": {
+              "clarified_question": "Which user(s) offered (added) a bounty with amount = 50 on any post whose title contains the word 'variance' (case-insensitive)? Return the user identifier and display name for each matching bounty.",
+              "all_tables_count": 75
+            },
+            "output_summary": {
+              "output_length": 4786,
+              "output_preview": "Relevant tables I selected (3) and why\n1. votes — PRIMARY. The question asks for users who \"offered (added) a bounty with amount = 50\". The votes table contains the bountyamount column (bigint) and userid (who cast the vote / offered bounty). This is the table that records bounty amounts and the use"
+            },
+            "error": null
+          },
+          {
+            "name": "generator",
+            "timing_ms": 17110,
+            "input_summary": {
+              "clarified_question": "Which user(s) offered (added) a bounty with amount = 50 on any post whose title contains the word 'variance' (case-insensitive)? Return the user identifier and display name for each matching bounty.",
+              "attempt": 1
+            },
+            "output_summary": {
+              "sql_length": 232,
+              "reasoning_steps_count": 4,
+              "confidence": 0.9
+            },
+            "error": null
+          },
+          {
+            "name": "validator",
+            "timing_ms": 46101,
+            "input_summary": {
+              "sql_length": 227,
+              "attempt": 1
+            },
+            "output_summary": {
+              "is_valid": true,
+              "is_optimal": false,
+              "efficiency_score": 0.6,
+              "syntax_error_count": 0,
+              "semantic_issue_count": 2
+            },
+            "error": null
+          }
+        ],
+        "tools": [
+          {
+            "agent": "mapper",
+            "tool": "get_table_info",
+            "args_redacted": [
+              "posts",
+              "votes",
+              "users"
+            ],
+            "result_preview": "Retrieved info for 3 tables",
+            "timing_ms": 104,
+            "error": null
+          }
+        ],
+        "generator": {
+          "sql_query": "SELECT DISTINCT T3.id, T3.displayname FROM votes AS T1 INNER JOIN posts AS T2 ON T1.postid = T2.id INNER JOIN users AS T3 ON T1.userid = T3.id WHERE T1.bountyamount = 50 AND T1.userid IS NOT NULL AND T2.title ILIKE '%variance%'",
+          "reasoning_steps": [
+            "Identify tables: votes stores bountyamount and userid, posts stores title, users stores id and displayname.",
+            "Use table aliases in order: votes AS T1, posts AS T2, users AS T3.",
+            "Join T1.postid to T2.id and T1.userid to T3.id and filter for bounties of amount 50 and post titles containing 'variance' case-insensitively.",
+            "Ensure T1.userid IS NOT NULL and use DISTINCT on T3.id and T3.displayname to return each user only once."
+          ],
+          "confidence": 0.9
+        },
+        "mapper": {
+          "all_tables_count": 75,
+          "selected_tables": [
+            "posts",
+            "votes",
+            "users"
+          ]
+        }
+      }
+    },
+    "analyzer_output": {
+      "analyzer_match": false,
+      "approved": false,
+      "failure_step": "interpreter",
+      "failure_reason": "The interpreter mis-specified the expected output shape: it interpreted the question as returning (user_id, display_name) only, while the gold SQL returns (displayname, title). Because of that misinterpretation the generated SQL omitted the post title and instead returned only user identifiers/names. The generator and mapper followed this (incorrect) interpretation, so the final predicted results lack a critical output field (the post title) and also deduplicate by user (DISTINCT on users) which can hide the association between a user and multiple matching posts.",
+      "query_issues": "Predicted SQL issues vs gold: (1) Missing post title: gold returns DisplayName and Title; predicted returns only id and displayname, omitting Title. (2) Predicted deduplicates users (SELECT DISTINCT users), losing per-post mapping; gold returns per-post rows with titles. (3) Redundant condition T1.userid IS NOT NULL (INNER JOIN already enforces non-null). (4) No explicit vote-type filter for 'bounty offered' (validator noted this) — could include non-bounty votes. (5) Uses ILIKE vs LIKE (case-insensitivity difference is minor and not harmful).",
+      "root_cause": "A question-interpretation error: the interpreter's clarified_question and explicit_intent declared an output shape that omitted the post title. The generator correctly implemented that interpretation. Therefore the pipeline produced results that answer a narrower question (which users) rather than the full information requested by the gold SQL (which users and which post titles).",
+      "suggestions": [
+        "Interpreter: Ensure the clarified expected output columns match the original/gold SQL and user's phrasing. If gold or example SQL includes additional fields (e.g., post title), preserve those in the clarified_question or ask a follow-up clarification.",
+        "Validator: Add a check that compares the predicted SELECT column list against expected/gold columns (or against the clarified output shape). If required columns are missing (e.g., post title), flag the query as semantically incomplete.",
+        "Generator: When implementing the clarified intent, prefer preserving any fields explicitly present in gold SQL or in the original user question. If a choice is made to omit columns, log a justification and surface it to the validator.",
+        "End-to-end tests: Add test cases asserting that queries return both the user and the associated post title for questions phrased like this. Detect unintended deduplication (DISTINCT) that removes per-post detail.",
+        "Schema/semantic checks: Validate vote semantics (e.g., filter by voteTypeId for bounty-offer events) to avoid returning incorrect vote records; the validator should also remove redundant conditions like userid IS NOT NULL."
+      ]
+    }
+  },
+  {
+    "dataset": "bird",
+    "index": 333,
+    "question_id": 671,
+    "db_id": "codebase_community",
+    "question": "What is the display name of the user who acquired the first Autobiographer badge?",
+    "gold_sql": "SELECT T1.DisplayName FROM users AS T1 INNER JOIN badges AS T2 ON T1.Id = T2.UserId WHERE T2.name = 'Autobiographer' ORDER BY T2.Date LIMIT 1",
+    "predicted_sql": "SELECT T2.displayname FROM badges AS T1 INNER JOIN users AS T2 ON T1.userid = T2.id WHERE T1.name = 'Autobiographer' AND T1.date = ( SELECT MIN(T3.date) FROM badges AS T3 WHERE T3.name = 'Autobiographer' )",
+    "exact_match": false,
+    "execution_match": false,
+    "analyzer_match": false,
+    "error": null,
+    "execution_error": null,
+    "gold_execution_results": [
+      {
+        "displayname": "Geoff Dalgas"
+      }
+    ],
+    "predicted_execution_results": [
+      {
+        "displayname": "Geoff Dalgas"
+      },
+      {
+        "displayname": "Jarrod Dixon"
+      },
+      {
+        "displayname": "Vince"
+      },
+      {
+        "displayname": "csgillespie"
+      },
+      {
+        "displayname": "Pierre"
+      },
+      {
+        "displayname": "wahalulu"
+      },
+      {
+        "displayname": "Jin"
+      },
+      {
+        "displayname": "Sharpie"
+      },
+      {
+        "displayname": "grokus"
+      },
+      {
+        "displayname": "Noah Snyder"
+      },
+      {
+        "displayname": "balpha"
+      },
+      {
+        "displayname": "JD Long"
+      }
+    ],
+    "db_name": "passarinho",
+    "metadata": {
+      "latency_ms": 135524,
+      "tokens_in": null,
+      "tokens_out": null,
+      "model_name": null
+    },
+    "agent_trace": {
+      "status": "GENERATED",
+      "sql": "SELECT T2.displayname FROM badges AS T1 INNER JOIN users AS T2 ON T1.userid = T2.id WHERE T1.name = 'Autobiographer' AND T1.date = ( SELECT MIN(T3.date) FROM badges AS T3 WHERE T3.name = 'Autobiographer' )",
+      "error": null,
+      "plan": "Find the display_name(s) of the user(s) who were awarded the badge with name = 'Autobiographer' at the earliest award date. Expected output shape: one column (display_name) and one row per user who matches the earliest award date. SQL pattern: SELECT u.display_name FROM users u JOIN badges b ON u.id = b.user_id WHERE b.name = 'Autobiographer' AND b.date = (SELECT MIN(date) FROM badges WHERE name = 'Autobiographer'); If a single scalar is strictly required, use ORDER BY b.date ASC, b.id ASC LIMIT 1 to pick a deterministic single user. No GROUP BY or aggregation required beyond the MIN(date) subquery. Use exact equality on the badge name.",
+      "feedback": "Query is syntactically valid and returns the display_name(s) for the earliest 'Autobiographer' badge but is not optimal; the plan does two full scans of badges via the MIN() subquery. Add an index on badges(name, date) or rewrite as a single ordered query (JOIN then ORDER BY date LIMIT 1) to avoid the double scan and enforce a deterministic single-row result if desired.",
+      "attempts": 1,
+      "all_queries": [
+        "SELECT T2.displayname FROM badges AS T1 INNER JOIN users AS T2 ON T1.userid = T2.id WHERE T1.name = 'Autobiographer' AND T1.date = ( SELECT MIN(T3.date) FROM badges AS T3 WHERE T3.name = 'Autobiographer' )"
+      ],
+      "interpreter_output": {
+        "clarified_question": "Which user's display_name corresponds to the user who received the earliest (first) award of the badge named 'Autobiographer'?",
+        "sub_questions": [],
+        "explicit_intent": "Find the display_name(s) of the user(s) who were awarded the badge with name = 'Autobiographer' at the earliest award date. Expected output shape: one column (display_name) and one row per user who matches the earliest award date. SQL pattern: SELECT u.display_name FROM users u JOIN badges b ON u.id = b.user_id WHERE b.name = 'Autobiographer' AND b.date = (SELECT MIN(date) FROM badges WHERE name = 'Autobiographer'); If a single scalar is strictly required, use ORDER BY b.date ASC, b.id ASC LIMIT 1 to pick a deterministic single user. No GROUP BY or aggregation required beyond the MIN(date) subquery. Use exact equality on the badge name.",
+        "ambiguities_resolved": [
+          "Interpreted 'first' to mean the badge award with the earliest award date (badges.date).",
+          "If multiple users have the same earliest award timestamp, return all their display_name values (one row per user). If the requester instead wants a single name when there are ties, the query can use ORDER BY b.date ASC, b.id ASC LIMIT 1 to pick one deterministically.",
+          "Interpreted 'Autobiographer' as an exact match on badges.name (NOT partial/ILIKE).",
+          "Assumed table/column names: users(id, display_name) and badges(user_id, name, date). If the schema uses different column names (e.g., Users.Id, Users.DisplayName, Badges.Date), substitute accordingly.",
+          "Output shape: one column (display_name). No additional columns or counts will be returned."
+        ]
+      },
+      "mapper_output": "Selected tables (and why)\n- badges — Primary table because the question is about a badge award (the table name exactly matches the domain concept). It contains the badge name, the award timestamp, and the userid of the recipient.\n- users — Needed to map the badges.userid foreign key to the user's display name (the question asks for the user's display_name).\n\nKey columns (why they matter)\n- badges.id (pk) — identifies a badge-award row.\n- badges.userid (bigint) — FK to users.id; identifies which user received the badge (required to get displayname).\n- badges.name (text) — badge name; we will filter WHERE name = 'Autobiographer'.\n- badges.date (timestamp with time zone) — award timestamp; we will use this to find the earliest award (ORDER BY date ASC or MIN(date)).\n- users.id (pk, bigint) — primary key to join to badges.userid.\n- users.displayname (text) — the requested output: the display name of the user who received the earliest 'Autobiographer' badge.\n\nColumn types & date format\n- badges.date is of type \"timestamp with time zone\" (sample: \"2010-07-19 11:39:07+00:00\"). This is a true timestamp — use timestamp ordering/comparison (ORDER BY badges.date ASC or MIN(badges.date)). No special string YYYYMM handling is required.\n- users.displayname is text and is nullable (the sample shows \"Community\" for id = -1).\n\nSample data (from get_table_info sample_row)\n- badges sample_row: { id: 1, userid: 5, name: 'Teacher', date: '2010-07-19 11:39:07+00:00' }\n  - Shows badge names are stored as text and date as timestamp with tz.\n- users sample_row: { id: -1, displayname: 'Community', creationdate: '2010-07-18 22:55:26+00:00', ... }\n  - Confirms users.displayname contains the human-readable name we need.\n\nRelationships\n- Foreign key: badges.userid -> users.id (documented in get_table_info). Use this join to map the badge-award row to the user's displayname.\n\nCardinality & join considerations (WARNING)\n- Joining badges -> users is a many-to-one join (many badge award rows per user). This is appropriate because the question is about a specific badge-award row (the earliest award). However:\n  - If you join without first restricting to the single badge-award row (e.g., by filtering and ordering), you may get multiple rows per user if they have multiple badges. To avoid ambiguity, either:\n    - Find the single earliest badges row for name = 'Autobiographer' (ORDER BY badges.date ASC LIMIT 1) and join that to users, or\n    - Compute MIN(badges.date) for name = 'Autobiographer' then join badges on date and name (watch for ties if multiple rows have the same minimum timestamp).\n- Note: Using only the users table is insufficient because users does not store badge award timestamps or badge names. A join to badges is required.\n\nValidation notes / ambiguities\n- Confirmed columns exist: badges.name, badges.date, badges.userid, users.id, users.displayname.\n- badges.date is a timestamp; use timestamp comparisons (no YYYYMM string handling).\n- displayname can be NULL in general; if the earliest badge recipient has NULL displayname you may want to return users.id or handle NULLs explicitly.\n- If multiple badge-award rows share the same earliest timestamp (ties), the query may return multiple users — clarify if you need only one (e.g., arbitrarily the first) or all tied earliest recipients.\n\nPrimary recommendation (how to get the answer)\n- Filter badges WHERE name = 'Autobiographer', order by badges.date ASC and take the first row (LIMIT 1), then join to users on users.id = badges.userid and return users.displayname.\n- Alternative safe approach: compute earliest_date = MIN(date) for badges where name = 'Autobiographer', then join badges on name + date = earliest_date to users; this returns all users tied for earliest date (if ties exist).\n\nImportant notes for SQL generator\n- Use badges.date (timestamp with tz) for MIN/ORDER operations.\n- Join condition: badges.userid = users.id.\n- Be explicit about LIMIT 1 vs returning all ties depending on desired behavior.",
+      "generator_output": {
+        "reasoning_steps": [
+          "Determine relevant tables: badges (has badge name, date, userid) and users (has displayname).",
+          "Filter badges to only rows where name = 'Autobiographer'.",
+          "Find the earliest award date for that badge using a MIN(date) subquery to allow returning all tied earliest recipients.",
+          "Join the badges rows that match that earliest date to users on badges.userid = users.id and select users.displayname."
+        ],
+        "sub_queries": [],
+        "confidence": 0.95,
+        "sql_query": "SELECT T2.displayname\nFROM badges AS T1\nINNER JOIN users AS T2 ON T1.userid = T2.id\nWHERE T1.name = 'Autobiographer'\n  AND T1.date = (\n    SELECT MIN(T3.date)\n    FROM badges AS T3\n    WHERE T3.name = 'Autobiographer'\n  )"
+      },
+      "validator_output": {
+        "is_valid": true,
+        "is_optimal": false,
+        "syntax_errors": [],
+        "semantic_issues": [
+          "Query may return multiple users if more than one badge share the exact earliest date; if only a single user is desired add a deterministic tie-breaker (ORDER BY ... LIMIT 1)."
+        ],
+        "efficiency_score": 0.6,
+        "efficiency_issues": [
+          "Two sequential scans on badges (one for the MIN() subquery and one for the outer filter) causing full-table scans.",
+          "Scalar subquery executed as InitPlan triggers a full scan before the join.",
+          "No composite index on badges(name, date) to accelerate the MIN(date) lookup and the filtering."
+        ],
+        "refinement_feedback": "Query is syntactically valid and returns the display_name(s) for the earliest 'Autobiographer' badge but is not optimal; the plan does two full scans of badges via the MIN() subquery. Add an index on badges(name, date) or rewrite as a single ordered query (JOIN then ORDER BY date LIMIT 1) to avoid the double scan and enforce a deterministic single-row result if desired."
+      },
+      "trace": {
+        "pipeline": "new",
+        "db_name": "passarinho",
+        "start_ts": "2025-11-14T14:46:17.688138+00:00",
+        "end_ts": "2025-11-14T14:48:33.181126+00:00",
+        "latency_ms": 135493,
+        "steps": [
+          {
+            "name": "interpreter",
+            "timing_ms": 37431,
+            "input_summary": {
+              "raw_question": "What is the display name of the user who acquired the first Autobiographer badge?"
+            },
+            "output_summary": {
+              "clarified_question": "Which user's display_name corresponds to the user who received the earliest (first) award of the badge named 'Autobiographer'?",
+              "intent": "Find the display_name(s) of the user(s) who were awarded the badge with name = 'Autobiographer' at the earliest award date. Expected output shape: one column (display_name) and one row per user who matches the earliest award date. SQL pattern: SELECT u.display_name FROM users u JOIN badges b ON u.id",
+              "sub_questions_count": 0
+            },
+            "error": null
+          },
+          {
+            "name": "mapper",
+            "timing_ms": 33480,
+            "input_summary": {
+              "clarified_question": "Which user's display_name corresponds to the user who received the earliest (first) award of the badge named 'Autobiographer'?",
+              "all_tables_count": 75
+            },
+            "output_summary": {
+              "output_length": 4001,
+              "output_preview": "Selected tables (and why)\n- badges — Primary table because the question is about a badge award (the table name exactly matches the domain concept). It contains the badge name, the award timestamp, and the userid of the recipient.\n- users — Needed to map the badges.userid foreign key to the user's di"
+            },
+            "error": null
+          },
+          {
+            "name": "generator",
+            "timing_ms": 16063,
+            "input_summary": {
+              "clarified_question": "Which user's display_name corresponds to the user who received the earliest (first) award of the badge named 'Autobiographer'?",
+              "attempt": 1
+            },
+            "output_summary": {
+              "sql_length": 221,
+              "reasoning_steps_count": 4,
+              "confidence": 0.95
+            },
+            "error": null
+          },
+          {
+            "name": "validator",
+            "timing_ms": 48311,
+            "input_summary": {
+              "sql_length": 205,
+              "attempt": 1
+            },
+            "output_summary": {
+              "is_valid": true,
+              "is_optimal": false,
+              "efficiency_score": 0.6,
+              "syntax_error_count": 0,
+              "semantic_issue_count": 1
+            },
+            "error": null
+          }
+        ],
+        "tools": [
+          {
+            "agent": "mapper",
+            "tool": "get_table_info",
+            "args_redacted": [
+              "badges",
+              "users"
+            ],
+            "result_preview": "Retrieved info for 2 tables",
+            "timing_ms": 74,
+            "error": null
+          }
+        ],
+        "generator": {
+          "sql_query": "SELECT T2.displayname FROM badges AS T1 INNER JOIN users AS T2 ON T1.userid = T2.id WHERE T1.name = 'Autobiographer' AND T1.date = ( SELECT MIN(T3.date) FROM badges AS T3 WHERE T3.name = 'Autobiographer' )",
+          "reasoning_steps": [
+            "Determine relevant tables: badges (has badge name, date, userid) and users (has displayname).",
+            "Filter badges to only rows where name = 'Autobiographer'.",
+            "Find the earliest award date for that badge using a MIN(date) subquery to allow returning all tied earliest recipients.",
+            "Join the badges rows that match that earliest date to users on badges.userid = users.id and select users.displayname."
+          ],
+          "confidence": 0.95
+        },
+        "mapper": {
+          "all_tables_count": 75,
+          "selected_tables": [
+            "badges",
+            "users"
+          ]
+        }
+      }
+    },
+    "analyzer_output": {
+      "analyzer_match": false,
+      "approved": false,
+      "failure_step": "generator",
+      "failure_reason": "The generator produced SQL that returns all users whose badge.date equals the MIN(date) for 'Autobiographer' (ties included). The gold SQL enforces a single deterministic result using ORDER BY ... LIMIT 1. Because the predicted query returns multiple display names instead of the single expected name, the business answer changed.",
+      "query_issues": "Predicted SQL uses 'T1.date = (SELECT MIN(T3.date) ...)' which returns all tied earliest awards. Gold SQL uses 'ORDER BY T2.Date LIMIT 1' to return a single earliest recipient. Predicted result contains many extra display names, changing the answer from one user to many. Table/alias reversal is harmless; column naming is functionally equivalent.",
+      "root_cause": "Ambiguity in tie-breaking for 'first' led the generator to choose a tie-inclusive MIN(date) equality approach. The generator (and validator) did not enforce the benchmark's expected single-row output shape.",
+      "suggestions": [
+        "Generator: For 'first'/'earliest' questions that imply a single answer, generate ORDER BY <date> ASC LIMIT 1 (optionally with a deterministic tie-breaker such as ORDER BY date ASC, id ASC LIMIT 1) instead of matching MIN(date) equality which can return multiple rows.",
+        "Interpreter: Resolve and record expected output cardinality when clarifying ('first' should default to a single scalar unless user asks for ties). Surface that decision to downstream agents.",
+        "Validator: Add a rule to flag queries that may return multiple rows when a single-row result is expected (and either accept ties explicitly or require LIMIT 1).",
+        "Add tests: Include benchmark cases with tied earliest timestamps to ensure system behavior is consistent and matches the intended interpretation.",
+        "Documentation: Update generation guidance to prefer deterministic tie-breaking for ordinal queries (first/last) and to document allowed behaviors when ties exist."
+      ]
+    }
+  },
+  {
+    "dataset": "bird",
+    "index": 470,
+    "question_id": 92,
+    "db_id": "financial",
+    "question": "List out the no. of districts that have female average salary is more than 6000 but less than 10000?",
+    "gold_sql": "SELECT COUNT(DISTINCT T2.district_id) FROM client AS T1 INNER JOIN district AS T2 ON T1.district_id = T2.district_id WHERE T1.gender = 'F' AND T2.A11 BETWEEN 6000 AND 10000",
+    "predicted_sql": "SELECT COUNT(*) FROM (SELECT T1.district_id FROM client AS T1 INNER JOIN income AS T2 ON CAST(T1.client_id AS text) = T2.link_to_member WHERE T1.gender = 'F' GROUP BY T1.district_id HAVING AVG(T2.amount) > 6000 AND AVG(T2.amount) < 10000) AS T3",
+    "exact_match": false,
+    "execution_match": false,
+    "analyzer_match": false,
+    "error": null,
+    "execution_error": null,
+    "gold_execution_results": [
+      {
+        "count": 69
+      }
+    ],
+    "predicted_execution_results": [
+      {
+        "count": 0
+      }
+    ],
+    "db_name": "passarinho",
+    "metadata": {
+      "latency_ms": 273293,
+      "tokens_in": null,
+      "tokens_out": null,
+      "model_name": null
+    },
+    "agent_trace": {
+      "status": "GENERATED",
+      "sql": "SELECT COUNT(*) FROM (SELECT T1.district_id FROM client AS T1 INNER JOIN income AS T2 ON CAST(T1.client_id AS text) = T2.link_to_member WHERE T1.gender = 'F' GROUP BY T1.district_id HAVING AVG(T2.amount) > 6000 AND AVG(T2.amount) < 10000) AS T3",
+      "error": null,
+      "plan": "Return a single scalar: the count of distinct districts whose average female salary is > 6000 and < 10000. Compute as: 1) Filter rows to female employees (e.g., WHERE gender = 'Female'), 2) GROUP BY district and compute AVG(salary) per district, 3) Count how many groups satisfy AVG(salary) > 6000 AND AVG(salary) < 10000. SQL pattern: SELECT COUNT(*) FROM (SELECT district, AVG(salary) AS avg_female_salary FROM table WHERE gender = 'Female' GROUP BY district HAVING AVG(salary) > 6000 AND AVG(salary) < 10000) t; Expected output shape: one row, one column (integer).",
+      "feedback": "Query is syntactically valid but fails at runtime because CAST(T2.link_to_member AS bigint) encounters non-numeric values; fix the type mismatch by joining on compatible types (e.g., cast client_id to text or ensure link_to_member is numeric), remove the unnecessary subquery and compute the COUNT directly over grouped districts with HAVING, and avoid casting columns inside JOINs to allow index use.",
+      "attempts": 2,
+      "all_queries": [
+        "SELECT COUNT(*) FROM (SELECT T1.district_id, AVG(CAST(T2.amount AS numeric)) FROM client AS T1 INNER JOIN income AS T2 ON CAST(T2.link_to_member AS bigint) = T1.client_id WHERE T1.gender = 'F' GROUP BY T1.district_id HAVING AVG(CAST(T2.amount AS numeric)) > 6000 AND AVG(CAST(T2.amount AS numeric)) < 10000) AS T3",
+        "SELECT COUNT(*) FROM (SELECT T1.district_id FROM client AS T1 INNER JOIN income AS T2 ON CAST(T1.client_id AS text) = T2.link_to_member WHERE T1.gender = 'F' GROUP BY T1.district_id HAVING AVG(T2.amount) > 6000 AND AVG(T2.amount) < 10000) AS T3"
+      ],
+      "interpreter_output": {
+        "clarified_question": "How many districts have an average female salary greater than 6000 and less than 10000? Compute the per-district average salary using only female employees and return a single scalar count of districts where that average satisfies 6000 < avg_female_salary < 10000.",
+        "sub_questions": [],
+        "explicit_intent": "Return a single scalar: the count of distinct districts whose average female salary is > 6000 and < 10000. Compute as: 1) Filter rows to female employees (e.g., WHERE gender = 'Female'), 2) GROUP BY district and compute AVG(salary) per district, 3) Count how many groups satisfy AVG(salary) > 6000 AND AVG(salary) < 10000. SQL pattern: SELECT COUNT(*) FROM (SELECT district, AVG(salary) AS avg_female_salary FROM table WHERE gender = 'Female' GROUP BY district HAVING AVG(salary) > 6000 AND AVG(salary) < 10000) t; Expected output shape: one row, one column (integer).",
+        "ambiguities_resolved": [
+          "Interpreted 'female average salary' as the per-district mean of the salary column restricted to female employees (gender = 'Female').",
+          "Interpreted 'districts' as distinct values in a district column; assumed column name 'district'—replace with actual column name if different.",
+          "Interpreted 'more than 6000 but less than 10000' as strict inequalities: AVG(salary) > 6000 AND AVG(salary) < 10000. If endpoints should be inclusive, use BETWEEN 6000 AND 10000 or >= / <= accordingly.",
+          "Time scope: No year or month specified, so use all available records. If the user meant 'for a specific year' or 'average monthly for the year', they must specify; 'average monthly for the year' would require dividing annual AVG by 12 per the guidelines.",
+          "Nulls/currency: Exclude rows with NULL salary. Assumed salaries are in a single consistent currency; if not, conversion is required prior to averaging.",
+          "Output shape: single scalar integer (COUNT of districts)."
+        ]
+      },
+      "mapper_output": "Selected tables (3-5) and why I chose them\n- district — contains district_id (primary key) and is the natural grouping for the question (we need per-district averages). Exact match to the concept \"district\".\n- client — contains client_id, gender and district_id. client.gender gives the sex filter (sample shows 'F'/'M'); client.district_id is the FK to district. This is the best place in the schema to get an individual's gender + district.\n- income — contains amount (numeric) which is the only obvious “money” / payment column that could represent salary-like amounts. income.link_to_member links income rows to people (but to the member table, not client).\n- member — included because income.link_to_member points to member.member_id (foreign key). I included it to show the actual FK chain and to check whether members and clients are the same entity.\n\nWhy these (priority rationale)\n- client is chosen because it contains gender and district_id (direct keyword matches to the question: female + district).\n- income is chosen because it contains a numeric amount column which could represent salary (no explicit \"salary\" table exists in the schema).\n- district is needed because we must group per district.\n- member is included because income presently links to member, not client — this is a critical schema mismatch that affects whether the requested calculation is possible without additional mapping.\n\nKey columns (from get_table_info)\n- district.district_id (bigint) — primary grouping key. Sample: district_id = 1, a3 = 'Prague'.\n- client.client_id (bigint), client.gender (text), client.district_id (bigint) — client.gender sample = 'F' in sample_row; sample_values returned [\"M\",\"F\"].\n- income.amount (bigint) — sample_row amount = 50. income.date_received (text) sample = '2019-10-17'.\n- income.link_to_member (text) — foreign key to member.member_id (text).\n- member.member_id (text) — sample format 'rec1x5zBFIqoOuPW8'.\n\nDate formats & column types\n- income.date_received: stored as text (sample '2019-10-17'). It looks like a YYYY-MM-DD string; treat as DATE by casting if needed (e.g., CAST(date_received AS date)) but note the column type is text in metadata.\n- income.amount: integer/bigint numeric type — safe for AVG() arithmetic.\n- client.gender: text encoded as 'M' and 'F' (confirmed by sample_values).\n\nSample data (illustrative)\n- district sample_row: { district_id: 1, a3: 'Prague', a4: '1204953', ... }\n- client sample_row: { client_id: 1, gender: 'F', birth_date: '1970-12-13', district_id: 18 }\n- income sample_row: { income_id: 'rec0s9ZrO15zhzUeE', date_received: '2019-10-17', amount: 50, link_to_member: 'reccW7q1KkhSKZsea' }\n- member sample_row: { member_id: 'rec1x5zBFIqoOuPW8', first_name: 'Angela', ... }\n\nRelationships (FKs)\n- client.district_id -> district.district_id (client rows include district FK).\n- income.link_to_member -> member.member_id (income links to member).\n- There is NO declared foreign key or direct relationship between member and client in the schema we inspected.\n\nCritical schema mismatch & implication (important)\n- income (the only table with an amount column that could be used as salary) is linked to member.member_id. But gender and district live in client rows. There is no FK or column that maps member.member_id to client.client_id in the available schema. In other words: income -> member, and client -> district; but member is not connected to client (based on provided metadata).\n- This means: as-is, I cannot reliably compute \"average female salary per district\" because the table containing salaries (income) is not connected to the table containing gender+district (client) by any explicit FK in the current schema. Without a mapping or clarification that member rows and client rows represent the same people (and how their IDs relate), we cannot join salaries to gender+district correctly.\n\nValue encodings / domain notes\n- Gender encoding in client: 'F' for female, 'M' for male (sample_values returned [\"M\",\"F\"]).\n- income.amount appears to be integer amounts (sample 50). No explicit \"salary\" column exists — income.amount is the only candidate.\n\nCardinality warnings & query guidance\n- WARNING: If you attempt to join client to income directly without a correct mapping (for example by assuming income.link_to_member contains client.client_id), you risk incorrect results or runtime errors (types differ: client.client_id is bigint; income.link_to_member is text and points to member.member_id in metadata).\n- If a correct join path exists (e.g., if member.member_id = income.link_to_member and member rows can be reliably mapped to client rows), then a join will restrict to only people who have income records — that is expected if \"salary\" is represented by income rows. Make sure this matches the intent (do you want to count districts where the average over female employees who have at least one income record falls in the range, or over all female employees including those with no income rows?).\n- If a single table contained gender + district + salary, the query could be done without joins (preferred). But here no such single table exists.\n\nValidation notes\n- Confirmed: client has gender and district_id.\n- Confirmed: income has amount but links to member, not client.\n- Confirm whether \"female employees\" are represented in client (client.gender = 'F'), or in member (member is another person table). Clarify which table represents employees and which table contains salary.\n- If the dataset’s real mapping is that income.link_to_member actually stores client IDs (i.e., the textual IDs in income are the same people as client.client_id), state that so we can cast/join appropriately.\n\nSuggested SQL — two options depending on assumption\n\nA) If you confirm that income.link_to_member actually points to client.client_id (i.e., the income rows belong to clients and link_to_member stores client IDs as text), you can run (Postgres-style casting shown; adapt casting for your DB):\n\n-- Count districts where the avg female salary (using income.amount) is between 6000 and 10000\nSELECT COUNT(*) AS district_count\nFROM (\n  SELECT c.district_id, AVG(i.amount::numeric) AS avg_female_salary\n  FROM client c\n  JOIN income i ON CAST(i.link_to_member AS bigint) = c.client_id   -- ASSUMPTION: link_to_member maps to client_id\n  WHERE c.gender = 'F'\n  GROUP BY c.district_id\n  HAVING AVG(i.amount::numeric) > 6000 AND AVG(i.amount::numeric) < 10000\n) t;\n\nNotes about this SQL:\n- It casts income.link_to_member to bigint to match client.client_id — this cast will only work if link_to_member stores numeric client IDs in text form.\n- AVG is computed over income.amount for female clients only, grouped by district_id, and then we count districts whose average satisfies 6000 < avg < 10000.\n\nB) If instead income is tied to member and member must be mapped to client by some mapping table or shared ID, you must provide that mapping (e.g., member.link_to_client or a separate join table). With that mapping available, do:\n- join client -> (mapping) -> member -> income, then group by client.district_id with WHERE client.gender='F'.\n\nIf no mapping exists\n- We cannot compute the requested metric with the current schema because salary amounts (income) and gender+district (client) are on disconnected person tables (income->member vs client). We need one of:\n  1) the correct table that stores salary along with client_id (or a salary column on client),\n  2) a mapping table or column that maps member.member_id to client.client_id (or vice versa),\n  3) confirmation that income.link_to_member actually uses client IDs (and their format), so the join in (A) is valid.\n\nNext steps I recommend\n1. Tell me which table represents employees: client or member? Are they the same entity under different names?\n2. If member and client are the same, provide the mapping column or confirm that income.link_to_member stores client.client_id values (and how they are encoded).\n3. If there is another table that stores salary (not income), tell me its name (or permit me to check additional tables).\n4. Once you confirm mapping, I will produce the final SQL exactly tailored to the correct join and types.\n\nSummary (primary conclusion)\n- Primary candidate tables: client (gender + district), income (amount), district (grouping).\n- Critical blocker: income is linked to member, not client; no mapping between member and client is present in metadata. Therefore the requested computation cannot be executed reliably without confirming how income rows map to clients (female employees) or which table contains salary per client. Provide that clarification and I will produce the final, DB-ready SQL.",
+      "generator_output": {
+        "reasoning_steps": [
+          "Use client (gender,district) and income (amount,link_to_member) to compute per-district female averages.",
+          "To avoid runtime CAST errors on income.link_to_member (non-numeric), cast client.client_id to text and join on CAST(T1.client_id AS text) = T2.link_to_member so we don't CAST the income column.",
+          "Filter to female clients with T1.gender = 'F', GROUP BY T1.district_id and use HAVING AVG(T2.amount) > 6000 AND AVG(T2.amount) < 10000 to keep qualifying districts.",
+          "Wrap the grouped districts in an outer SELECT COUNT(*) to return a single scalar count of districts meeting the condition."
+        ],
+        "sub_queries": [],
+        "confidence": 0.7,
+        "sql_query": "SELECT COUNT(*) FROM (SELECT T1.district_id FROM client AS T1 INNER JOIN income AS T2 ON CAST(T1.client_id AS text) = T2.link_to_member WHERE T1.gender = 'F' GROUP BY T1.district_id HAVING AVG(T2.amount) > 6000 AND AVG(T2.amount) < 10000) AS T3;"
+      },
+      "validator_output": {
+        "is_valid": false,
+        "is_optimal": false,
+        "syntax_errors": [],
+        "semantic_issues": [
+          "Runtime error: CAST(T2.link_to_member AS bigint) fails due to non-numeric values in income.link_to_member (type mismatch for JOIN).",
+          "JOIN uses a cast on a column which prevents index usage and can cause full sequential scans.",
+          "Unnecessary derived table: wrapping the grouped query just to COUNT rows is avoidable; can compute COUNT(*) directly from HAVING or with COUNT(*) FILTER.",
+          "Repeated CAST of T2.amount in AVG/HAVING is redundant and may be simplified"
+        ],
+        "efficiency_score": 0.4,
+        "efficiency_issues": [
+          "Casting in JOIN prevents index usage and likely causes sequential scans.",
+          "Derived-table wrapper adds overhead; COUNT over a subquery is unnecessary.",
+          "Repeated CASTs increase CPU; casting on join/filter columns blocks index seeks."
+        ],
+        "refinement_feedback": "Query is syntactically valid but fails at runtime because CAST(T2.link_to_member AS bigint) encounters non-numeric values; fix the type mismatch by joining on compatible types (e.g., cast client_id to text or ensure link_to_member is numeric), remove the unnecessary subquery and compute the COUNT directly over grouped districts with HAVING, and avoid casting columns inside JOINs to allow index use."
+      },
+      "trace": {
+        "pipeline": "new",
+        "db_name": "passarinho",
+        "start_ts": "2025-11-14T14:46:17.691068+00:00",
+        "end_ts": "2025-11-14T14:50:50.974351+00:00",
+        "latency_ms": 273283,
+        "steps": [
+          {
+            "name": "interpreter",
+            "timing_ms": 23051,
+            "input_summary": {
+              "raw_question": "List out the no. of districts that have female average salary is more than 6000 but less than 10000?"
+            },
+            "output_summary": {
+              "clarified_question": "How many districts have an average female salary greater than 6000 and less than 10000? Compute the per-district average salary using only female employees and return a single scalar count of district",
+              "intent": "Return a single scalar: the count of distinct districts whose average female salary is > 6000 and < 10000. Compute as: 1) Filter rows to female employees (e.g., WHERE gender = 'Female'), 2) GROUP BY district and compute AVG(salary) per district, 3) Count how many groups satisfy AVG(salary) > 6000 AN",
+              "sub_questions_count": 0
+            },
+            "error": null
+          },
+          {
+            "name": "mapper",
+            "timing_ms": 100230,
+            "input_summary": {
+              "clarified_question": "How many districts have an average female salary greater than 6000 and less than 10000? Compute the per-district average salary using only female employees and return a single scalar count of district",
+              "all_tables_count": 75
+            },
+            "output_summary": {
+              "output_length": 8668,
+              "output_preview": "Selected tables (3-5) and why I chose them\n- district — contains district_id (primary key) and is the natural grouping for the question (we need per-district averages). Exact match to the concept \"district\".\n- client — contains client_id, gender and district_id. client.gender gives the sex filter (s"
+            },
+            "error": null
+          },
+          {
+            "name": "generator",
+            "timing_ms": 40647,
+            "input_summary": {
+              "clarified_question": "How many districts have an average female salary greater than 6000 and less than 10000? Compute the per-district average salary using only female employees and return a single scalar count of district",
+              "attempt": 1
+            },
+            "output_summary": {
+              "sql_length": 313,
+              "reasoning_steps_count": 5,
+              "confidence": 0.35
+            },
+            "error": null
+          },
+          {
+            "name": "validator",
+            "timing_ms": 36651,
+            "input_summary": {
+              "sql_length": 313,
+              "attempt": 1
+            },
+            "output_summary": {
+              "is_valid": false,
+              "is_optimal": false,
+              "efficiency_score": 0.4,
+              "syntax_error_count": 0,
+              "semantic_issue_count": 4
+            },
+            "error": null
+          },
+          {
+            "name": "generator",
+            "timing_ms": 72395,
+            "input_summary": {
+              "clarified_question": "How many districts have an average female salary greater than 6000 and less than 10000? Compute the per-district average salary using only female employees and return a single scalar count of district",
+              "attempt": 2
+            },
+            "output_summary": {
+              "sql_length": 245,
+              "reasoning_steps_count": 4,
+              "confidence": 0.7
+            },
+            "error": null
+          }
+        ],
+        "tools": [
+          {
+            "agent": "mapper",
+            "tool": "get_table_info",
+            "args_redacted": [
+              "district",
+              "client",
+              "member",
+              "income"
+            ],
+            "result_preview": "Retrieved info for 4 tables",
+            "timing_ms": 93,
+            "error": null
+          },
+          {
+            "agent": "mapper",
+            "tool": "sample_values",
+            "args_redacted": {
+              "table_name": "client",
+              "column_name": "gender",
+              "limit": 5
+            },
+            "result_preview": "Retrieved 2 sample values",
+            "timing_ms": 21,
+            "error": null
+          }
+        ],
+        "generator": {
+          "sql_query": "SELECT COUNT(*) FROM (SELECT T1.district_id FROM client AS T1 INNER JOIN income AS T2 ON CAST(T1.client_id AS text) = T2.link_to_member WHERE T1.gender = 'F' GROUP BY T1.district_id HAVING AVG(T2.amount) > 6000 AND AVG(T2.amount) < 10000) AS T3",
+          "reasoning_steps": [
+            "Use client (gender,district) and income (amount,link_to_member) to compute per-district female averages.",
+            "To avoid runtime CAST errors on income.link_to_member (non-numeric), cast client.client_id to text and join on CAST(T1.client_id AS text) = T2.link_to_member so we don't CAST the income column.",
+            "Filter to female clients with T1.gender = 'F', GROUP BY T1.district_id and use HAVING AVG(T2.amount) > 6000 AND AVG(T2.amount) < 10000 to keep qualifying districts.",
+            "Wrap the grouped districts in an outer SELECT COUNT(*) to return a single scalar count of districts meeting the condition."
+          ],
+          "confidence": 0.7
+        },
+        "mapper": {
+          "all_tables_count": 75,
+          "selected_tables": [
+            "district",
+            "client",
+            "member",
+            "income"
+          ]
+        }
+      }
+    },
+    "analyzer_output": {
+      "analyzer_match": false,
+      "approved": false,
+      "failure_step": "generator",
+      "failure_reason": "The predicted SQL does not deliver the same business impact as the gold SQL. The generator produced an incorrect query that (1) uses income.amount aggregated by client/district while the gold uses district.A11 (a district-level column) — i.e., different data source/metric — and (2) joins client to income directly by casting client.client_id to text to match income.link_to_member, but income.link_to_member actually refers to member.member_id. The generator ignored the necessary join path through member, resulting in no matching rows (predicted count 0 vs gold 69). These logic and schema-mapping errors changed the filtering/aggregation and produced a wrong answer.",
+      "query_issues": "- Wrong table/column used for the key metric: predicted AVG(income.amount) vs gold district.A11.\n- Incorrect JOIN path: income.link_to_member points to member.member_id, not client.client_id; generator joined client to income directly via casting, producing no matches.\n- Casting-based join risks type/value mismatches and was applied incorrectly.\n- Aggregation logic differs: gold checks district.A11 BETWEEN 6000 AND 10000; predicted computes HAVING AVG(amount) >6000 AND <10000 — different sources and semantics.\n- Unnecessary subquery wrapper and potential inefficiencies (not the primary cause of wrong answer).",
+      "root_cause": "The generator ignored the schema relationship identified by the mapper (income links to member, not client) and chose an incorrect join strategy, plus it used a different column for the required metric. This represents a schema-mapping/SQL-construction error at generation time rather than only a validation or interpretation mistake.",
+      "suggestions": [
+        "Generator: Use the mapper's FK chain and join through the member table when income.link_to_member references member.member_id. Avoid relying on casts to bridge unrelated ID spaces; require explicit mapping or a lookup join to member before joining to client.",
+        "Mapper: Make FK relationships and required join paths explicit and flag when a direct join between two tables is not supported by schema (e.g., income -> member -> client). Provide a clear 'must-join-via' instruction to the generator when a table is an indirect link.",
+        "Validator: Add semantic checks to detect suspicious joins and zero-result aggregations (e.g., detect when join columns have incompatible types/values or when the predicted result is unexpectedly zero compared to typical ranges). Also validate that the columns used match the conceptual metric (district-level vs transaction-level).",
+        "Pipeline-level: Add unit tests / sanity checks comparing the predicted scalar to expected ranges or to alternative queries (e.g., compute count using district.A11 when available). If the mapper indicates a precomputed district field (district.A11), prefer that field or raise a clarification question.",
+        "Prompting/UX: When multiple candidate sources for 'salary' exist (district.A11 vs income.amount), require the system to either (a) prefer the direct district field if it semantically matches the question, or (b) ask a clarification rather than guessing."
+      ]
+    }
+  }
+]

@@ -1,0 +1,795 @@
+[
+  {
+    "dataset": "bird",
+    "index": 1,
+    "question_id": 1471,
+    "db_id": "debit_card_specializing",
+    "question": "What is the ratio of customers who pay in EUR against customers who pay in CZK?",
+    "gold_sql": "SELECT CAST(SUM(CASE WHEN Currency = 'EUR' THEN 1 ELSE 0 END) AS REAL) / NULLIF(SUM(CASE WHEN Currency = 'CZK' THEN 1 ELSE 0 END), 0) FROM customers",
+    "predicted_sql": "SELECT CAST(COUNT(DISTINCT T1.customerid) FILTER (WHERE T1.currency = 'EUR') AS REAL) / NULLIF(CAST(COUNT(DISTINCT T1.customerid) FILTER (WHERE T1.currency = 'CZK') AS REAL), 0) FROM customers AS T1 WHERE T1.currency IN ('EUR','CZK')",
+    "exact_match": false,
+    "execution_match": null,
+    "analyzer_match": true,
+    "error": null,
+    "execution_error": "Connection or execution error: [Errno 111] Connection refused",
+    "gold_execution_results": null,
+    "predicted_execution_results": null,
+    "db_name": "passarinho",
+    "metadata": {
+      "latency_ms": 107345,
+      "tokens_in": null,
+      "tokens_out": null,
+      "model_name": null
+    },
+    "agent_trace": {
+      "status": "GENERATED",
+      "sql": "SELECT CAST(COUNT(DISTINCT T1.customerid) FILTER (WHERE T1.currency = 'EUR') AS REAL) / NULLIF(CAST(COUNT(DISTINCT T1.customerid) FILTER (WHERE T1.currency = 'CZK') AS REAL), 0) FROM customers AS T1 WHERE T1.currency IN ('EUR','CZK')",
+      "error": null,
+      "plan": "Return a single scalar numeric value representing: ratio = (count of distinct customers with currency = 'EUR') / (count of distinct customers with currency = 'CZK'). Expected output shape: one row, one column (a single numeric scalar named e.g. eur_to_czk_ratio). Use conditional aggregation; do NOT GROUP BY. Example SQL (ANSI-ish):\n\nSELECT\n  (CAST(SUM(CASE WHEN currency = 'EUR' THEN 1 ELSE 0 END) AS NUMERIC)\n   / NULLIF(CAST(SUM(CASE WHEN currency = 'CZK' THEN 1 ELSE 0 END) AS NUMERIC), 0)\n  ) AS eur_to_czk_ratio\nFROM customers\nWHERE currency IN ('EUR','CZK');\n\nNotes: use COUNT(DISTINCT customer_id) instead of SUM(...) if the customers table may contain duplicate customer_id rows. Use NULLIF to avoid division-by-zero; result will be NULL if there are zero CZK customers. No GROUP BY or time filters applied.",
+      "feedback": "Query is syntactically valid and returns the requested EUR/CZK customer ratio, but it is not fully optimal: replace COUNT(DISTINCT customerid) with COUNT(*) FILTER (WHERE ...) or SUM(CASE WHEN ...) if customerid is unique and consider adding an index on currency to avoid a full table scan on large tables.",
+      "attempts": 1,
+      "all_queries": [
+        "SELECT CAST(COUNT(DISTINCT T1.customerid) FILTER (WHERE T1.currency = 'EUR') AS REAL) / NULLIF(CAST(COUNT(DISTINCT T1.customerid) FILTER (WHERE T1.currency = 'CZK') AS REAL), 0) FROM customers AS T1 WHERE T1.currency IN ('EUR','CZK')"
+      ],
+      "interpreter_output": {
+        "clarified_question": "Compute the ratio of customers who pay in EUR to customers who pay in CZK using the customers table (i.e., number of unique customers with currency = 'EUR' divided by number of unique customers with currency = 'CZK'), across all customers (no time filter). Return a single scalar value (EUR_count / CZK_count).",
+        "sub_questions": [],
+        "explicit_intent": "Return a single scalar numeric value representing: ratio = (count of distinct customers with currency = 'EUR') / (count of distinct customers with currency = 'CZK'). Expected output shape: one row, one column (a single numeric scalar named e.g. eur_to_czk_ratio). Use conditional aggregation; do NOT GROUP BY. Example SQL (ANSI-ish):\n\nSELECT\n  (CAST(SUM(CASE WHEN currency = 'EUR' THEN 1 ELSE 0 END) AS NUMERIC)\n   / NULLIF(CAST(SUM(CASE WHEN currency = 'CZK' THEN 1 ELSE 0 END) AS NUMERIC), 0)\n  ) AS eur_to_czk_ratio\nFROM customers\nWHERE currency IN ('EUR','CZK');\n\nNotes: use COUNT(DISTINCT customer_id) instead of SUM(...) if the customers table may contain duplicate customer_id rows. Use NULLIF to avoid division-by-zero; result will be NULL if there are zero CZK customers. No GROUP BY or time filters applied.",
+        "ambiguities_resolved": [
+          "Interpreted 'customers who pay in EUR/CZK' as customers.currency = 'EUR' or 'CZK' in the customers table (customer-level attribute), not requiring joining to a transactions/payments table.",
+          "Interpreted 'ratio of A against B' as A / B (i.e., EUR_count divided by CZK_count).",
+          "Output shape: single scalar (one row, one column) as the question asks for 'the ratio'.",
+          "Will count unique customers (COUNT(DISTINCT customer_id)) to avoid double-counting if customers table contains duplicate rows; if customer_id is primary/unique, COUNT(*) or SUM(CASE...) is equivalent.",
+          "Excluded NULL or other currencies by filtering to currency IN ('EUR','CZK').",
+          "Division-by-zero handling: use NULLIF on CZK count so SQL returns NULL rather than error if CZK count = 0; alternative is to return Infinity or a message, but default is NULL."
+        ]
+      },
+      "mapper_output": "Relevant tables (selected and why)\n- customers (PRIMARY choice): Direct keyword match to the question (\"customers\") and contains the currency column needed to compute the requested ratio. Per the Minimal-Table Principle, this single table is sufficient to answer the question with no joins required.\n- transactions_1k (included for context only): A raw transactions table that contains customerid and a date column. I inspected it only to confirm that joining would restrict results to customers who have transactions (see Cardinality Warning). It is not needed for the requested metric.\n\nKey columns (which map to the question)\n- customers.customerid (bigint, primary key, not nullable): Unique customer identifier — use this to count distinct customers.\n- customers.currency (text, nullable): Currency code for each customer (e.g., 'EUR', 'CZK') — this is the grouping/filter column for the ratio.\n\nDate format & column types\n- customers: No date columns. customerid is bigint, currency is text.\n- transactions_1k (not required for final query): date is DATE type (sample: 2012-08-24). This confirms that if someone were to join by transactions and filter by time they'd need DATE comparisons; but the current question has no time filter.\n\nSample data / value patterns\n- customers sample_row: { customerid: 3, segment: 'SME', currency: 'EUR' } — shows currency values stored as text like 'EUR'.\n- sample_values(customers.currency) returned: ['CZK', 'EUR'] — confirms the encoding uses ISO-like codes and at least these two values appear in the sample. There may be other currencies in the full table, but the sample shows the exact strings to filter on.\n\nRelationships\n- No declared foreign key relationships in the get_table_info output. transactions_1k has a customerid column but no enforced FK in metadata. If used, transactions_1k.customerid could be joined to customers.customerid to restrict to customers who made transactions.\n\nValue insights\n- Currency values use short codes (e.g., 'EUR', 'CZK'). Use exact string equality to filter: currency = 'EUR' and currency = 'CZK'.\n\nCardinality warnings (CRITICAL)\n- WARNING: Joining customers to transactions_1k (or any transaction table) will restrict the counts to only customers who appear in transactions. The question asks \"across all customers (no time filter)\" — therefore DO NOT JOIN to transactions_1k. Use the customers table alone to count all customers by currency to avoid changing the base population.\n- This query can be answered using only the customers table without joins, avoiding join-induced filtering.\n\nValidation notes\n- Confirmed: customers table exists and contains the required columns (customerid, currency).\n- currency is text and may be nullable; consider how to handle NULL currency rows (they should be excluded from both numerator and denominator).\n- Sample values confirm exact filter strings 'EUR' and 'CZK' exist.\n\nImportant notes / recommendations for SQL generation\n- Primary approach: compute distinct customer counts per currency from customers and return the scalar ratio:\n  - numerator = number of unique customerid where currency = 'EUR'\n  - denominator = number of unique customerid where currency = 'CZK'\n  - result = numerator / denominator\n- Handle division-by-zero: If CZK_count = 0, decide desired behavior (return NULL, 0, or a large value). Recommend returning NULL or using a SAFE_DIVIDE pattern to avoid runtime error.\n- Recommended SQL pattern (conceptual):\n  - Use COUNT(DISTINCT customerid) with WHERE currency = 'EUR' and WHERE currency = 'CZK', or use SUM(CASE WHEN currency='EUR' THEN 1 ELSE 0 END) etc. because customerid is the PK and unique.\n  - Example safe approach: \n    - EUR_count = COUNT(DISTINCT customerid) FILTER (WHERE currency='EUR')\n    - CZK_count = COUNT(DISTINCT customerid) FILTER (WHERE currency='CZK')\n    - Return EUR_count::float / NULLIF(CZK_count, 0)\n\nSummary (primary choice)\n- Use only the customers table. Key columns: customerid (bigint, PK) and currency (text). Filter exactly on currency = 'EUR' and currency = 'CZK'. Exclude NULL currencies. Be sure to handle the case where CZK_count = 0 to avoid division-by-zero.",
+      "generator_output": {
+        "reasoning_steps": [
+          "Use only the customers table (minimal-table principle) since currency and customerid are available there.",
+          "Compute distinct customer counts per currency using COUNT(DISTINCT T1.customerid) with FILTER to ensure uniqueness and correct counts.",
+          "Cast counts to REAL to perform floating-point division and use NULLIF on the CZK count to avoid division-by-zero (return NULL if CZK_count = 0).",
+          "Restrict rows to the two relevant currencies to ignore NULLs/other currencies and return a single scalar value (no GROUP BY)."
+        ],
+        "sub_queries": [],
+        "confidence": 0.95,
+        "sql_query": "SELECT CAST(COUNT(DISTINCT T1.customerid) FILTER (WHERE T1.currency = 'EUR') AS REAL) / NULLIF(CAST(COUNT(DISTINCT T1.customerid) FILTER (WHERE T1.currency = 'CZK') AS REAL), 0) FROM customers AS T1 WHERE T1.currency IN ('EUR','CZK');"
+      },
+      "validator_output": {
+        "is_valid": true,
+        "is_optimal": false,
+        "syntax_errors": [],
+        "semantic_issues": [
+          "COUNT(DISTINCT customerid) may be unnecessary if customerid is unique per row; prefer COUNT(*) FILTER (WHERE ...) or SUM(CASE WHEN ...) for single-row-per-entity tables."
+        ],
+        "efficiency_score": 0.8,
+        "efficiency_issues": [
+          "Sequential scan on customers with currency filter (no index used) may be inefficient for very large tables.",
+          "COUNT(DISTINCT ...) can be more expensive than COUNT(*)/SUM(CASE...) when customerid is unique."
+        ],
+        "refinement_feedback": "Query is syntactically valid and returns the requested EUR/CZK customer ratio, but it is not fully optimal: replace COUNT(DISTINCT customerid) with COUNT(*) FILTER (WHERE ...) or SUM(CASE WHEN ...) if customerid is unique and consider adding an index on currency to avoid a full table scan on large tables."
+      },
+      "trace": {
+        "pipeline": "new",
+        "db_name": "passarinho",
+        "start_ts": "2026-01-28T21:21:05.022151+00:00",
+        "end_ts": "2026-01-28T21:22:52.354164+00:00",
+        "latency_ms": 107332,
+        "steps": [
+          {
+            "name": "interpreter",
+            "timing_ms": 26067,
+            "input_summary": {
+              "raw_question": "What is the ratio of customers who pay in EUR against customers who pay in CZK?"
+            },
+            "output_summary": {
+              "clarified_question": "Compute the ratio of customers who pay in EUR to customers who pay in CZK using the customers table (i.e., number of unique customers with currency = 'EUR' divided by number of unique customers with c",
+              "intent": "Return a single scalar numeric value representing: ratio = (count of distinct customers with currency = 'EUR') / (count of distinct customers with currency = 'CZK'). Expected output shape: one row, one column (a single numeric scalar named e.g. eur_to_czk_ratio). Use conditional aggregation; do NOT ",
+              "sub_questions_count": 0
+            },
+            "error": null
+          },
+          {
+            "name": "mapper",
+            "timing_ms": 31848,
+            "input_summary": {
+              "clarified_question": "Compute the ratio of customers who pay in EUR to customers who pay in CZK using the customers table (i.e., number of unique customers with currency = 'EUR' divided by number of unique customers with c",
+              "all_tables_count": 75
+            },
+            "output_summary": {
+              "output_length": 4159,
+              "output_preview": "Relevant tables (selected and why)\n- customers (PRIMARY choice): Direct keyword match to the question (\"customers\") and contains the currency column needed to compute the requested ratio. Per the Minimal-Table Principle, this single table is sufficient to answer the question with no joins required.\n"
+            },
+            "error": null
+          },
+          {
+            "name": "generator",
+            "timing_ms": 18959,
+            "input_summary": {
+              "clarified_question": "Compute the ratio of customers who pay in EUR to customers who pay in CZK using the customers table (i.e., number of unique customers with currency = 'EUR' divided by number of unique customers with c",
+              "attempt": 1
+            },
+            "output_summary": {
+              "sql_length": 234,
+              "reasoning_steps_count": 4,
+              "confidence": 0.95
+            },
+            "error": null
+          },
+          {
+            "name": "validator",
+            "timing_ms": 30317,
+            "input_summary": {
+              "sql_length": 233,
+              "attempt": 1
+            },
+            "output_summary": {
+              "is_valid": true,
+              "is_optimal": false,
+              "efficiency_score": 0.8,
+              "syntax_error_count": 0,
+              "semantic_issue_count": 1
+            },
+            "error": null
+          }
+        ],
+        "tools": [
+          {
+            "agent": "mapper",
+            "tool": "get_table_info",
+            "args_redacted": [
+              "customers",
+              "transactions_1k"
+            ],
+            "result_preview": "Retrieved info for 2 tables",
+            "timing_ms": 69,
+            "error": null
+          },
+          {
+            "agent": "mapper",
+            "tool": "sample_values",
+            "args_redacted": {
+              "table_name": "customers",
+              "column_name": "currency",
+              "limit": 10
+            },
+            "result_preview": "Retrieved 2 sample values",
+            "timing_ms": 21,
+            "error": null
+          }
+        ],
+        "generator": {
+          "sql_query": "SELECT CAST(COUNT(DISTINCT T1.customerid) FILTER (WHERE T1.currency = 'EUR') AS REAL) / NULLIF(CAST(COUNT(DISTINCT T1.customerid) FILTER (WHERE T1.currency = 'CZK') AS REAL), 0) FROM customers AS T1 WHERE T1.currency IN ('EUR','CZK')",
+          "reasoning_steps": [
+            "Use only the customers table (minimal-table principle) since currency and customerid are available there.",
+            "Compute distinct customer counts per currency using COUNT(DISTINCT T1.customerid) with FILTER to ensure uniqueness and correct counts.",
+            "Cast counts to REAL to perform floating-point division and use NULLIF on the CZK count to avoid division-by-zero (return NULL if CZK_count = 0).",
+            "Restrict rows to the two relevant currencies to ignore NULLs/other currencies and return a single scalar value (no GROUP BY)."
+          ],
+          "confidence": 0.95
+        },
+        "mapper": {
+          "all_tables_count": 75,
+          "selected_tables": [
+            "customers",
+            "transactions_1k"
+          ]
+        }
+      }
+    },
+    "analyzer_output": {
+      "analyzer_match": true,
+      "approved": true,
+      "failure_step": "none",
+      "failure_reason": "Predicted query returns the same business metric as the gold query: ratio = (customers paying in EUR) / (customers paying in CZK). The predicted SQL counts distinct customerid per currency, uses NULLIF to avoid division-by-zero, and casts to REAL for floating-point division. The mapper indicates customers.customerid is the primary key, so COUNT(DISTINCT customerid) is equivalent to SUM(CASE WHEN ...) or COUNT(*) FILTER used in the gold SQL. The WHERE filter restricting to the two currencies and the minor differences in aggregation style do not change the answer.",
+      "query_issues": "Minor implementation differences that do not affect business impact: uses COUNT(DISTINCT customerid) FILTER (WHERE ...) instead of SUM(CASE WHEN ...) or COUNT(*) FILTER — functionally equivalent given customerid is unique. Includes WHERE currency IN ('EUR','CZK') which only restricts rows to relevant currencies (harmless). Casting to REAL and using NULLIF are equivalent to gold. Potential inefficiency: COUNT(DISTINCT) is unnecessary if customerid is unique and may be slightly more expensive.",
+      "root_cause": "Result is correct — predicted SQL implements equivalent logic to compute the requested ratio. Differences are implementation/efficiency choices rather than semantic errors.",
+      "suggestions": []
+    }
+  },
+  {
+    "dataset": "bird",
+    "index": 2,
+    "question_id": 1472,
+    "db_id": "debit_card_specializing",
+    "question": "In 2012, who had the least consumption in LAM?",
+    "gold_sql": "SELECT T1.CustomerID FROM customers AS T1 INNER JOIN yearmonth AS T2 ON T1.CustomerID = T2.CustomerID WHERE T1.Segment = 'LAM' AND SUBSTR(T2.Date, 1, 4) = '2012' GROUP BY T1.CustomerID ORDER BY SUM(T2.Consumption) ASC NULLS FIRST LIMIT 1",
+    "predicted_sql": "SELECT T1.customerid, SUM(T2.consumption) FROM customers AS T1 INNER JOIN yearmonth AS T2 ON T1.customerid = T2.customerid WHERE SUBSTR(T2.date, 1, 4) = '2012' AND T1.segment = 'LAM' GROUP BY T1.customerid ORDER BY SUM(T2.consumption) ASC NULLS LAST LIMIT 1",
+    "exact_match": false,
+    "execution_match": null,
+    "analyzer_match": false,
+    "error": null,
+    "execution_error": "Connection or execution error: [Errno 111] Connection refused",
+    "gold_execution_results": null,
+    "predicted_execution_results": null,
+    "db_name": "passarinho",
+    "metadata": {
+      "latency_ms": 182866,
+      "tokens_in": null,
+      "tokens_out": null,
+      "model_name": null
+    },
+    "agent_trace": {
+      "status": "GENERATED",
+      "sql": "SELECT T1.customerid, SUM(T2.consumption) FROM customers AS T1 INNER JOIN yearmonth AS T2 ON T1.customerid = T2.customerid WHERE SUBSTR(T2.date, 1, 4) = '2012' AND T1.segment = 'LAM' GROUP BY T1.customerid ORDER BY SUM(T2.consumption) ASC NULLS LAST LIMIT 1",
+      "error": null,
+      "plan": "Find the entity identifier (e.g., country_name or customer_id) that has the minimum total consumption for the year 2012 within region 'LAM'. Expected output shape: one row with (entity_id_or_name, total_consumption). Computation pattern/formula: 1) Filter records to region='LAM' and year=2012 (e.g., WHERE region = 'LAM' AND SUBSTR(date_column,1,4) = '2012' OR date_column BETWEEN '20120101' AND '20121231'). 2) Aggregate consumption per entity: SUM(consumption_column) AS total_consumption. 3) Select the entity with the smallest total_consumption: ORDER BY total_consumption ASC LIMIT 1 (or to return ties: WHERE SUM(consumption)= (SELECT MIN(total) FROM (SELECT SUM(consumption) AS total FROM table WHERE region='LAM' AND year=2012 GROUP BY entity)) ). Example SQL (adjust column/table names):\n\n-- Single lowest entity\nSELECT entity_column AS entity, SUM(consumption_column) AS total_consumption\nFROM consumption_table\nWHERE region_column = 'LAM' AND SUBSTR(date_column,1,4) = '2012'\nGROUP BY entity_column\nORDER BY total_consumption ASC\nLIMIT 1;\n\n-- To return all entities tied for the minimum\nWITH totals AS (\n  SELECT entity_column, SUM(consumption_column) AS total_consumption\n  FROM consumption_table\n  WHERE region_column = 'LAM' AND SUBSTR(date_column,1,4) = '2012'\n  GROUP BY entity_column\n)\nSELECT entity_column, total_consumption FROM totals\nWHERE total_consumption = (SELECT MIN(total_consumption) FROM totals);\n\nNotes on temporal aggregation: do NOT group by month. We aggregate ALL records in 2012 per entity first, then compare totals. If you instead meant \"least average monthly consumption in 2012\" then compute average monthly as AVG(consumption_column) / 12 (per guideline) or alternatively SUM(consumption_column)/12; clarify which you want if so.",
+      "feedback": "Erro de sintaxe: SQL error: column t1.region does not exist.",
+      "attempts": 2,
+      "all_queries": [
+        "SELECT T1.customerid, SUM(T2.consumption) FROM customers AS T1 INNER JOIN yearmonth AS T2 ON T1.customerid = T2.customerid WHERE T1.region = 'LAM' AND SUBSTR(T2.date, 1, 4) = '2012' GROUP BY T1.customerid ORDER BY SUM(T2.consumption) ASC NULLS LAST LIMIT 1",
+        "SELECT T1.customerid, SUM(T2.consumption) FROM customers AS T1 INNER JOIN yearmonth AS T2 ON T1.customerid = T2.customerid WHERE SUBSTR(T2.date, 1, 4) = '2012' AND T1.segment = 'LAM' GROUP BY T1.customerid ORDER BY SUM(T2.consumption) ASC NULLS LAST LIMIT 1"
+      ],
+      "interpreter_output": {
+        "clarified_question": "Which entity (e.g., country, customer, or other entity column) within region 'LAM' had the lowest total consumption during calendar year 2012?",
+        "sub_questions": [],
+        "explicit_intent": "Find the entity identifier (e.g., country_name or customer_id) that has the minimum total consumption for the year 2012 within region 'LAM'. Expected output shape: one row with (entity_id_or_name, total_consumption). Computation pattern/formula: 1) Filter records to region='LAM' and year=2012 (e.g., WHERE region = 'LAM' AND SUBSTR(date_column,1,4) = '2012' OR date_column BETWEEN '20120101' AND '20121231'). 2) Aggregate consumption per entity: SUM(consumption_column) AS total_consumption. 3) Select the entity with the smallest total_consumption: ORDER BY total_consumption ASC LIMIT 1 (or to return ties: WHERE SUM(consumption)= (SELECT MIN(total) FROM (SELECT SUM(consumption) AS total FROM table WHERE region='LAM' AND year=2012 GROUP BY entity)) ). Example SQL (adjust column/table names):\n\n-- Single lowest entity\nSELECT entity_column AS entity, SUM(consumption_column) AS total_consumption\nFROM consumption_table\nWHERE region_column = 'LAM' AND SUBSTR(date_column,1,4) = '2012'\nGROUP BY entity_column\nORDER BY total_consumption ASC\nLIMIT 1;\n\n-- To return all entities tied for the minimum\nWITH totals AS (\n  SELECT entity_column, SUM(consumption_column) AS total_consumption\n  FROM consumption_table\n  WHERE region_column = 'LAM' AND SUBSTR(date_column,1,4) = '2012'\n  GROUP BY entity_column\n)\nSELECT entity_column, total_consumption FROM totals\nWHERE total_consumption = (SELECT MIN(total_consumption) FROM totals);\n\nNotes on temporal aggregation: do NOT group by month. We aggregate ALL records in 2012 per entity first, then compare totals. If you instead meant \"least average monthly consumption in 2012\" then compute average monthly as AVG(consumption_column) / 12 (per guideline) or alternatively SUM(consumption_column)/12; clarify which you want if so.",
+        "ambiguities_resolved": [
+          "\"Who\" -> interpreted as an entity identifier column (e.g., country_name, customer_id). I assume you want the entity name/ID, not additional metadata. If you intended a specific entity type (country vs customer), specify the exact column/table.",
+          "\"Consumption\" -> interpreted as a numeric column named consumption (or total_consumption). I assume total consumption is the metric to SUM across 2012. If you meant average monthly consumption, please specify.",
+          "\"LAM\" -> interpreted as a region code stored in a region column (region = 'LAM'). If LAM is stored differently (e.g., region_name = 'Latin America'), tell me the actual value/column.",
+          "Time scope -> interpreted as calendar year 2012 (filter WHERE year = 2012). Using SUBSTR(date_column,1,4) = '2012' or a BETWEEN date range is recommended depending on date format.",
+          "Output shape -> I will return one row with (entity, total_consumption). If you prefer all ties returned, I showed the alternative query. If you want only the entity name (no value), remove total_consumption from SELECT.",
+          "Tie-breaking -> Default is LIMIT 1 (returning one arbitrary row if multiple entities tie). If you want all tied entities, use the CTE pattern shown."
+        ]
+      },
+      "mapper_output": "Summary of schema mapping and next steps — I selected tables most relevant to the question and checked their columns and sample data so we can build the correct SQL. Primary goal: identify which entity within region 'LAM' had the lowest total consumption during calendar year 2012.\n\n1) Relevant tables I selected and why\n- yearmonth — PRIMARY choice. Exact name match to the question's hint and contains the pre-aggregated monthly consumption metric (column name consumption). This table will normally let us compute total consumption for a calendar year by summing consumption across months for each entity (customerid). Selecting yearmonth is preferred over raw transactions because it already contains the consumption metric.\n- customers — selected because yearmonth references customerid; if “region = 'LAM'” is a customer attribute, we must join yearmonth -> customers to filter the region.\n- transactions_1k — selected as a fallback if region is encoded by gasstation (transactions link customers or gasstations with dates). It has per-transaction date and gasstationid (useful if we must infer consumption by transactions instead of yearmonth).\n- gasstations — selected because transactions_1k.gasstationid can join to gasstations, and gasstations has a country code column. If “LAM” is a region defined on gasstations or country, this table may be needed.\n- country — included only to show there is a country table (but sample shows only id and name), in case a country->region mapping exists elsewhere.\n\nWhy these over others:\n- yearmonth was prioritized because it is an exact name match and already has consumption (precomputed). transactions_1k is raw transactions and lacks a consumption column; it was included only for mapping to gasstations/countries if region is not a customer attribute.\n\n2) Key columns (from get_table_info results)\n- yearmonth: customerid (bigint), date (text), consumption (real).\n  - consumption is the metric to aggregate (sum).\n  - date holds YYYYMM-style values in the sample_row.\n- customers: customerid (bigint primary key), segment, currency.\n  - customers.customerid is the join key to yearmonth.customerid if region is stored on customers.\n- transactions_1k: transactionid, date (DATE), customerid, gasstationid, amount, price.\n  - transactions_1k.date is a DATE type (sample: 2012-08-24).\n  - Use this table only if we must reconstruct consumption from transactions (no direct consumption column).\n- gasstations: gasstationid (pk), country (text), segment.\n  - gasstations.country uses 3-letter codes as seen in samples (e.g., 'CZE', 'SVK').\n- country: id, name (only minimal info present in sample).\n\n3) Date format & column types (CRITICAL)\n- yearmonth.date: sample_row shows 201207 and get_table_info lists type = text. Interpretation: date is stored in YYYYMM numeric/text format (e.g., '201207' or 201207). Filtering for calendar year 2012 should use YYYYMM string/number comparisons:\n  - Example filter: WHERE date BETWEEN '201201' AND '201212' (or numeric BETWEEN 201201 AND 201212).\n  - DO NOT assume a full DATE/TIMESTAMP here.\n- yearmonth.consumption: real (floating) — appropriate for SUM aggregation.\n- transactions_1k.date: DATE type (sample '2012-08-24') — if using transactions, filter by YEAR(date) = 2012 or date BETWEEN '2012-01-01' AND '2012-12-31'.\n\n4) Sample data (illustrative)\n- yearmonth sample_row: { customerid: 5, date: 201207, consumption: 528.2999877929688 } → confirms YYYYMM-style date and real consumption value.\n- customers sample_row: { customerid: 3, segment: 'SME', currency: 'EUR' } → no region field shown in sample.\n- gasstations sample_row: { gasstationid: 44, country: 'CZE', segment: 'Value for money' } → gasstations.country uses 3-letter codes (sample values include 'CZE', 'SVK').\n\n5) Relationships and join guidance\n- yearmonth.customerid -> customers.customerid (logical join if region is a customer attribute).\n- transactions_1k.gasstationid -> gasstations.gasstationid (logical join if region is tied to gasstations/country).\n- There are no explicit foreign keys defined in the get_table_info output, but the id/foreign id patterns above are the intended joins.\n\n6) Value encodings / domain notes\n- gasstations.country uses 3-letter country codes (sample values: 'CZE', 'SVK').\n- customers.segment uses values like 'SME' (sample).\n- No table in the selected set contains an explicit region column named 'region' or a value 'LAM' in the sample rows. I searched country.name for 'LAM' and found no matches.\n\n7) Cardinality warnings (CRITICAL)\n- This query can be answered using only yearmonth if the region attribute is stored on the same entity referenced by yearmonth (e.g., if yearmonth contains a region column or if customers.customerid has region). Using yearmonth alone avoids join-induced filtering.\n- If you join yearmonth->customers or yearmonth->transactions_1k->gasstations you will restrict the result set to entities that have matching rows in the joined table (i.e., customers with yearmonth rows only; or transactions that match gasstations). That may change counts and could drop entities that exist but have no transactions/yearmonth entries.\n- If region is stored in a table that does not have entries for all customers, joining will implicitly filter to only those with region data. Be explicit about whether you want to consider only entities that have consumption records in 2012 (likely yes).\n\n8) Validation / ambiguity that needs user clarification\n- I could not find any column or table in the inspected tables that contains the value 'LAM' or a 'region' column. So it is ambiguous what “region 'LAM'” refers to:\n  - Possibility A: customers table has a region column (not present in the sample / get_table_info for customers). If so, please tell me the column name (e.g., customers.region = 'LAM').\n  - Possibility B: gasstations or country has a region/country grouping that includes 'LAM' (e.g., a country->region mapping table not listed in the selected tables). If so, tell me which table/column holds region or provide the mapping (which countries belong to LAM).\n  - Possibility C: “LAM” means a set of country codes (e.g., Latin America) — if so, provide the list of country codes or indicate which column (e.g., gasstations.country) should be matched.\n- Also clarify which entity type you want the “lowest total consumption” among: customers (customerid), countries, gas stations, or some other entity column. The SQL differs depending on whether we group by customerid, gasstations.country, gasstationid, or country.name.\n\n9) How I will compute the answer once you clarify\n- If region is a customer attribute (customers.region = 'LAM'):\n  - Use yearmonth only: sum consumption per customer for date BETWEEN '201201' AND '201212', join to customers to restrict to customers.region = 'LAM', then ORDER BY SUM(consumption) ASC LIMIT 1.\n  - Key SQL logic (conceptual): SELECT customerid, SUM(consumption) FROM yearmonth JOIN customers USING(customerid) WHERE customers.region = 'LAM' AND date BETWEEN '201201' AND '201212' GROUP BY customerid ORDER BY SUM(consumption) ASC LIMIT 1;\n- If region is defined by gasstations.country (e.g., region 'LAM' == set of country codes):\n  - Aggregate consumption for calendar 2012 by mapping transactions_1k -> gasstations (and optionally mapping customers if needed). Because yearmonth aggregates by customer and lacks gasstation linkage, you would need to either:\n    - Reconstruct consumption from transactions_1k (if consumption can be derived from amount/price), or\n    - If you want per-country consumption and customers have country, join customers to yearmonth and then customers to country mapping.\n  - Example conceptual flow (if region defined by gasstation.country): sum consumption per gasstation.country for transactions in 2012 by joining transactions_1k.date (filter YEAR=2012) -> gasstations -> group by gasstations.country.\n- If you want country-level totals and have a country mapping table, join appropriate tables and group by country.name.\n\n10) Next step / Ask\nPlease confirm:\n- Where is region 'LAM' stored? (which table and column — e.g., customers.region, gasstations.region, country.region, or provide list of country codes that make up LAM)\n- Which entity should be considered for “which entity had the lowest total consumption”: customer (customerid), country (gasstations.country or country.name), gas station (gasstationid), or another column?\n\nOnce you confirm those two points I will produce the exact SQL (using yearmonth if possible) and return the entity with the lowest 2012 total consumption.",
+      "generator_output": {
+        "reasoning_steps": [
+          "Inspected schema: yearmonth has customerid, date (YYYYMM text), consumption; customers has customerid, segment, currency. The previous error shows customers.region does not exist, so filtering on T1.region would fail.",
+          "Goal: restrict to region 'LAM' and year 2012, sum consumption per entity, and return the single entity with the smallest total_consumption.",
+          "Because no explicit 'region' column exists in the provided customers table, I used customers.segment as a plausible place to hold the region value. If 'LAM' is stored in a different column or table, that filter must be adjusted (e.g., customers.region, gasstations.country IN (...), or a country->region mapping).",
+          "Query plan: join customers (T1) to yearmonth (T2) on customerid, filter T2.date to year 2012 via SUBSTR(T2.date,1,4)='2012', filter T1.segment='LAM' (placeholder for region), GROUP BY T1.customerid, ORDER BY SUM(T2.consumption) ASC NULLS LAST LIMIT 1 to return the single lowest customer.",
+          "If you want country-level or gasstation-level results or to use a different column for region, tell me which column/table encodes 'LAM' and I will adjust the WHERE clause accordingly."
+        ],
+        "sub_queries": [],
+        "confidence": 0.6,
+        "sql_query": "SELECT T1.customerid, SUM(T2.consumption)\nFROM customers AS T1\nINNER JOIN yearmonth AS T2 ON T1.customerid = T2.customerid\nWHERE SUBSTR(T2.date, 1, 4) = '2012' AND T1.segment = 'LAM'\nGROUP BY T1.customerid\nORDER BY SUM(T2.consumption) ASC NULLS LAST\nLIMIT 1;"
+      },
+      "validator_output": {
+        "is_valid": false,
+        "is_optimal": false,
+        "syntax_errors": [
+          "SQL error: column t1.region does not exist"
+        ],
+        "semantic_issues": [],
+        "efficiency_score": 0.0,
+        "efficiency_issues": [],
+        "refinement_feedback": "Erro de sintaxe: SQL error: column t1.region does not exist."
+      },
+      "trace": {
+        "pipeline": "new",
+        "db_name": "passarinho",
+        "start_ts": "2026-01-28T21:21:05.040936+00:00",
+        "end_ts": "2026-01-28T21:24:07.898757+00:00",
+        "latency_ms": 182857,
+        "steps": [
+          {
+            "name": "interpreter",
+            "timing_ms": 30441,
+            "input_summary": {
+              "raw_question": "In 2012, who had the least consumption in LAM?"
+            },
+            "output_summary": {
+              "clarified_question": "Which entity (e.g., country, customer, or other entity column) within region 'LAM' had the lowest total consumption during calendar year 2012?",
+              "intent": "Find the entity identifier (e.g., country_name or customer_id) that has the minimum total consumption for the year 2012 within region 'LAM'. Expected output shape: one row with (entity_id_or_name, total_consumption). Computation pattern/formula: 1) Filter records to region='LAM' and year=2012 (e.g.,",
+              "sub_questions_count": 0
+            },
+            "error": null
+          },
+          {
+            "name": "mapper",
+            "timing_ms": 91373,
+            "input_summary": {
+              "clarified_question": "Which entity (e.g., country, customer, or other entity column) within region 'LAM' had the lowest total consumption during calendar year 2012?",
+              "all_tables_count": 75
+            },
+            "output_summary": {
+              "output_length": 8592,
+              "output_preview": "Summary of schema mapping and next steps — I selected tables most relevant to the question and checked their columns and sample data so we can build the correct SQL. Primary goal: identify which entity within region 'LAM' had the lowest total consumption during calendar year 2012.\n\n1) Relevant table"
+            },
+            "error": null
+          },
+          {
+            "name": "generator",
+            "timing_ms": 25842,
+            "input_summary": {
+              "clarified_question": "Which entity (e.g., country, customer, or other entity column) within region 'LAM' had the lowest total consumption during calendar year 2012?",
+              "attempt": 1
+            },
+            "output_summary": {
+              "sql_length": 257,
+              "reasoning_steps_count": 5,
+              "confidence": 0.4
+            },
+            "error": null
+          },
+          {
+            "name": "validator",
+            "timing_ms": 15,
+            "input_summary": {
+              "sql_length": 256,
+              "attempt": 1
+            },
+            "output_summary": {
+              "is_valid": false,
+              "is_optimal": false,
+              "efficiency_score": 0.0,
+              "syntax_error_count": 1,
+              "semantic_issue_count": 0
+            },
+            "error": null
+          },
+          {
+            "name": "generator",
+            "timing_ms": 35084,
+            "input_summary": {
+              "clarified_question": "Which entity (e.g., country, customer, or other entity column) within region 'LAM' had the lowest total consumption during calendar year 2012?",
+              "attempt": 2
+            },
+            "output_summary": {
+              "sql_length": 258,
+              "reasoning_steps_count": 5,
+              "confidence": 0.6
+            },
+            "error": null
+          }
+        ],
+        "tools": [
+          {
+            "agent": "mapper",
+            "tool": "get_table_info",
+            "args_redacted": [
+              "yearmonth",
+              "customers",
+              "country",
+              "gasstations",
+              "transactions_1k"
+            ],
+            "result_preview": "Retrieved info for 5 tables",
+            "timing_ms": 70,
+            "error": null
+          },
+          {
+            "agent": "mapper",
+            "tool": "sample_values",
+            "args_redacted": {
+              "table_name": "gasstations",
+              "column_name": "country",
+              "limit": 10
+            },
+            "result_preview": "Retrieved 2 sample values",
+            "timing_ms": 9,
+            "error": null
+          },
+          {
+            "agent": "mapper",
+            "tool": "search_column_values",
+            "args_redacted": {
+              "table_name": "country",
+              "column_name": "name",
+              "keyword": "LAM",
+              "limit": 5
+            },
+            "result_preview": "Found 0 matching values",
+            "timing_ms": 11,
+            "error": null
+          }
+        ],
+        "generator": {
+          "sql_query": "SELECT T1.customerid, SUM(T2.consumption) FROM customers AS T1 INNER JOIN yearmonth AS T2 ON T1.customerid = T2.customerid WHERE SUBSTR(T2.date, 1, 4) = '2012' AND T1.segment = 'LAM' GROUP BY T1.customerid ORDER BY SUM(T2.consumption) ASC NULLS LAST LIMIT 1",
+          "reasoning_steps": [
+            "Inspected schema: yearmonth has customerid, date (YYYYMM text), consumption; customers has customerid, segment, currency. The previous error shows customers.region does not exist, so filtering on T1.region would fail.",
+            "Goal: restrict to region 'LAM' and year 2012, sum consumption per entity, and return the single entity with the smallest total_consumption.",
+            "Because no explicit 'region' column exists in the provided customers table, I used customers.segment as a plausible place to hold the region value. If 'LAM' is stored in a different column or table, that filter must be adjusted (e.g., customers.region, gasstations.country IN (...), or a country->region mapping).",
+            "Query plan: join customers (T1) to yearmonth (T2) on customerid, filter T2.date to year 2012 via SUBSTR(T2.date,1,4)='2012', filter T1.segment='LAM' (placeholder for region), GROUP BY T1.customerid, ORDER BY SUM(T2.consumption) ASC NULLS LAST LIMIT 1 to return the single lowest customer.",
+            "If you want country-level or gasstation-level results or to use a different column for region, tell me which column/table encodes 'LAM' and I will adjust the WHERE clause accordingly."
+          ],
+          "confidence": 0.6
+        },
+        "mapper": {
+          "all_tables_count": 75,
+          "selected_tables": [
+            "yearmonth",
+            "customers",
+            "country",
+            "gasstations",
+            "transactions_1k"
+          ]
+        }
+      }
+    },
+    "analyzer_output": {
+      "analyzer_match": false,
+      "approved": false,
+      "failure_step": "generator",
+      "failure_reason": "The predicted SQL differs in NULL ordering semantics from the gold SQL (predicted uses NULLS LAST while gold uses NULLS FIRST). This difference can change which customer is returned as having the 'least consumption' when some customers have NULL (no) consumption for 2012. The generator therefore introduced a logic-level change that affects the business answer. Additionally, the predicted query includes an extra column (SUM(consumption)) which is harmless, but the NULLS ordering is a substantive behavioral difference. Validator did not catch this semantic difference.",
+      "query_issues": "1) NULL ordering: Gold orders by SUM(consumption) ASC NULLS FIRST, meaning customers with NULL summed consumption (likely no records in 2012) would be considered the least; Predicted orders ASC NULLS LAST which will place NULL sums after numeric values, changing the selected customer if NULL sums exist. 2) Output columns: Predicted returns both customerid and SUM(consumption) (extra field) while gold returns only customerid — this is cosmetic and not harmful. 3) Tie handling: both use LIMIT 1 which returns a single arbitrary row when ties exist; neither handles ties explicitly. 4) Execution results unavailable (connection refused), so behavioral differences cannot be validated by running queries.",
+      "root_cause": "The generator applied a different NULL ordering policy (NULLS LAST) than the gold query (NULLS FIRST), likely from a default or template choice rather than from schema/intent understanding. This is a logic-level decision that changes the business meaning (whether 'no data' is treated as the minimal consumption). The validator failed to flag this semantic mismatch.",
+      "suggestions": [
+        "Generator: Respect NULL ordering present in the gold/reference query when reconstructing SQL, or infer NULL ordering from explicit intent (ask clarifying question if intent about NULLs/ties is ambiguous).",
+        "Validator: Extend checks to detect semantic differences such as NULL ordering and tie-handling (e.g., compare NULLS FIRST vs LAST, presence/absence of aggregate columns in SELECT when gold omits them).",
+        "Interpreter/Mapper: When the schema allows customers with no rows in yearmonth (leading to NULL sums), clarify whether 'least consumption' should treat no data as zero or should consider NULLs as smallest. Add this clarification to the plan so generator can implement correct NULL handling.",
+        "Testing: Add unit/regression tests that include cases with customers having zero rows for the year (NULL aggregates) to ensure predicted SQL matches expected selection behavior.",
+        "Pipeline: When using LIMIT 1 for 'least' queries, consider optional tie-resolution (e.g., deterministic secondary ORDER BY or returning all ties) and surface this as a configuration/clarification to avoid arbitrary results."
+      ]
+    }
+  },
+  {
+    "dataset": "bird",
+    "index": 3,
+    "question_id": 1473,
+    "db_id": "debit_card_specializing",
+    "question": "What was the average monthly consumption of customers in SME for the year 2013?",
+    "gold_sql": "SELECT AVG(T2.Consumption) / NULLIF(12, 0) FROM customers AS T1 INNER JOIN yearmonth AS T2 ON T1.CustomerID = T2.CustomerID WHERE SUBSTR(T2.Date, 1, 4) = '2013' AND T1.Segment = 'SME'",
+    "predicted_sql": "SELECT AVG(T2.consumption) FROM customers AS T1 INNER JOIN yearmonth AS T2 ON T1.customerid = T2.customerid WHERE T1.segment = 'SME' AND T2.date BETWEEN '201301' AND '201312'",
+    "exact_match": false,
+    "execution_match": null,
+    "analyzer_match": false,
+    "error": null,
+    "execution_error": "Connection or execution error: [Errno 111] Connection refused",
+    "gold_execution_results": null,
+    "predicted_execution_results": null,
+    "db_name": "passarinho",
+    "metadata": {
+      "latency_ms": 153700,
+      "tokens_in": null,
+      "tokens_out": null,
+      "model_name": null
+    },
+    "agent_trace": {
+      "status": "GENERATED",
+      "sql": "SELECT AVG(T2.consumption) FROM customers AS T1 INNER JOIN yearmonth AS T2 ON T1.customerid = T2.customerid WHERE T1.segment = 'SME' AND T2.date BETWEEN '201301' AND '201312'",
+      "error": null,
+      "plan": "Return one scalar: the average monthly consumption for SME customers in 2013. Procedure: 1) Filter consumption records to year = 2013 and to customers with segment = 'SME' (join customers table if segment is stored separately). 2) Compute AVG(consumption_column) across all filtered records. 3) Divide that result by 12 to convert to an average monthly value. SQL-pattern example: SELECT AVG(c.consumption) / 12 AS average_monthly_consumption FROM consumption_table c JOIN customers cust ON c.customer_id = cust.customer_id WHERE cust.segment = 'SME' AND SUBSTR(c.date_col,1,4) = '2013'; Notes: do NOT GROUP BY month; return one scalar.",
+      "feedback": "Query is syntactically valid but semantically incorrect because it divides the average monthly consumption by 12; remove the /NULLIF(12,0) (or compute per-customer annual sum divided by 12 before averaging) and replace SUBSTR(T2.date,1,4)='2013' with a sargable date range (e.g., T2.date >= '2013-01-01' AND T2.date < '2014-01-01') to allow index usage and improve performance.",
+      "attempts": 2,
+      "all_queries": [
+        "SELECT AVG(T2.consumption) / NULLIF(12, 0) FROM customers AS T1 INNER JOIN yearmonth AS T2 ON T1.customerid = T2.customerid WHERE SUBSTR(T2.date, 1, 4) = '2013' AND T1.segment = 'SME'",
+        "SELECT AVG(T2.consumption) FROM customers AS T1 INNER JOIN yearmonth AS T2 ON T1.customerid = T2.customerid WHERE T1.segment = 'SME' AND T2.date BETWEEN '201301' AND '201312'"
+      ],
+      "interpreter_output": {
+        "clarified_question": "Compute the single scalar average monthly consumption for customers in the SME segment for the calendar year 2013.",
+        "sub_questions": [],
+        "explicit_intent": "Return one scalar: the average monthly consumption for SME customers in 2013. Procedure: 1) Filter consumption records to year = 2013 and to customers with segment = 'SME' (join customers table if segment is stored separately). 2) Compute AVG(consumption_column) across all filtered records. 3) Divide that result by 12 to convert to an average monthly value. SQL-pattern example: SELECT AVG(c.consumption) / 12 AS average_monthly_consumption FROM consumption_table c JOIN customers cust ON c.customer_id = cust.customer_id WHERE cust.segment = 'SME' AND SUBSTR(c.date_col,1,4) = '2013'; Notes: do NOT GROUP BY month; return one scalar.",
+        "ambiguities_resolved": [
+          "Interpreted 'SME' as customers.segment = 'SME' in the customers table (will JOIN customers only if needed to filter by segment).",
+          "Interpreted 'consumption' as a numeric column named consumption (or similar, e.g., amount, usage) in a consumption/transactions/meter table; replace consumption_column/table names with actual schema names.",
+          "Interpreted 'for the year 2013' as filtering all records whose date falls in calendar year 2013 (e.g., SUBSTR(date_col,1,4) = '2013' or date_col BETWEEN '201301' AND '201312').",
+          "Interpreted 'average monthly for the year' using the project's rule: compute AVG(all records for the year) then divide by 12 (do NOT GROUP BY month).",
+          "Output shape: single scalar value (one row, one column) containing the average monthly consumption; do NOT return per-month values or additional columns."
+        ]
+      },
+      "mapper_output": "Selected tables (why):\n- yearmonth — chosen because the question explicitly references the \"yearmonth\" concept and this table contains the monthly consumption metric. This is the primary/precomputed table for monthly consumption (exact name match, highest priority).\n- customers — chosen because we must filter to customers in the SME segment. This table contains the customer-level segment information and the primary key needed to join to yearmonth.\n\nKey columns (and why):\n- yearmonth.customerid (bigint) — links a monthly consumption record to a customer.\n- yearmonth.date (text) — stores the year+month value (used to restrict to calendar year 2013).\n- yearmonth.consumption (real) — the numeric metric to average (direct match to \"consumption\").\n- customers.customerid (bigint, PK) — join key to filter by segment.\n- customers.segment (text) — contains values like \"SME\" (used to limit to SME customers).\n\nSchema details & sample data (from sample_row):\n- yearmonth sample_row: { customerid: 5, date: 201207, consumption: 528.2999877929688 }\n  - Column types reported: customerid BIGINT, date TEXT, consumption REAL.\n  - The sample shows date values in YYYYMM style (e.g., 201207).\n- customers sample_row: { customerid: 3, segment: SME, currency: EUR }\n  - customers.customerid is primary key; segment uses values like 'SME' directly.\n\nDate format and comparison rule (critical):\n- The yearmonth.date column is TEXT and uses a YYYYMM encoding (sample: 201207). Treat it as a YYYYMM string/number for filtering.\n- For calendar year 2013 filter by date between '201301' and '201312' (inclusive). Use string or numeric comparison on this YYYYMM field — do NOT attempt DATE/TIMESTAMP casting.\n\nJoin / relationships:\n- Logical join: yearmonth.customerid = customers.customerid.\n- Note: get_table_info shows no explicit foreign-key constraints, but customerid is the obvious join key; customers.customerid is the primary key.\n\nCardinality / warning:\n- WARNING: Joining customers -> yearmonth will restrict the result to only customers who have yearmonth records. This is appropriate here because we want average monthly consumption (which requires actual consumption rows). If you needed to include SME customers with no consumption records, you would need a LEFT JOIN and decide how to treat missing months (typically exclude NULL consumption from average).\n- This query cannot be answered using only the customers table because the consumption metric lives in yearmonth. Both tables are required to filter to SME customers.\n\nAggregation logic / ambiguity note (important):\n- Two sensible interpretations exist:\n  1) Overall average of all SME customer-month rows in 2013 (simple AVG over all filtered yearmonth.consumption rows). This weights each customer-month equally.\n  2) Average of per-customer monthly averages for 2013 (compute each SME customer's average consumption over months present in 2013, then average those per-customer averages). This weights each customer equally regardless of how many months they have records.\n- The most straightforward interpretation (and typical) is (1): compute AVG(yearmonth.consumption) after filtering to SME customers and date between '201301' and '201312'. If you require interpretation (2), note that the SQL needs an intermediate per-customer aggregation then an outer AVG.\n\nValidation notes:\n- Confirmed columns exist: yearmonth.consumption, yearmonth.date, yearmonth.customerid, customers.segment, customers.customerid.\n- segment sample value is 'SME', so filtering WHERE customers.segment = 'SME' is correct.\n\nImportant implementation considerations:\n- Exclude NULL consumption values when averaging (AVG already ignores NULLs).\n- If you want calendar-year completeness (12 months per customer), you must decide how to treat missing months (exclude or impute). Default: exclude missing months (use present rows only).\n- Use string/numeric comparison on date: e.g., yearmonth.date BETWEEN '201301' AND '201312' (or BETWEEN 201301 AND 201312 if treating as integer).\n\nPrimary recommendation (SQL intent for the generator):\n- Join yearmonth to customers on customerid, filter customers.segment = 'SME' and yearmonth.date between '201301' and '201312', then return AVG(yearmonth.consumption) as the single scalar result.\n- If you prefer the alternative per-customer-unweighted average, compute per-customer AVG(consumption) for 2013, then take the AVG of those results.\n\nIf you want, I can now produce the exact SQL for interpretation (1) and for interpretation (2). Which interpretation do you prefer?",
+      "generator_output": {
+        "reasoning_steps": [
+          "Choose the yearmonth table for monthly consumption and customers table to filter SME segment.",
+          "Join customers (T1) to yearmonth (T2) on customerid and filter T1.segment = 'SME'.",
+          "Restrict T2.date to the 2013 YYYYMM range using a sargable comparison: T2.date BETWEEN '201301' AND '201312'.",
+          "Compute AVG(T2.consumption) across all filtered customer-month rows — do not divide by 12 since yearmonth.consumption is already a monthly metric and AVG over months yields the average monthly consumption. NULL consumption values are ignored by AVG."
+        ],
+        "sub_queries": [],
+        "confidence": 0.9,
+        "sql_query": "SELECT AVG(T2.consumption)\nFROM customers AS T1\nINNER JOIN yearmonth AS T2 ON T1.customerid = T2.customerid\nWHERE T1.segment = 'SME' AND T2.date BETWEEN '201301' AND '201312'"
+      },
+      "validator_output": {
+        "is_valid": false,
+        "is_optimal": false,
+        "syntax_errors": [],
+        "semantic_issues": [
+          "Dividing AVG(T2.consumption) by 12 is likely incorrect: AVG(consumption) over customer-month rows already represents average monthly consumption; to compute average monthly per-customer you should average per-customer annual totals divided by 12 or compute SUM(consumption)/(COUNT(DISTINCT t1.customerid)*12).",
+          "Date filtering via SUBSTR(T2.date, 1, 4) = '2013' is fragile and prevents index usage; use a date range filter (e.g., T2.date >= '2013-01-01' AND T2.date < '2014-01-01') or extract(year FROM T2.date) if appropriate.",
+          "Using NULLIF(12, 0) is unnecessary when dividing by a constant 12 and adds noise. "
+        ],
+        "efficiency_score": 0.6,
+        "efficiency_issues": [
+          "Sequential scan on yearmonth with SUBSTR(date,...) filter removed many rows — function on column prevents index usage.",
+          "Sequential scan on customers and a costly hash join indicate missing/unused indexes on customers.segment, yearmonth.date, and join key (customerid).",
+          "High total cost (7745.9) and substantial actual row processing; apply sargable date filters and appropriate indexes to reduce work."
+        ],
+        "refinement_feedback": "Query is syntactically valid but semantically incorrect because it divides the average monthly consumption by 12; remove the /NULLIF(12,0) (or compute per-customer annual sum divided by 12 before averaging) and replace SUBSTR(T2.date,1,4)='2013' with a sargable date range (e.g., T2.date >= '2013-01-01' AND T2.date < '2014-01-01') to allow index usage and improve performance."
+      },
+      "trace": {
+        "pipeline": "new",
+        "db_name": "passarinho",
+        "start_ts": "2026-01-28T21:21:05.043300+00:00",
+        "end_ts": "2026-01-28T21:23:38.731423+00:00",
+        "latency_ms": 153688,
+        "steps": [
+          {
+            "name": "interpreter",
+            "timing_ms": 21113,
+            "input_summary": {
+              "raw_question": "What was the average monthly consumption of customers in SME for the year 2013?"
+            },
+            "output_summary": {
+              "clarified_question": "Compute the single scalar average monthly consumption for customers in the SME segment for the calendar year 2013.",
+              "intent": "Return one scalar: the average monthly consumption for SME customers in 2013. Procedure: 1) Filter consumption records to year = 2013 and to customers with segment = 'SME' (join customers table if segment is stored separately). 2) Compute AVG(consumption_column) across all filtered records. 3) Divid",
+              "sub_questions_count": 0
+            },
+            "error": null
+          },
+          {
+            "name": "mapper",
+            "timing_ms": 34507,
+            "input_summary": {
+              "clarified_question": "Compute the single scalar average monthly consumption for customers in the SME segment for the calendar year 2013.",
+              "all_tables_count": 75
+            },
+            "output_summary": {
+              "output_length": 4552,
+              "output_preview": "Selected tables (why):\n- yearmonth — chosen because the question explicitly references the \"yearmonth\" concept and this table contains the monthly consumption metric. This is the primary/precomputed table for monthly consumption (exact name match, highest priority).\n- customers — chosen because we m"
+            },
+            "error": null
+          },
+          {
+            "name": "generator",
+            "timing_ms": 18599,
+            "input_summary": {
+              "clarified_question": "Compute the single scalar average monthly consumption for customers in the SME segment for the calendar year 2013.",
+              "attempt": 1
+            },
+            "output_summary": {
+              "sql_length": 183,
+              "reasoning_steps_count": 4,
+              "confidence": 0.95
+            },
+            "error": null
+          },
+          {
+            "name": "validator",
+            "timing_ms": 55032,
+            "input_summary": {
+              "sql_length": 183,
+              "attempt": 1
+            },
+            "output_summary": {
+              "is_valid": false,
+              "is_optimal": false,
+              "efficiency_score": 0.6,
+              "syntax_error_count": 0,
+              "semantic_issue_count": 3
+            },
+            "error": null
+          },
+          {
+            "name": "generator",
+            "timing_ms": 24215,
+            "input_summary": {
+              "clarified_question": "Compute the single scalar average monthly consumption for customers in the SME segment for the calendar year 2013.",
+              "attempt": 2
+            },
+            "output_summary": {
+              "sql_length": 174,
+              "reasoning_steps_count": 4,
+              "confidence": 0.9
+            },
+            "error": null
+          }
+        ],
+        "tools": [
+          {
+            "agent": "mapper",
+            "tool": "get_table_info",
+            "args_redacted": [
+              "yearmonth",
+              "customers"
+            ],
+            "result_preview": "Retrieved info for 2 tables",
+            "timing_ms": 65,
+            "error": null
+          }
+        ],
+        "generator": {
+          "sql_query": "SELECT AVG(T2.consumption) FROM customers AS T1 INNER JOIN yearmonth AS T2 ON T1.customerid = T2.customerid WHERE T1.segment = 'SME' AND T2.date BETWEEN '201301' AND '201312'",
+          "reasoning_steps": [
+            "Choose the yearmonth table for monthly consumption and customers table to filter SME segment.",
+            "Join customers (T1) to yearmonth (T2) on customerid and filter T1.segment = 'SME'.",
+            "Restrict T2.date to the 2013 YYYYMM range using a sargable comparison: T2.date BETWEEN '201301' AND '201312'.",
+            "Compute AVG(T2.consumption) across all filtered customer-month rows — do not divide by 12 since yearmonth.consumption is already a monthly metric and AVG over months yields the average monthly consumption. NULL consumption values are ignored by AVG."
+          ],
+          "confidence": 0.9
+        },
+        "mapper": {
+          "all_tables_count": 75,
+          "selected_tables": [
+            "yearmonth",
+            "customers"
+          ]
+        }
+      }
+    },
+    "analyzer_output": {
+      "analyzer_match": false,
+      "approved": false,
+      "failure_step": "generator",
+      "failure_reason": "The predicted SQL omits the division by 12 present in the gold SQL, which changes the core numeric result and thus the business meaning. The interpreter explicitly instructed dividing the annual average by 12; the generator chose not to divide (reason: treating consumption as already monthly), producing a semantically different aggregation. Date filtering (SUBSTR vs BETWEEN) is equivalent and not harmful, but the missing division is a substantive logic difference.",
+      "query_issues": "Predicted SQL issues vs gold: 1) Missing division by 12: gold computes AVG(consumption)/12 while predicted computes AVG(consumption) — these yield values differing by factor ~12. 2) Date filter method differs (SUBSTR(...)= '2013' vs BETWEEN '201301' AND '201312') but is functionally equivalent given YYYYMM format. 3) Predicted query's aggregation choice reflects a different interpretation of 'average monthly' and thus changes the answer.",
+      "root_cause": "The generator misinterpreted the aggregation rule: it treated yearmonth.consumption as already a monthly metric so that AVG over the filtered rows equals the desired monthly average, while the interpreter (and gold SQL) applied an extra division by 12. This mismatch between agent interpretations (interpreter vs generator) led to the incorrect SQL.",
+      "suggestions": [
+        "Generator: Enforce adherence to the interpreter's clarified intent. If the interpreter specifies a post-aggregation adjustment (divide by 12), generator must follow or raise an ambiguity flag.",
+        "Interpreter/Prompting: Make the intended aggregation unambiguous in the clarification step (e.g., explicitly state whether 'consumption' is monthly per-row or yearly per-row and whether to divide by 12).",
+        "Validator: Add semantic checks to detect large-magnitude differences (e.g., missing division/multiplicative factors) between candidate queries and common patterns for the question type; flag generator outputs that deviate from interpreter instructions.",
+        "Mapper: Ensure schema notes clearly state whether yearmonth.consumption is a monthly metric; surfaced schema facts can reduce misinterpretation.",
+        "Add example-based unit tests for common aggregation patterns (average monthly vs average annual) so generator/validator can verify semantic equivalence against expected formulas."
+      ]
+    }
+  },
+  {
+    "dataset": "bird",
+    "index": 4,
+    "question_id": 1476,
+    "db_id": "debit_card_specializing",
+    "question": "What was the difference in gas consumption between CZK-paying customers and EUR-paying customers in 2012?",
+    "gold_sql": "SELECT SUM(CASE WHEN T1.Currency = 'CZK' THEN CAST(T2.Consumption AS float) ELSE 0 END) -SUM(CASE WHEN T1.Currency = 'EUR' THEN CAST(T2.Consumption AS float) ELSE 0 END) FROM customers AS T1 INNER JOIN yearmonth AS T2 ON T1.CustomerID = T2.CustomerID WHERE substring(T2.Date, 1, 4) = '2012'",
+    "predicted_sql": "SELECT SUM(CASE WHEN T1.currency = 'CZK' THEN T2.consumption ELSE 0 END) - SUM(CASE WHEN T1.currency = 'EUR' THEN T2.consumption ELSE 0 END) FROM customers AS T1 INNER JOIN yearmonth AS T2 ON T1.customerid = T2.customerid WHERE SUBSTR(T2.date, 1, 4) = '2012'",
+    "exact_match": false,
+    "execution_match": null,
+    "analyzer_match": true,
+    "error": null,
+    "execution_error": "Connection or execution error: [Errno 111] Connection refused",
+    "gold_execution_results": null,
+    "predicted_execution_results": null,
+    "db_name": "passarinho",
+    "metadata": {
+      "latency_ms": 103414,
+      "tokens_in": null,
+      "tokens_out": null,
+      "model_name": null
+    },
+    "agent_trace": {
+      "status": "GENERATED",
+      "sql": "SELECT SUM(CASE WHEN T1.currency = 'CZK' THEN T2.consumption ELSE 0 END) - SUM(CASE WHEN T1.currency = 'EUR' THEN T2.consumption ELSE 0 END) FROM customers AS T1 INNER JOIN yearmonth AS T2 ON T1.customerid = T2.customerid WHERE SUBSTR(T2.date, 1, 4) = '2012'",
+      "error": null,
+      "plan": "Return a single scalar: difference_in_gas = SUM(gas_consumed for customers with currency='CZK' in 2012) - SUM(gas_consumed for customers with currency='EUR' in 2012). Expected output shape: one row, one column (scalar). Example SQL pattern (adjust table/column names to your schema):\n\nSELECT\n  SUM(CASE WHEN cust.currency = 'CZK' THEN cons.gas_consumed ELSE 0 END)\n  - SUM(CASE WHEN cust.currency = 'EUR' THEN cons.gas_consumed ELSE 0 END) AS gas_consumption_diff\nFROM consumption cons\nJOIN customers cust ON cons.customer_id = cust.customer_id\nWHERE SUBSTR(cons.date,1,4) = '2012';\n\nAlternative equivalent pattern using FILTER (Postgres):\nSELECT\n  SUM(cons.gas_consumed) FILTER (WHERE cust.currency='CZK')\n  - SUM(cons.gas_consumed) FILTER (WHERE cust.currency='EUR') AS gas_consumption_diff\nFROM consumption cons\nJOIN customers cust ON cons.customer_id = cust.customer_id\nWHERE cons.date LIKE '2012%';\n\nNotes on aggregation and time handling: filter records to year=2012 first, then aggregate across all matching records (no GROUP BY).",
+      "feedback": "Query is syntactically valid and returns the requested scalar but is not optimal: the SUBSTR(date,1,4) prevents index use and causes large sequential scans—replace it with a date-range predicate (e.g., t2.date >= '2012-01-01' AND t2.date < '2013-01-01') and add an index on yearmonth(date) or a composite index on (customerid, date) to improve performance.",
+      "attempts": 1,
+      "all_queries": [
+        "SELECT SUM(CASE WHEN T1.currency = 'CZK' THEN T2.consumption ELSE 0 END) - SUM(CASE WHEN T1.currency = 'EUR' THEN T2.consumption ELSE 0 END) FROM customers AS T1 INNER JOIN yearmonth AS T2 ON T1.customerid = T2.customerid WHERE SUBSTR(T2.date, 1, 4) = '2012'"
+      ],
+      "interpreter_output": {
+        "clarified_question": "What is the difference in total gas consumption during the calendar year 2012 between customers whose payment currency is CZK and customers whose payment currency is EUR? Compute: (total gas consumed in 2012 by customers with currency='CZK') - (total gas consumed in 2012 by customers with currency='EUR'). Return a single scalar value.",
+        "sub_questions": [],
+        "explicit_intent": "Return a single scalar: difference_in_gas = SUM(gas_consumed for customers with currency='CZK' in 2012) - SUM(gas_consumed for customers with currency='EUR' in 2012). Expected output shape: one row, one column (scalar). Example SQL pattern (adjust table/column names to your schema):\n\nSELECT\n  SUM(CASE WHEN cust.currency = 'CZK' THEN cons.gas_consumed ELSE 0 END)\n  - SUM(CASE WHEN cust.currency = 'EUR' THEN cons.gas_consumed ELSE 0 END) AS gas_consumption_diff\nFROM consumption cons\nJOIN customers cust ON cons.customer_id = cust.customer_id\nWHERE SUBSTR(cons.date,1,4) = '2012';\n\nAlternative equivalent pattern using FILTER (Postgres):\nSELECT\n  SUM(cons.gas_consumed) FILTER (WHERE cust.currency='CZK')\n  - SUM(cons.gas_consumed) FILTER (WHERE cust.currency='EUR') AS gas_consumption_diff\nFROM consumption cons\nJOIN customers cust ON cons.customer_id = cust.customer_id\nWHERE cons.date LIKE '2012%';\n\nNotes on aggregation and time handling: filter records to year=2012 first, then aggregate across all matching records (no GROUP BY).",
+        "ambiguities_resolved": [
+          "Interpreted 'CZK-paying customers' and 'EUR-paying customers' as customers whose currency column equals 'CZK' or 'EUR' in the customers table (customers.currency = 'CZK' / 'EUR'). Did NOT require that they have a transaction in 2012 unless explicitly asked.",
+          "Interpreted 'gas consumption' as a numeric column (e.g., consumption.gas_consumed) recorded per consumption/reading/transaction row; assumed summing these values across 2012 is desired (total consumption).",
+          "Chose total consumption difference (SUM(CZK) - SUM(EUR)). If the user meant 'average per customer' or 'average monthly', specify and the query will change (e.g., AVG(...) or AVG(...) / 12 for average monthly).",
+          "Interpreted 'in 2012' as calendar year 2012: filter records WHERE SUBSTR(date,1,4) = '2012' or date LIKE '2012%'.",
+          "Output shape: single scalar value (one row, one column) as the question asks for 'the difference' between the two groups.",
+          "Assumed schema join: consumption table (cons) with cons.customer_id linking to customers(customer_id). If gas is stored on a different table (e.g., transactions, meter_readings), replace 'consumption' accordingly."
+        ]
+      },
+      "mapper_output": "Selected tables and why\n- yearmonth (chosen first because the question explicitly references \"yearmonth\" and \"consumption\" — exact name / precomputed monthly aggregate match): this table contains the monthly consumption values we need to sum.\n- customers (chosen because the question filters by customers' payment currency; this table contains the currency column and customer primary key).\n\nKey columns (and why)\n- yearmonth.consumption (real) — this is the primary metric to aggregate (total gas consumed).\n- yearmonth.date (text) — holds the YYYYMM period identifying the month; used to filter to calendar year 2012.\n- yearmonth.customerid (bigint, nullable) — links month-level consumption rows to customers.\n- customers.customerid (bigint, primary key) — join key to associate currency with consumption rows.\n- customers.currency (text) — used to filter/group by currency values 'CZK' and 'EUR'.\n\nSample data & formats (from sample_row)\n- yearmonth sample_row: { customerid: 5, date: 201207, consumption: 528.2999877929688 }\n  - date appears as 201207 (stored in the schema as text). This shows YYYYMM style values (6-digit year+month).\n  - consumption is a floating (real) value (example ~528.3).\n- customers sample_row: { customerid: 3, segment: SME, currency: EUR }\n  - currency example value is 'EUR' (uppercase).\n\nDate format & column types (critical)\n- The yearmonth.date column is typed as text and sample shows values like 201207 → this is a YYYYMM string format. CRITICAL: filter using YYYYMM string comparisons (e.g., BETWEEN '201201' AND '201212' or date LIKE '2012%'), do NOT attempt standard DATE casting.\n- yearmonth.consumption is numeric (real) — safe to SUM directly.\n- customerid are integers (bigint) and can be used to join the tables.\n\nRelationships\n- Logical join: yearmonth.customerid -> customers.customerid. There is no declared foreign key in the metadata, but the column names and sample rows show this is the linking key.\n\nCardinality & join warning\n- WARNING: Joining customers to yearmonth with an INNER JOIN will restrict the result to only customers who have yearmonth consumption rows. That is appropriate for computing total consumption in 2012 (we want the sum of recorded consumption), but if you wanted to include customers with zero recorded consumption you would need a LEFT JOIN and treat NULL consumption as 0.\n- This question seeks total consumption by customers grouped by currency for 2012, so an inner join (or equivalent aggregation only over yearmonth rows joined to customers) is correct and will not incorrectly inflate counts — just be aware it excludes customers with no yearmonth rows.\n\nValue encodings / domain notes\n- currency values appear uppercase like 'EUR' in sample_row; expected other currency code is 'CZK' (use exact uppercase strings).\n- yearmonth.date uses YYYYMM strings (e.g., '201207'). Use string comparisons (e.g., date BETWEEN '201201' AND '201212' or date LIKE '2012%').\n\nValidation summary\n- Both required tables and columns exist:\n  - yearmonth has columns: customerid (bigint), date (text, YYYYMM), consumption (real).\n  - customers has customerid (pk) and currency (text).\n- Since currency is only in customers, a join is required (yearmonth alone cannot provide currency).\n\nPrimary recommendation for SQL generator\n- Use yearmonth.consumption summed over rows where yearmonth.date BETWEEN '201201' AND '201212', joined to customers on customerid, and filter/group by customers.currency.\n- Compute the requested scalar as: (SUM consumption for currency = 'CZK') - (SUM consumption for currency = 'EUR').\n- Ensure string comparison for date (YYYYMM) and exact matches for currency values ('CZK', 'EUR').\n\nIf you want, I can now generate the SQL statement that implements this (following the above assumptions).",
+      "generator_output": {
+        "reasoning_steps": [
+          "Identify required tables: yearmonth for consumption and date, customers for currency and join key",
+          "Filter yearmonth rows to calendar year 2012 using SUBSTR(T2.date,1,4) = '2012' (date stored as YYYYMM text)",
+          "Join customers AS T1 to yearmonth AS T2 on customerid to associate currency with each consumption row",
+          "Aggregate consumption conditionally: sum consumption for CZK and sum for EUR, then compute their difference as (CZK_sum - EUR_sum) in a single SELECT expression"
+        ],
+        "sub_queries": [],
+        "confidence": 0.93,
+        "sql_query": "SELECT SUM(CASE WHEN T1.currency = 'CZK' THEN T2.consumption ELSE 0 END) - SUM(CASE WHEN T1.currency = 'EUR' THEN T2.consumption ELSE 0 END)\nFROM customers AS T1\nINNER JOIN yearmonth AS T2 ON T1.customerid = T2.customerid\nWHERE SUBSTR(T2.date, 1, 4) = '2012'"
+      },
+      "validator_output": {
+        "is_valid": true,
+        "is_optimal": false,
+        "syntax_errors": [],
+        "semantic_issues": [],
+        "efficiency_score": 0.8,
+        "efficiency_issues": [
+          "Sequential scan on yearmonth with filter using SUBSTR(date,1,4) prevents index usage and caused scanning ~192k rows (112,237 rows removed by filter).",
+          "Seq scan on customers used to build hash for hash join (no index used on customerid for join build).",
+          "Filter on a function of a column (SUBSTR) prevents range/index scans and increases cost."
+        ],
+        "refinement_feedback": "Query is syntactically valid and returns the requested scalar but is not optimal: the SUBSTR(date,1,4) prevents index use and causes large sequential scans—replace it with a date-range predicate (e.g., t2.date >= '2012-01-01' AND t2.date < '2013-01-01') and add an index on yearmonth(date) or a composite index on (customerid, date) to improve performance."
+      },
+      "trace": {
+        "pipeline": "new",
+        "db_name": "passarinho",
+        "start_ts": "2026-01-28T21:21:05.045991+00:00",
+        "end_ts": "2026-01-28T21:22:48.438973+00:00",
+        "latency_ms": 103393,
+        "steps": [
+          {
+            "name": "interpreter",
+            "timing_ms": 28847,
+            "input_summary": {
+              "raw_question": "What was the difference in gas consumption between CZK-paying customers and EUR-paying customers in 2012?"
+            },
+            "output_summary": {
+              "clarified_question": "What is the difference in total gas consumption during the calendar year 2012 between customers whose payment currency is CZK and customers whose payment currency is EUR? Compute: (total gas consumed ",
+              "intent": "Return a single scalar: difference_in_gas = SUM(gas_consumed for customers with currency='CZK' in 2012) - SUM(gas_consumed for customers with currency='EUR' in 2012). Expected output shape: one row, one column (scalar). Example SQL pattern (adjust table/column names to your schema):\n\nSELECT\n  SUM(CA",
+              "sub_questions_count": 0
+            },
+            "error": null
+          },
+          {
+            "name": "mapper",
+            "timing_ms": 31917,
+            "input_summary": {
+              "clarified_question": "What is the difference in total gas consumption during the calendar year 2012 between customers whose payment currency is CZK and customers whose payment currency is EUR? Compute: (total gas consumed ",
+              "all_tables_count": 75
+            },
+            "output_summary": {
+              "output_length": 3790,
+              "output_preview": "Selected tables and why\n- yearmonth (chosen first because the question explicitly references \"yearmonth\" and \"consumption\" — exact name / precomputed monthly aggregate match): this table contains the monthly consumption values we need to sum.\n- customers (chosen because the question filters by custo"
+            },
+            "error": null
+          },
+          {
+            "name": "generator",
+            "timing_ms": 15153,
+            "input_summary": {
+              "clarified_question": "What is the difference in total gas consumption during the calendar year 2012 between customers whose payment currency is CZK and customers whose payment currency is EUR? Compute: (total gas consumed ",
+              "attempt": 1
+            },
+            "output_summary": {
+              "sql_length": 258,
+              "reasoning_steps_count": 4,
+              "confidence": 0.93
+            },
+            "error": null
+          },
+          {
+            "name": "validator",
+            "timing_ms": 27351,
+            "input_summary": {
+              "sql_length": 258,
+              "attempt": 1
+            },
+            "output_summary": {
+              "is_valid": true,
+              "is_optimal": false,
+              "efficiency_score": 0.8,
+              "syntax_error_count": 0,
+              "semantic_issue_count": 0
+            },
+            "error": null
+          }
+        ],
+        "tools": [
+          {
+            "agent": "mapper",
+            "tool": "get_table_info",
+            "args_redacted": [
+              "yearmonth",
+              "customers"
+            ],
+            "result_preview": "Retrieved info for 2 tables",
+            "timing_ms": 54,
+            "error": null
+          }
+        ],
+        "generator": {
+          "sql_query": "SELECT SUM(CASE WHEN T1.currency = 'CZK' THEN T2.consumption ELSE 0 END) - SUM(CASE WHEN T1.currency = 'EUR' THEN T2.consumption ELSE 0 END) FROM customers AS T1 INNER JOIN yearmonth AS T2 ON T1.customerid = T2.customerid WHERE SUBSTR(T2.date, 1, 4) = '2012'",
+          "reasoning_steps": [
+            "Identify required tables: yearmonth for consumption and date, customers for currency and join key",
+            "Filter yearmonth rows to calendar year 2012 using SUBSTR(T2.date,1,4) = '2012' (date stored as YYYYMM text)",
+            "Join customers AS T1 to yearmonth AS T2 on customerid to associate currency with each consumption row",
+            "Aggregate consumption conditionally: sum consumption for CZK and sum for EUR, then compute their difference as (CZK_sum - EUR_sum) in a single SELECT expression"
+          ],
+          "confidence": 0.93
+        },
+        "mapper": {
+          "all_tables_count": 75,
+          "selected_tables": [
+            "yearmonth",
+            "customers"
+          ]
+        }
+      }
+    },
+    "analyzer_output": {
+      "analyzer_match": true,
+      "approved": true,
+      "failure_step": "none",
+      "failure_reason": "Predicted SQL is semantically equivalent to the gold SQL: both compute SUM(consumption for CZK customers in 2012) minus SUM(consumption for EUR customers in 2012) by joining customers to yearmonth and filtering rows to year 2012. Differences are cosmetic (identifier casing, SUBSTR vs substring, omission of explicit CAST) and do not change the business result.",
+      "query_issues": "No issues that affect business impact. Minor cosmetic differences: predicted SQL omits explicit CAST to float (yearmonth.consumption is already numeric in schema), uses SUBSTR instead of substring (function name variant), and has different identifier casing. These do not change filtering, join, or aggregation logic.",
+      "root_cause": "Result is correct - predicted query implements the same aggregation and filtering logic as the gold SQL, so it delivers equivalent business impact and information.",
+      "suggestions": []
+    }
+  }
+]

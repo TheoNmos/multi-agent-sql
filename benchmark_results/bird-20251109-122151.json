@@ -1,0 +1,180 @@
+[
+  {
+    "dataset": "bird",
+    "index": 79,
+    "question_id": 1149,
+    "db_id": "thrombosis_prediction",
+    "question": "Are there more in-patient or outpatient who were male? What is the deviation in percentage?",
+    "gold_sql": "SELECT CAST(SUM(CASE WHEN Admission = '+' THEN 1 ELSE 0 END) AS REAL) * 100 / NULLIF(SUM(CASE WHEN Admission = '-' THEN 1 ELSE 0 END), 0) FROM Patient WHERE SEX = 'M'",
+    "predicted_sql": "SELECT COUNT(DISTINCT CASE WHEN T1.admission LIKE '+%' THEN T1.id END), COUNT(DISTINCT CASE WHEN T1.admission LIKE '-%' THEN T1.id END), COUNT(DISTINCT CASE WHEN T1.admission LIKE '+%' THEN T1.id END) - COUNT(DISTINCT CASE WHEN T1.admission LIKE '-%' THEN T1.id END), CASE WHEN COUNT(DISTINCT CASE WHEN T1.admission LIKE '+%' THEN T1.id END) >= COUNT(DISTINCT CASE WHEN T1.admission LIKE '-%' THEN T1.id END) THEN 'INPATIENT' ELSE 'OUTPATIENT' END, (CAST(ABS(COUNT(DISTINCT CASE WHEN T1.admission LIKE '+%' THEN T1.id END) - COUNT(DISTINCT CASE WHEN T1.admission LIKE '-%' THEN T1.id END)) AS float) / NULLIF(((COUNT(DISTINCT CASE WHEN T1.admission LIKE '+%' THEN T1.id END) + COUNT(DISTINCT CASE WHEN T1.admission LIKE '-%' THEN T1.id END)) / 2.0), 0)) * 100 FROM patient AS T1 WHERE T1.sex = 'M' AND (T1.admission LIKE '+%' OR T1.admission LIKE '-%')",
+    "exact_match": false,
+    "execution_match": false,
+    "error": null,
+    "execution_error": null,
+    "gold_execution_results": [
+      {
+        "?column?": 83.17757009345794
+      }
+    ],
+    "predicted_execution_results": [
+      {
+        "count": 107,
+        "?column?": 18.367346938775512,
+        "case": "OUTPATIENT"
+      }
+    ],
+    "db_name": "xiaolongli",
+    "metadata": {
+      "latency_ms": 105764,
+      "tokens_in": null,
+      "tokens_out": null,
+      "model_name": null
+    },
+    "agent_trace": {
+      "status": "GENERATED",
+      "sql": "SELECT COUNT(DISTINCT CASE WHEN T1.admission LIKE '+%' THEN T1.id END), COUNT(DISTINCT CASE WHEN T1.admission LIKE '-%' THEN T1.id END), COUNT(DISTINCT CASE WHEN T1.admission LIKE '+%' THEN T1.id END) - COUNT(DISTINCT CASE WHEN T1.admission LIKE '-%' THEN T1.id END), CASE WHEN COUNT(DISTINCT CASE WHEN T1.admission LIKE '+%' THEN T1.id END) >= COUNT(DISTINCT CASE WHEN T1.admission LIKE '-%' THEN T1.id END) THEN 'INPATIENT' ELSE 'OUTPATIENT' END, (CAST(ABS(COUNT(DISTINCT CASE WHEN T1.admission LIKE '+%' THEN T1.id END) - COUNT(DISTINCT CASE WHEN T1.admission LIKE '-%' THEN T1.id END)) AS float) / NULLIF(((COUNT(DISTINCT CASE WHEN T1.admission LIKE '+%' THEN T1.id END) + COUNT(DISTINCT CASE WHEN T1.admission LIKE '-%' THEN T1.id END)) / 2.0), 0)) * 100 FROM patient AS T1 WHERE T1.sex = 'M' AND (T1.admission LIKE '+%' OR T1.admission LIKE '-%')",
+      "error": null,
+      "plan": "Compute counts of male in-patients and male outpatients, then determine which is larger and compute the percent deviation. Aggregations: use COUNT(DISTINCT patient_id) to count unique patients (or COUNT(*) if counting encounters). Do NOT GROUP BY unless a breakdown by another dimension is requested. SQL pattern: SELECT\n  COUNT(DISTINCT CASE WHEN patient_type IN ('INPATIENT','Inpatient') AND gender IN ('Male','M') THEN patient_id END) AS inpatient_males,\n  COUNT(DISTINCT CASE WHEN patient_type IN ('OUTPATIENT','Outpatient') AND gender IN ('Male','M') THEN patient_id END) AS outpatient_males\nFROM patients_table\n[WHERE <optional filters>];\nCompute:\n  difference = inpatient_males - outpatient_males\n  larger_group = CASE WHEN inpatient_males >= outpatient_males THEN 'INPATIENT' ELSE 'OUTPATIENT' END\n  percent_deviation = (ABS(difference) / LEAST(NULLIF(inpatient_males,0), NULLIF(outpatient_males,0))) * 100\nNotes on percent_deviation: I define it here as the percentage by which the larger group exceeds the smaller group, i.e. (|A-B| / smaller) * 100. If you prefer a different baseline (e.g., relative to the larger group, or relative to total male patients), replace the denominator accordingly. Handle zero counts to avoid division-by-zero (report as undefined or 100% if smaller is zero depending on context).",
+      "feedback": "Query generated without validation",
+      "attempts": 1,
+      "all_queries": [
+        "SELECT COUNT(DISTINCT CASE WHEN T1.admission LIKE '+%' THEN T1.id END), COUNT(DISTINCT CASE WHEN T1.admission LIKE '-%' THEN T1.id END), COUNT(DISTINCT CASE WHEN T1.admission LIKE '+%' THEN T1.id END) - COUNT(DISTINCT CASE WHEN T1.admission LIKE '-%' THEN T1.id END), CASE WHEN COUNT(DISTINCT CASE WHEN T1.admission LIKE '+%' THEN T1.id END) >= COUNT(DISTINCT CASE WHEN T1.admission LIKE '-%' THEN T1.id END) THEN 'INPATIENT' ELSE 'OUTPATIENT' END, (CAST(ABS(COUNT(DISTINCT CASE WHEN T1.admission LIKE '+%' THEN T1.id END) - COUNT(DISTINCT CASE WHEN T1.admission LIKE '-%' THEN T1.id END)) AS float) / NULLIF(((COUNT(DISTINCT CASE WHEN T1.admission LIKE '+%' THEN T1.id END) + COUNT(DISTINCT CASE WHEN T1.admission LIKE '-%' THEN T1.id END)) / 2.0), 0)) * 100 FROM patient AS T1 WHERE T1.sex = 'M' AND (T1.admission LIKE '+%' OR T1.admission LIKE '-%')"
+      ],
+      "interpreter_output": {
+        "clarified_question": "Considering all available records, which group has a larger count of male patients: in-patients or outpatients? Also, report the percent deviation between the two groups (expressed as a percentage).",
+        "sub_questions": [],
+        "explicit_intent": "Compute counts of male in-patients and male outpatients, then determine which is larger and compute the percent deviation. Aggregations: use COUNT(DISTINCT patient_id) to count unique patients (or COUNT(*) if counting encounters). Do NOT GROUP BY unless a breakdown by another dimension is requested. SQL pattern: SELECT\n  COUNT(DISTINCT CASE WHEN patient_type IN ('INPATIENT','Inpatient') AND gender IN ('Male','M') THEN patient_id END) AS inpatient_males,\n  COUNT(DISTINCT CASE WHEN patient_type IN ('OUTPATIENT','Outpatient') AND gender IN ('Male','M') THEN patient_id END) AS outpatient_males\nFROM patients_table\n[WHERE <optional filters>];\nCompute:\n  difference = inpatient_males - outpatient_males\n  larger_group = CASE WHEN inpatient_males >= outpatient_males THEN 'INPATIENT' ELSE 'OUTPATIENT' END\n  percent_deviation = (ABS(difference) / LEAST(NULLIF(inpatient_males,0), NULLIF(outpatient_males,0))) * 100\nNotes on percent_deviation: I define it here as the percentage by which the larger group exceeds the smaller group, i.e. (|A-B| / smaller) * 100. If you prefer a different baseline (e.g., relative to the larger group, or relative to total male patients), replace the denominator accordingly. Handle zero counts to avoid division-by-zero (report as undefined or 100% if smaller is zero depending on context).",
+        "ambiguities_resolved": [
+          "Patient vs encounter: Interpreted 'who were male' as counting distinct male patients (COUNT(DISTINCT patient_id)). If you want encounters/visits instead, use COUNT(*) or COUNT(visit_id).",
+          "Patient type field names: Assumed patient_type values include 'INPATIENT' and 'OUTPATIENT' (case variations handled). Adjust values to match your schema.",
+          "Gender field values: Assumed male values include 'Male' or 'M'. Adjust for your dataset's encoding.",
+          "Time period: No time filter specified, so intent is to use all available records. If you want a specific period, add a WHERE clause (e.g., WHERE visit_date BETWEEN ...).",
+          "Percent deviation baseline: Defined percent deviation as relative to the smaller count ( (|A-B| / smaller) * 100 ). If you prefer another baseline (larger or total), specify which and formula will be adjusted.",
+          "Ties/zero handling: If counts are equal, deviation = 0%. If smaller count = 0, division-by-zero must be handled explicitly (report as infinite/undefined or as 100% increase depending on requirement)."
+        ]
+      },
+      "retriever_output": "Selected tables and why they are relevant\n- patient — primary table for this question: contains patient id, sex, and an admission column that appears to encode in‑/out‑patient status.\n- examination — linked to patient (examination.id → patient.id); included to confirm there is no alternate admission flag in exam records.\n- attendance and disp — included as checks (they are present in the DB list). They do not appear to contain patient sex/admission information but were inspected to ensure the admission flag is located on patient.\n\nKey columns (and why)\n- patient.id — primary key for patient records.\n- patient.sex — encodes patient sex; needed to filter for male patients.\n- patient.admission — encodes whether a patient is in‑patient or outpatient (this is the only column in the inspected tables that appears to represent admission status).\n- examination.id — foreign key referencing patient.id (confirms relationship).\n\nSample data observed (from sample_row and sample values)\n- patient.sample_row: {\"id\":2110, \"sex\":\"F\", \"birthday\":\"1934-02-13\", \"description\":\"1994-02-14\", \"First Date\":\"1993-02-10\", \"admission\":\"+\", \"diagnosis\":\"RA susp.\"}\n- Distinct sample values for patient.sex (sample): [\"\", \"M\", \"F\"] — sexes are stored as 'M' and 'F'; some records have an empty string.\n- Distinct sample values for patient.admission (sample): [\"+\", \"\", \"-\", \"+(\"] — admission values include '+' and '-' and occasional variants like '+(' and empty string.\n\nRelationships\n- examination.id → patient.id (examination rows reference patient records).\n- No other inspected tables (attendance, disp) show patient sex or another admission/status flag; patient.admission is the primary field to use for distinguishing in‑patients vs outpatients.\n\nValue encodings and domain knowledge / assumptions\n- sex: 'M' = Male, 'F' = Female. Some records have blank/empty sex values; those should be excluded if the question is restricted to clearly coded male patients.\n- admission: likely encodes in‑ vs out‑patient using symbol(s):\n  - Values starting with '+' (e.g., '+', '+(' ) should be treated as in‑patients.\n  - Values starting with '-' should be treated as outpatients.\n  - Empty/blank admission values are ambiguous and should be excluded (or handled separately) unless business rules say otherwise.\n- Because admission contains variants like '+(', I recommend normalizing using a prefix test (e.g., admission LIKE '+%') for in‑patients and admission LIKE '-%' for outpatients.\n\nImportant notes to help SQL generation\n- Use patient as the single source table for counts (no need to join to other tables for this question).\n- Filter to sex = 'M' (exclude blank/NULL sex).\n- Map admission values to two buckets:\n  - Inpatients: admission LIKE '+%' \n  - Outpatients: admission LIKE '-%'\n- Exclude rows where admission is NULL/empty or does not match either pattern unless the user wants those categorized.\n- Percent‑deviation: clarify formula. Two common choices:\n  - Percent difference relative to the average:  |in_m − out_m| / ((in_m + out_m)/2) * 100\n  - Percent difference relative to the larger group: |in_m − out_m| / max(in_m, out_m) * 100\n  I recommend the first (relative to the average) unless you prefer the second; indicate which the SQL should compute.\n\nSuggested SQL logic (description, NOT the final SQL):\n- Count male patients grouped into two buckets derived from patient.admission (inpatient if admission LIKE '+%', outpatient if admission LIKE '-%').\n- Compute counts in_m and out_m.\n- Compute percent deviation using the chosen formula (state which one to use).\n\nIf you want, I can now:\n- (A) Generate the precise SQL that returns: in_m count, out_m count, absolute difference, and percent deviation (specifying which deviation formula to use), or\n- (B) Run the query (if you want me to produce results from the DB).",
+      "generator_output": {
+        "sql_query": "SELECT\nCOUNT(DISTINCT CASE WHEN T1.admission LIKE '+%' THEN T1.id END),\nCOUNT(DISTINCT CASE WHEN T1.admission LIKE '-%' THEN T1.id END),\nCOUNT(DISTINCT CASE WHEN T1.admission LIKE '+%' THEN T1.id END) - COUNT(DISTINCT CASE WHEN T1.admission LIKE '-%' THEN T1.id END),\nCASE WHEN COUNT(DISTINCT CASE WHEN T1.admission LIKE '+%' THEN T1.id END) >= COUNT(DISTINCT CASE WHEN T1.admission LIKE '-%' THEN T1.id END) THEN 'INPATIENT' ELSE 'OUTPATIENT' END,\n(CAST(ABS(COUNT(DISTINCT CASE WHEN T1.admission LIKE '+%' THEN T1.id END) - COUNT(DISTINCT CASE WHEN T1.admission LIKE '-%' THEN T1.id END)) AS float) / NULLIF(((COUNT(DISTINCT CASE WHEN T1.admission LIKE '+%' THEN T1.id END) + COUNT(DISTINCT CASE WHEN T1.admission LIKE '-%' THEN T1.id END)) / 2.0), 0)) * 100\nFROM patient AS T1\nWHERE T1.sex = 'M' AND (T1.admission LIKE '+%' OR T1.admission LIKE '-%')",
+        "reasoning_steps": [
+          "Use the patient table (alias T1) as the single source of truth for sex and admission status.",
+          "Filter to clearly coded male patients by WHERE T1.sex = 'M' and exclude ambiguous admission values by requiring admission LIKE '+%' or admission LIKE '-%'.",
+          "Count distinct male patient IDs for in-patients (T1.admission LIKE '+%') and outpatients (T1.admission LIKE '-%') using COUNT(DISTINCT ...).",
+          "Compute the absolute difference and determine the larger group with a CASE expression comparing the two counts.",
+          "Compute percent deviation as |A - B| / ((A + B) / 2) * 100 (i.e., relative to the average), protecting against division by zero with NULLIF."
+        ],
+        "sub_queries": [],
+        "confidence": 0.92
+      },
+      "validator_output": null,
+      "trace": {
+        "pipeline": "new",
+        "db_name": "xiaolongli",
+        "start_ts": "2025-11-09T15:21:52.136894+00:00",
+        "end_ts": "2025-11-09T15:23:37.588003+00:00",
+        "latency_ms": 105451,
+        "steps": [
+          {
+            "name": "interpreter",
+            "timing_ms": 24734,
+            "input_summary": {
+              "raw_question": "Are there more in-patient or outpatient who were male? What is the deviation in percentage?"
+            },
+            "output_summary": {
+              "clarified_question": "Considering all available records, which group has a larger count of male patients: in-patients or outpatients? Also, report the percent deviation between the two groups (expressed as a percentage).",
+              "intent": "Compute counts of male in-patients and male outpatients, then determine which is larger and compute the percent deviation. Aggregations: use COUNT(DISTINCT patient_id) to count unique patients (or COUNT(*) if counting encounters). Do NOT GROUP BY unless a breakdown by another dimension is requested.",
+              "sub_questions_count": 0
+            },
+            "error": null
+          },
+          {
+            "name": "retriever",
+            "timing_ms": 45527,
+            "input_summary": {
+              "clarified_question": "Considering all available records, which group has a larger count of male patients: in-patients or outpatients? Also, report the percent deviation between the two groups (expressed as a percentage).",
+              "all_tables_count": 75
+            },
+            "output_summary": {
+              "output_length": 3828,
+              "output_preview": "Selected tables and why they are relevant\n- patient — primary table for this question: contains patient id, sex, and an admission column that appears to encode in‑/out‑patient status.\n- examination — linked to patient (examination.id → patient.id); included to confirm there is no alternate admission"
+            },
+            "error": null
+          },
+          {
+            "name": "generator",
+            "timing_ms": 35090,
+            "input_summary": {
+              "clarified_question": "Considering all available records, which group has a larger count of male patients: in-patients or outpatients? Also, report the percent deviation between the two groups (expressed as a percentage).",
+              "attempt": 1
+            },
+            "output_summary": {
+              "sql_length": 852,
+              "reasoning_steps_count": 5,
+              "confidence": 0.92
+            },
+            "error": null
+          }
+        ],
+        "tools": [
+          {
+            "agent": "retriever",
+            "tool": "get_table_info",
+            "args_redacted": [
+              "patient",
+              "attendance",
+              "examination",
+              "disp"
+            ],
+            "result_preview": "Retrieved info for 4 tables",
+            "timing_ms": 242,
+            "error": null
+          },
+          {
+            "agent": "retriever",
+            "tool": "sample_values",
+            "args_redacted": {
+              "table_name": "patient",
+              "column_name": "sex",
+              "limit": 10
+            },
+            "result_preview": "Retrieved 3 sample values",
+            "timing_ms": 24,
+            "error": null
+          },
+          {
+            "agent": "retriever",
+            "tool": "sample_values",
+            "args_redacted": {
+              "table_name": "patient",
+              "column_name": "admission",
+              "limit": 10
+            },
+            "result_preview": "Retrieved 4 sample values",
+            "timing_ms": 7,
+            "error": null
+          }
+        ],
+        "generator": {
+          "sql_query": "SELECT COUNT(DISTINCT CASE WHEN T1.admission LIKE '+%' THEN T1.id END), COUNT(DISTINCT CASE WHEN T1.admission LIKE '-%' THEN T1.id END), COUNT(DISTINCT CASE WHEN T1.admission LIKE '+%' THEN T1.id END) - COUNT(DISTINCT CASE WHEN T1.admission LIKE '-%' THEN T1.id END), CASE WHEN COUNT(DISTINCT CASE WHEN T1.admission LIKE '+%' THEN T1.id END) >= COUNT(DISTINCT CASE WHEN T1.admission LIKE '-%' THEN T1.id END) THEN 'INPATIENT' ELSE 'OUTPATIENT' END, (CAST(ABS(COUNT(DISTINCT CASE WHEN T1.admission LIKE '+%' THEN T1.id END) - COUNT(DISTINCT CASE WHEN T1.admission LIKE '-%' THEN T1.id END)) AS float) / NULLIF(((COUNT(DISTINCT CASE WHEN T1.admission LIKE '+%' THEN T1.id END) + COUNT(DISTINCT CASE WHEN T1.admission LIKE '-%' THEN T1.id END)) / 2.0), 0)) * 100 FROM patient AS T1 WHERE T1.sex = 'M' AND (T1.admission LIKE '+%' OR T1.admission LIKE '-%')",
+          "reasoning_steps": [
+            "Use the patient table (alias T1) as the single source of truth for sex and admission status.",
+            "Filter to clearly coded male patients by WHERE T1.sex = 'M' and exclude ambiguous admission values by requiring admission LIKE '+%' or admission LIKE '-%'.",
+            "Count distinct male patient IDs for in-patients (T1.admission LIKE '+%') and outpatients (T1.admission LIKE '-%') using COUNT(DISTINCT ...).",
+            "Compute the absolute difference and determine the larger group with a CASE expression comparing the two counts.",
+            "Compute percent deviation as |A - B| / ((A + B) / 2) * 100 (i.e., relative to the average), protecting against division by zero with NULLIF."
+          ],
+          "confidence": 0.92
+        },
+        "retriever": {
+          "all_tables_count": 75,
+          "selected_tables": [
+            "patient",
+            "attendance",
+            "examination",
+            "disp"
+          ]
+        }
+      }
+    }
+  }
+]

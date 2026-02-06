@@ -1,0 +1,188 @@
+[
+  {
+    "dataset": "bird",
+    "index": 1,
+    "question_id": 1471,
+    "db_id": "debit_card_specializing",
+    "question": "What is the ratio of customers who pay in EUR against customers who pay in CZK?",
+    "gold_sql": "SELECT CAST(SUM(CASE WHEN Currency = 'EUR' THEN 1 ELSE 0 END) AS REAL) / NULLIF(SUM(CASE WHEN Currency = 'CZK' THEN 1 ELSE 0 END), 0) FROM customers",
+    "predicted_sql": "SELECT CAST(SUM(CASE WHEN UPPER(TRIM(T1.currency)) = 'EUR' THEN 1 ELSE 0 END) AS FLOAT) / NULLIF(SUM(CASE WHEN UPPER(TRIM(T1.currency)) = 'CZK' THEN 1 ELSE 0 END), 0) FROM public.customers AS T1",
+    "exact_match": false,
+    "execution_match": null,
+    "analyzer_match": true,
+    "error": null,
+    "execution_error": "Connection or execution error: [Errno 111] Connection refused",
+    "gold_execution_results": null,
+    "predicted_execution_results": null,
+    "db_name": "bird_benchmark",
+    "metadata": {
+      "latency_ms": 88675,
+      "tokens_in": null,
+      "tokens_out": null,
+      "model_name": null
+    },
+    "agent_trace": {
+      "status": "GENERATED",
+      "sql": "SELECT CAST(SUM(CASE WHEN UPPER(TRIM(T1.currency)) = 'EUR' THEN 1 ELSE 0 END) AS FLOAT) / NULLIF(SUM(CASE WHEN UPPER(TRIM(T1.currency)) = 'CZK' THEN 1 ELSE 0 END), 0) FROM public.customers AS T1",
+      "error": null,
+      "plan": "Return one scalar: the ratio = COUNT(customers where currency='EUR') / COUNT(customers where currency='CZK'). Expected output shape: single row, single column (ratio). Use the customers table and the currency column only (no joins). SQL pattern (examples):\n\nPostgres style using FILTER:\nSELECT (COUNT(*) FILTER (WHERE currency = 'EUR'))::float / NULLIF(COUNT(*) FILTER (WHERE currency = 'CZK'), 0) AS eur_to_czk_ratio\nFROM customers;\n\nGeneric SQL using CASE:\nSELECT SUM(CASE WHEN currency = 'EUR' THEN 1 ELSE 0 END) * 1.0 / NULLIF(SUM(CASE WHEN currency = 'CZK' THEN 1 ELSE 0 END), 0) AS eur_to_czk_ratio\nFROM customers;\n\nDetails:\n- Aggregation: COUNT (or SUM of CASE WHEN) with no GROUP BY (one scalar for the whole table).\n- Division: numerator = count of EUR customers; denominator = count of CZK customers.\n- Cast to float/decimal to avoid integer division.\n- Use NULLIF(denominator, 0) to avoid division-by-zero; decide whether to return NULL or handle differently (e.g., return 0 or 'infinite').\n- Do NOT group by time or any other column since the question asks for one overall ratio.",
+      "feedback": "Erro de sintaxe: SQL error: relation \"customers\" does not exist.",
+      "attempts": 2,
+      "all_queries": [
+        "SELECT CAST(SUM(CASE WHEN UPPER(TRIM(T1.currency)) = 'EUR' THEN 1 ELSE 0 END) AS FLOAT) / NULLIF(SUM(CASE WHEN UPPER(TRIM(T1.currency)) = 'CZK' THEN 1 ELSE 0 END), 0) FROM customers AS T1",
+        "SELECT CAST(SUM(CASE WHEN UPPER(TRIM(T1.currency)) = 'EUR' THEN 1 ELSE 0 END) AS FLOAT) / NULLIF(SUM(CASE WHEN UPPER(TRIM(T1.currency)) = 'CZK' THEN 1 ELSE 0 END), 0) FROM public.customers AS T1"
+      ],
+      "interpreter_output": {
+        "clarified_question": "What is the ratio of customers who pay in EUR to customers who pay in CZK, using the customers table? Return a single scalar value equal to (number of customers with currency = 'EUR') divided by (number of customers with currency = 'CZK').",
+        "sub_questions": [],
+        "explicit_intent": "Return one scalar: the ratio = COUNT(customers where currency='EUR') / COUNT(customers where currency='CZK'). Expected output shape: single row, single column (ratio). Use the customers table and the currency column only (no joins). SQL pattern (examples):\n\nPostgres style using FILTER:\nSELECT (COUNT(*) FILTER (WHERE currency = 'EUR'))::float / NULLIF(COUNT(*) FILTER (WHERE currency = 'CZK'), 0) AS eur_to_czk_ratio\nFROM customers;\n\nGeneric SQL using CASE:\nSELECT SUM(CASE WHEN currency = 'EUR' THEN 1 ELSE 0 END) * 1.0 / NULLIF(SUM(CASE WHEN currency = 'CZK' THEN 1 ELSE 0 END), 0) AS eur_to_czk_ratio\nFROM customers;\n\nDetails:\n- Aggregation: COUNT (or SUM of CASE WHEN) with no GROUP BY (one scalar for the whole table).\n- Division: numerator = count of EUR customers; denominator = count of CZK customers.\n- Cast to float/decimal to avoid integer division.\n- Use NULLIF(denominator, 0) to avoid division-by-zero; decide whether to return NULL or handle differently (e.g., return 0 or 'infinite').\n- Do NOT group by time or any other column since the question asks for one overall ratio.",
+        "ambiguities_resolved": [
+          "Interpreted \"customers who pay in EUR/CZK\" as customers.currency = 'EUR' / 'CZK' from the customers table (no transaction verification required).",
+          "Output shape: single scalar value (one row, one column) containing the ratio; do not return the separate counts unless explicitly requested.",
+          "Assumed exact equality on currency codes ('EUR' and 'CZK'), case-sensitive as stored; if data is mixed-case, use UPPER(currency) = 'EUR' etc. if needed.",
+          "Assumed each row in customers corresponds to one customer (no DISTINCT required). If duplicates are possible, use COUNT(DISTINCT customer_id) instead.",
+          "No temporal filter or additional grouping was added because none was specified."
+        ]
+      },
+      "mapper_output": "Relevant tables\n- customers — chosen as the single, minimal table required. The question asks for counts of customers by payment currency, which can be answered using only the customers table (Minimal-Table Principle). No joins are needed.\n\nWhy I selected customers\n- The question explicitly refers to \"customers\" and asks to count customers by currency, so the customers table is the PRIMARY and ONLY table needed. Joining other tables (e.g., orders, payments) would change cardinality and would restrict to customers who have related rows; that is unnecessary and undesirable for counting all customers by currency.\n\nWhat I looked up / current limitation\n- I called the schema introspection tool for the customers table but the tool returned no column metadata and no sample_row (columns: [], sample_row: null). Therefore I could not confirm actual column names or see sample currency values from the database metadata.\n- Because of that, the rest of the summary assumes the common/expected column name currency exists in customers. If the actual column name differs, the SQL must be adjusted accordingly.\n\nKey columns (assumptions and priorities)\n- currency (PRIMARY ASSUMPTION): This is the only column required to answer the question. Priority: highest (direct keyword match to the question).\n- If the actual column is named differently (e.g., payment_currency, curr, currency_code), use that column instead.\n\nValue encodings and sample data\n- I could not retrieve sample values due to missing schema/sample_row. Common encodings to verify:\n  - Expected values: 'EUR' for Euro, 'CZK' for Czech koruna.\n  - Possible variants: lowercase ('eur', 'czk'), additional whitespace, or other codes (e.g., 'EUR ', 'CZ', 'Kc', 'CZK.').\n- Recommendation: run a quick sample_values or DISTINCT query on the currency column to confirm exact encodings before finalizing the SQL:\n  - sample_values(customers, currency, 10) or SELECT DISTINCT currency FROM customers LIMIT 50;\n\nDate format & column types\n- Not applicable for this question (no date columns needed).\n\nRelationships / Cardinality warnings\n- WARNING: Do not join customers to transactions/payments if you want to count all customers by currency. Joining would restrict to customers with related rows and change the base customer counts. Use the customers table alone to avoid join-induced filtering.\n\nValidation notes and edge cases\n- If there are zero CZK customers, dividing by zero must be handled — the result should be NULL or some safe value. Use NULLIF to avoid division-by-zero.\n- Normalize currency values (e.g., UPPER(TRIM(currency))) to avoid mismatches due to case/whitespace.\n- Exclude NULL currency values if the intention is to count only known currencies.\n\nRecommended SQL (returns a single scalar)\n- This query normalizes currency and safely handles division by zero; it returns a single numeric scalar equal to (#customers with EUR) / (#customers with CZK):\n\nSELECT\n  CAST(SUM(CASE WHEN UPPER(TRIM(currency)) = 'EUR' THEN 1 ELSE 0 END) AS FLOAT)\n  /\n  NULLIF(SUM(CASE WHEN UPPER(TRIM(currency)) = 'CZK' THEN 1 ELSE 0 END), 0)\nAS eur_to_czk_ratio\nFROM customers;\n\nNotes about the SQL\n- Uses UPPER(TRIM(currency)) to guard against case or whitespace issues.\n- Uses NULLIF(..., 0) to avoid division by zero; result will be NULL if there are zero CZK customers.\n- CAST to FLOAT ensures non-integer division in SQL engines that would otherwise perform integer division.\n\nNext steps I recommend you run (if you have access)\n1. Confirm the currency column name and sample values:\n   - SELECT DISTINCT currency FROM customers LIMIT 50;\n   - or use sample_values(customers, 'currency', 10)\n2. If values differ (e.g., use 'Kc', 'CZ' or lowercase), adjust the normalization comparisons in the SQL accordingly (e.g., check for multiple variants).\n3. Then run the recommended scalar query above.\n\nSummary conclusion\n- Use only the customers table (no joins). I could not fetch schema/sample data due to metadata being unavailable, so the solution assumes a currency column exists and uses normalization + NULLIF to handle typical edge cases.",
+      "generator_output": {
+        "reasoning_steps": [
+          "Normalize the currency values and count EUR and CZK customers using conditional SUM(CASE WHEN ...) to get counts in a single aggregation.",
+          "Cast the numerator to a non-integer type to force non-integer division and use NULLIF on the CZK count to avoid division-by-zero.",
+          "Follow the required single-SELECT structure and use a table alias AS T1; to address the prior \"relation does not exist\" error, qualify the table with the public schema (public.customers).",
+          "Return a single scalar (unnamed) result as required by the rules; if the CZK count is zero the result will be NULL."
+        ],
+        "sub_queries": [],
+        "confidence": 0.8,
+        "sql_query": "SELECT CAST(SUM(CASE WHEN UPPER(TRIM(T1.currency)) = 'EUR' THEN 1 ELSE 0 END) AS FLOAT) / NULLIF(SUM(CASE WHEN UPPER(TRIM(T1.currency)) = 'CZK' THEN 1 ELSE 0 END), 0) FROM public.customers AS T1"
+      },
+      "validator_output": {
+        "is_valid": false,
+        "is_optimal": false,
+        "syntax_errors": [
+          "SQL error: relation \"customers\" does not exist"
+        ],
+        "semantic_issues": [],
+        "efficiency_score": 0.0,
+        "efficiency_issues": [],
+        "refinement_feedback": "Erro de sintaxe: SQL error: relation \"customers\" does not exist."
+      },
+      "trace": {
+        "pipeline": "new",
+        "db_name": "bird_benchmark",
+        "start_ts": "2026-01-28T20:20:55.185310+00:00",
+        "end_ts": "2026-01-28T20:22:23.802569+00:00",
+        "latency_ms": 88617,
+        "steps": [
+          {
+            "name": "interpreter",
+            "timing_ms": 16381,
+            "input_summary": {
+              "raw_question": "What is the ratio of customers who pay in EUR against customers who pay in CZK?"
+            },
+            "output_summary": {
+              "clarified_question": "What is the ratio of customers who pay in EUR to customers who pay in CZK, using the customers table? Return a single scalar value equal to (number of customers with currency = 'EUR') divided by (numb",
+              "intent": "Return one scalar: the ratio = COUNT(customers where currency='EUR') / COUNT(customers where currency='CZK'). Expected output shape: single row, single column (ratio). Use the customers table and the currency column only (no joins). SQL pattern (examples):\n\nPostgres style using FILTER:\nSELECT (COUNT",
+              "sub_questions_count": 0
+            },
+            "error": null
+          },
+          {
+            "name": "mapper",
+            "timing_ms": 23109,
+            "input_summary": {
+              "clarified_question": "What is the ratio of customers who pay in EUR to customers who pay in CZK, using the customers table? Return a single scalar value equal to (number of customers with currency = 'EUR') divided by (numb",
+              "all_tables_count": 0
+            },
+            "output_summary": {
+              "output_length": 4098,
+              "output_preview": "Relevant tables\n- customers — chosen as the single, minimal table required. The question asks for counts of customers by payment currency, which can be answered using only the customers table (Minimal-Table Principle). No joins are needed.\n\nWhy I selected customers\n- The question explicitly refers t"
+            },
+            "error": null
+          },
+          {
+            "name": "generator",
+            "timing_ms": 22035,
+            "input_summary": {
+              "clarified_question": "What is the ratio of customers who pay in EUR to customers who pay in CZK, using the customers table? Return a single scalar value equal to (number of customers with currency = 'EUR') divided by (numb",
+              "attempt": 1
+            },
+            "output_summary": {
+              "sql_length": 188,
+              "reasoning_steps_count": 4,
+              "confidence": 0.8
+            },
+            "error": null
+          },
+          {
+            "name": "validator",
+            "timing_ms": 12,
+            "input_summary": {
+              "sql_length": 187,
+              "attempt": 1
+            },
+            "output_summary": {
+              "is_valid": false,
+              "is_optimal": false,
+              "efficiency_score": 0.0,
+              "syntax_error_count": 1,
+              "semantic_issue_count": 0
+            },
+            "error": null
+          },
+          {
+            "name": "generator",
+            "timing_ms": 27036,
+            "input_summary": {
+              "clarified_question": "What is the ratio of customers who pay in EUR to customers who pay in CZK, using the customers table? Return a single scalar value equal to (number of customers with currency = 'EUR') divided by (numb",
+              "attempt": 2
+            },
+            "output_summary": {
+              "sql_length": 194,
+              "reasoning_steps_count": 4,
+              "confidence": 0.8
+            },
+            "error": null
+          }
+        ],
+        "tools": [
+          {
+            "agent": "mapper",
+            "tool": "get_table_info",
+            "args_redacted": [
+              "customers"
+            ],
+            "result_preview": "Retrieved info for 1 tables",
+            "timing_ms": 42,
+            "error": null
+          }
+        ],
+        "generator": {
+          "sql_query": "SELECT CAST(SUM(CASE WHEN UPPER(TRIM(T1.currency)) = 'EUR' THEN 1 ELSE 0 END) AS FLOAT) / NULLIF(SUM(CASE WHEN UPPER(TRIM(T1.currency)) = 'CZK' THEN 1 ELSE 0 END), 0) FROM public.customers AS T1",
+          "reasoning_steps": [
+            "Normalize the currency values and count EUR and CZK customers using conditional SUM(CASE WHEN ...) to get counts in a single aggregation.",
+            "Cast the numerator to a non-integer type to force non-integer division and use NULLIF on the CZK count to avoid division-by-zero.",
+            "Follow the required single-SELECT structure and use a table alias AS T1; to address the prior \"relation does not exist\" error, qualify the table with the public schema (public.customers).",
+            "Return a single scalar (unnamed) result as required by the rules; if the CZK count is zero the result will be NULL."
+          ],
+          "confidence": 0.8
+        },
+        "mapper": {
+          "all_tables_count": 0,
+          "selected_tables": [
+            "customers"
+          ]
+        }
+      }
+    },
+    "analyzer_output": {
+      "analyzer_match": true,
+      "approved": true,
+      "failure_step": "none",
+      "failure_reason": "Predicted SQL is semantically equivalent to the gold SQL: both compute (count of customers with Currency = 'EUR') / (count of customers with Currency = 'CZK') using conditional aggregation, casting to non-integer type, and NULLIF to avoid division-by-zero. Differences are cosmetic or robustness improvements and do not change the business answer.",
+      "query_issues": "No functional issues. Differences that do not affect business impact: (1) Predicted SQL applies UPPER(TRIM(...)) to currency values for normalization (handles case/whitespace) — harmless and more robust. (2) CAST(... AS FLOAT) vs CAST(... AS REAL) — equivalent for the required ratio. (3) Uses schema-qualified table (public.customers) and table alias T1 — cosmetic and may avoid relation-not-found errors. Column names, aggregation logic, and division semantics match the gold query.",
+      "root_cause": "Result is correct: the predicted query implements the same aggregation and division logic as the gold SQL. Differences are presentation/robustness choices rather than logic changes.",
+      "suggestions": []
+    }
+  }
+]

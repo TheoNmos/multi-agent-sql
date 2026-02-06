@@ -1,0 +1,217 @@
+[
+  {
+    "question_id": 1,
+    "pergunta": "Liste os títulos de livros do gênero 'Ficção Científica' em ordem alfabética.",
+    "sql": "SELECT l.titulo FROM livros l JOIN generos g ON l.genero_id = g.genero_id WHERE g.nome = 'Ficção Científica' ORDER BY l.titulo;"
+  },
+  {
+    "question_id": 2,
+    "pergunta": "Quantos empréstimos foram realizados em 2024?",
+    "sql": "SELECT COUNT(*) FROM emprestimos WHERE EXTRACT(YEAR FROM data_emprestimo) = 2024;"
+  },
+  {
+    "question_id": 3,
+    "pergunta": "Quais membros possuem empréstimos em aberto (sem data de devolução)?",
+    "sql": "SELECT DISTINCT m.membro_id, m.nome FROM membros m JOIN emprestimos e ON e.membro_id = m.membro_id WHERE e.data_devolucao IS NULL ORDER BY m.membro_id;"
+  },
+  {
+    "question_id": 4,
+    "pergunta": "Liste os autores cadastrados e seus países de origem.",
+    "sql": "SELECT autor_id, nome, pais_origem FROM autores ORDER BY autor_id;"
+  },
+  {
+    "question_id": 5,
+    "pergunta": "Quais livros não possuem ISBN cadastrado?",
+    "sql": "SELECT livro_id, titulo FROM livros WHERE isbn IS NULL ORDER BY livro_id;"
+  },
+  {
+    "question_id": 6,
+    "pergunta": "Conte quantos livros por gênero existem.",
+    "sql": "SELECT g.nome AS genero, COUNT(*) AS qtd FROM livros l JOIN generos g ON g.genero_id = l.genero_id GROUP BY g.nome ORDER BY qtd DESC, genero;"
+  },
+  {
+    "question_id": 7,
+    "pergunta": "Qual é o preço médio dos livros por editora?",
+    "sql": "SELECT e.nome AS editora, ROUND(AVG(l.preco),2) AS preco_medio FROM livros l JOIN editoras e ON e.editora_id = l.editora_id GROUP BY e.nome ORDER BY e.nome;"
+  },
+  {
+    "question_id": 8,
+    "pergunta": "Quais são os 5 livros mais recentes (maior ano de publicação)?",
+    "sql": "SELECT livro_id, titulo, ano_publicacao FROM livros WHERE ano_publicacao IS NOT NULL ORDER BY ano_publicacao DESC, titulo LIMIT 5;"
+  },
+  {
+    "question_id": 9,
+    "pergunta": "Mostre os títulos com dois espaços consecutivos no nome (sujeira de dados).",
+    "sql": "SELECT livro_id, titulo FROM livros WHERE titulo LIKE '% %' ORDER BY livro_id;"
+  },
+  {
+    "question_id": 10,
+    "pergunta": "Liste os livros do autor 'Machado de Assis'.",
+    "sql": "SELECT titulo FROM livros l JOIN autores a ON a.autor_id = l.autor_id WHERE a.nome ILIKE 'Machado de Assis' ORDER BY titulo;"
+  },
+  {
+    "question_id": 11,
+    "pergunta": "Liste os livros do autor com nome em caixa alta/variação 'MACHADO de Assis'.",
+    "sql": "SELECT titulo FROM livros l JOIN autores a ON a.autor_id = l.autor_id WHERE a.nome = 'MACHADO de Assis' ORDER BY titulo;"
+  },
+  {
+    "question_id": 12,
+    "pergunta": "Quais livros foram emprestados mas ainda não devolvidos?",
+    "sql": "SELECT e.emprestimo_id, l.titulo, e.data_emprestimo FROM emprestimos e JOIN livros l ON l.livro_id = e.livro_id WHERE e.data_devolucao IS NULL ORDER BY e.data_emprestimo;"
+  },
+  {
+    "question_id": 13,
+    "pergunta": "Para cada membro, quantos empréstimos ele já realizou?",
+    "sql": "SELECT m.membro_id, m.nome, COUNT(*) AS total FROM membros m JOIN emprestimos e ON e.membro_id = m.membro_id GROUP BY m.membro_id, m.nome ORDER BY total DESC, m.membro_id;"
+  },
+  {
+    "question_id": 14,
+    "pergunta": "Quais gêneros possuem mais de 3 livros cadastrados?",
+    "sql": "SELECT g.nome, COUNT(*) AS qtd FROM livros l JOIN generos g ON g.genero_id = l.genero_id GROUP BY g.nome HAVING COUNT(*) > 3 ORDER BY qtd DESC;"
+  },
+  {
+    "question_id": 15,
+    "pergunta": "Quais editoras não possuem nenhum livro cadastrado?",
+    "sql": "SELECT e.editora_id, e.nome FROM editoras e LEFT JOIN livros l ON l.editora_id = e.editora_id WHERE l.editora_id IS NULL ORDER BY e.editora_id;"
+  },
+  {
+    "question_id": 16,
+    "pergunta": "Recupere os livros e seus autores e editoras (3-way join).",
+    "sql": "SELECT l.titulo, a.nome AS autor, e.nome AS editora FROM livros l JOIN autores a ON a.autor_id = l.autor_id LEFT JOIN editoras e ON e.editora_id = l.editora_id ORDER BY l.titulo;"
+  },
+  {
+    "question_id": 17,
+    "pergunta": "Quais livros de 'George Orwell' estão cadastrados?",
+    "sql": "SELECT l.titulo FROM livros l JOIN autores a ON a.autor_id = l.autor_id WHERE a.nome = 'George Orwell' ORDER BY l.titulo;"
+  },
+  {
+    "question_id": 18,
+    "pergunta": "Qual o total de empréstimos por ano?",
+    "sql": "SELECT EXTRACT(YEAR FROM data_emprestimo) AS ano, COUNT(*) AS total FROM emprestimos GROUP BY ano ORDER BY ano;"
+  },
+  {
+    "question_id": 19,
+    "pergunta": "Quais membros nunca fizeram empréstimos?",
+    "sql": "SELECT m.membro_id, m.nome FROM membros m LEFT JOIN emprestimos e ON e.membro_id = m.membro_id WHERE e.membro_id IS NULL ORDER BY m.membro_id;"
+  },
+  {
+    "question_id": 20,
+    "pergunta": "Liste os livros do gênero 'Mistério' ou 'Thriller'.",
+    "sql": "SELECT l.titulo FROM livros l JOIN generos g ON g.genero_id = l.genero_id WHERE g.nome IN ('Mistério','Thriller') ORDER BY l.titulo;"
+  },
+  {
+    "question_id": 21,
+    "pergunta": "Mostre os 3 membros com mais empréstimos em 2025.",
+    "sql": "SELECT m.membro_id, m.nome, COUNT(*) AS total FROM membros m JOIN emprestimos e ON e.membro_id = m.membro_id WHERE EXTRACT(YEAR FROM e.data_emprestimo) = 2025 GROUP BY m.membro_id, m.nome ORDER BY total DESC, m.membro_id LIMIT 3;"
+  },
+  {
+    "question_id": 22,
+    "pergunta": "Quantos livros têm ano de publicação desconhecido (NULL)?",
+    "sql": "SELECT COUNT(*) FROM livros WHERE ano_publicacao IS NULL;"
+  },
+  {
+    "question_id": 23,
+    "pergunta": "Qual é o preço máximo e mínimo por gênero?",
+    "sql": "SELECT g.nome, MAX(l.preco) AS preco_max, MIN(l.preco) AS preco_min FROM livros l JOIN generos g ON g.genero_id = l.genero_id GROUP BY g.nome ORDER BY g.nome;"
+  },
+  {
+    "question_id": 24,
+    "pergunta": "Recupere os títulos e anos dos livros publicados após 2000.",
+    "sql": "SELECT titulo, ano_publicacao FROM livros WHERE ano_publicacao > 2000 ORDER BY ano_publicacao DESC, titulo;"
+  },
+  {
+    "question_id": 25,
+    "pergunta": "Encontre livros cujo título contém a palavra 'Fundação'.",
+    "sql": "SELECT livro_id, titulo FROM livros WHERE titulo ILIKE '%Fundação%' ORDER BY livro_id;"
+  },
+  {
+    "question_id": 26,
+    "pergunta": "Quais autores têm mais de um livro cadastrado?",
+    "sql": "SELECT a.nome, COUNT(*) AS qtd FROM livros l JOIN autores a ON a.autor_id = l.autor_id GROUP BY a.nome HAVING COUNT(*) > 1 ORDER BY qtd DESC, a.nome;"
+  },
+  {
+    "question_id": 27,
+    "pergunta": "Quais livros têm preço acima de 50 reais?",
+    "sql": "SELECT livro_id, titulo, preco FROM livros WHERE preco > 50 ORDER BY preco DESC, titulo;"
+  },
+  {
+    "question_id": 28,
+    "pergunta": "Para cada gênero, o número de empréstimos realizados.",
+    "sql": "SELECT g.nome AS genero, COUNT(*) AS emprestimos FROM emprestimos e JOIN livros l ON l.livro_id = e.livro_id JOIN generos g ON g.genero_id = l.genero_id GROUP BY g.nome ORDER BY emprestimos DESC, genero;"
+  },
+  {
+    "question_id": 29,
+    "pergunta": "Quais títulos estão emprestados neste momento (sem devolução)?",
+    "sql": "SELECT DISTINCT l.titulo FROM emprestimos e JOIN livros l ON l.livro_id = e.livro_id WHERE e.data_devolucao IS NULL ORDER BY l.titulo;"
+  },
+  {
+    "question_id": 30,
+    "pergunta": "Liste membros com e-mails potencialmente inválidos (sem '@' ou nulos).",
+    "sql": "SELECT membro_id, nome, email FROM membros WHERE email IS NULL OR email NOT LIKE '%@%';"
+  },
+  {
+    "question_id": 31,
+    "pergunta": "Quais livros não têm editora informada?",
+    "sql": "SELECT livro_id, titulo FROM livros WHERE editora_id IS NULL;"
+  },
+  {
+    "question_id": 32,
+    "pergunta": "Mostre os livros e o ano de publicação, ordenados pelo título.",
+    "sql": "SELECT titulo, ano_publicacao FROM livros ORDER BY titulo;"
+  },
+  {
+    "question_id": 33,
+    "pergunta": "Quantos empréstimos estão em aberto?",
+    "sql": "SELECT COUNT(*) FROM emprestimos WHERE data_devolucao IS NULL;"
+  },
+  {
+    "question_id": 34,
+    "pergunta": "Quais são os 10 livros mais emprestados (títulos e contagens)?",
+    "sql": "SELECT l.titulo, COUNT(*) AS total FROM emprestimos e JOIN livros l ON l.livro_id = e.livro_id GROUP BY l.titulo ORDER BY total DESC, l.titulo LIMIT 10;"
+  },
+  {
+    "question_id": 35,
+    "pergunta": "Quais autores têm variações de nome (ex.: espaços duplos/caixa)?",
+    "sql": "SELECT autor_id, nome FROM autores WHERE nome LIKE '% %' OR nome <> INITCAP(LOWER(nome));"
+  },
+  {
+    "question_id": 36,
+    "pergunta": "Quais livros do autor 'José Saramago' estão cadastrados?",
+    "sql": "SELECT l.titulo FROM livros l JOIN autores a ON a.autor_id = l.autor_id WHERE a.nome = 'José Saramago' ORDER BY l.titulo;"
+  },
+  {
+    "question_id": 37,
+    "pergunta": "Quantos livros por editora têm ISBN ausente?",
+    "sql": "SELECT e.nome, COUNT(*) AS sem_isbn FROM livros l JOIN editoras e ON e.editora_id = l.editora_id WHERE l.isbn IS NULL GROUP BY e.nome ORDER BY sem_isbn DESC, e.nome;"
+  },
+  {
+    "question_id": 38,
+    "pergunta": "Liste os membros que realizaram empréstimos em 2025 mas não em 2024 (anti-join).",
+    "sql": "SELECT DISTINCT m.membro_id, m.nome FROM membros m JOIN emprestimos e25 ON e25.membro_id = m.membro_id AND EXTRACT(YEAR FROM e25.data_emprestimo) = 2025 WHERE NOT EXISTS (SELECT 1 FROM emprestimos e24 WHERE e24.membro_id = m.membro_id AND EXTRACT(YEAR FROM e24.data_emprestimo) = 2024) ORDER BY m.membro_id;"
+  },
+  {
+    "question_id": 39,
+    "pergunta": "Quais gêneros não possuem nenhum empréstimo?",
+    "sql": "SELECT g.genero_id, g.nome FROM generos g LEFT JOIN livros l ON l.genero_id = g.genero_id LEFT JOIN emprestimos e ON e.livro_id = l.livro_id WHERE e.emprestimo_id IS NULL ORDER BY g.genero_id;"
+  },
+  {
+    "question_id": 40,
+    "pergunta": "Quais livros têm 'Educação' no gênero e preço abaixo de 50?",
+    "sql": "SELECT l.titulo, l.preco FROM livros l JOIN generos g ON g.genero_id = l.genero_id WHERE g.nome = 'Educação' AND l.preco < 50 ORDER BY l.preco, l.titulo;"
+  },
+  {
+    "question_id": 41,
+    "pergunta": "Mostre os livros do gênero 'Tecnologia' ordenados do mais caro para o mais barato.",
+    "sql": "SELECT l.titulo, l.preco FROM livros l JOIN generos g ON g.genero_id = l.genero_id WHERE g.nome = 'Tecnologia' ORDER BY l.preco DESC NULLS LAST, l.titulo;"
+  },
+  {
+    "question_id": 42,
+    "pergunta": "Exiba o total de membros cadastrados por ano.",
+    "sql": "SELECT EXTRACT(YEAR FROM data_cadastro) AS ano, COUNT(*) FROM membros GROUP BY ano ORDER BY ano;"
+  },
+  {
+    "question_id": 43,
+    "pergunta": "Encontre livros cujo título contenha dois ou mais espaços seguidos (limpeza).",
+    "sql": "SELECT livro_id, titulo FROM livros WHERE titulo ~ ' +' ORDER BY livro_id;"
+  }
+]
