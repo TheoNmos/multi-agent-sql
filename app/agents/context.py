@@ -160,6 +160,9 @@ class AgentState(BaseModel):
     # Scratchpad for coordination
     scratch: dict[str, Any] = Field(default_factory=dict)
 
+    # Custom prompt overrides (agent_id -> prompt template), loaded from Redis
+    custom_prompts: dict[str, str] = Field(default_factory=dict)
+
     # Pre-validated syntax results (set by compositor)
     syntax_valid: bool | None = None
     syntax_error: str | None = None

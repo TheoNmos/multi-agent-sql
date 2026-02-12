@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
@@ -7,7 +8,10 @@ from uuid import uuid4
 import logfire
 from pydantic import BaseModel, Field
 
+from app.prompts import AGENT_IDS
 from app.redis_client import get_redis_client
+
+PROMPTS_CONFIG_KEY = "prompts:config"
 
 
 class ConnectionString(BaseModel):
@@ -275,3 +279,67 @@ async def add_execution_to_session(session_id: str, execution_id: str) -> None:
             "Added execution to session",
             extra={"session_id": session_id, "execution_id": execution_id},
         )
+
+
+# Prompt Config Operations
+
+
+async def get_prompt_config() -> dict[str, str]:
+    """Get custom prompt overrides from Redis. Returns only non-empty custom prompts."""
+    redis_client = await get_redis_client()
+    data = await redis_client.get(PROMPTS_CONFIG_KEY)
+    if data is None:
+        return {}
+    try:
+        config = json.loads(data)
+        if not isinstance(config, dict):
+            return {}
+        # Return only non-empty prompts for valid agent IDs
+        return {
+            agent_id: prompt
+            for agent_id, prompt in config.items()
+            if agent_id in AGENT_IDS and prompt and isinstance(prompt, str)
+        }
+    except (json.JSONDecodeError, TypeError):
+        return {}
+
+
+async def save_prompt_config(agent_id: str, prompt: str) -> None:
+    """Save a custom prompt for an agent."""
+    if agent_id not in AGENT_IDS:
+        raise ValueError(f"Invalid agent_id: {agent_id}. Valid: {AGENT_IDS}")
+    redis_client = await get_redis_client()
+    config = {}
+    data = await redis_client.get(PROMPTS_CONFIG_KEY)
+    if data:
+        try:
+            config = json.loads(data)
+            if not isinstance(config, dict):
+                config = {}
+        except (json.JSONDecodeError, TypeError):
+            config = {}
+    config[agent_id] = prompt
+    await redis_client.set(PROMPTS_CONFIG_KEY, json.dumps(config), ex=86400 * 365)  # 1 year TTL
+    logfire.info("Saved prompt config", extra={"agent_id": agent_id})
+
+
+async def reset_prompt_config(agent_id: str) -> None:
+    """Reset an agent's prompt to default (remove custom override)."""
+    if agent_id not in AGENT_IDS:
+        raise ValueError(f"Invalid agent_id: {agent_id}. Valid: {AGENT_IDS}")
+    redis_client = await get_redis_client()
+    config = {}
+    data = await redis_client.get(PROMPTS_CONFIG_KEY)
+    if data:
+        try:
+            config = json.loads(data)
+            if not isinstance(config, dict):
+                config = {}
+        except (json.JSONDecodeError, TypeError):
+            config = {}
+    config.pop(agent_id, None)
+    if config:
+        await redis_client.set(PROMPTS_CONFIG_KEY, json.dumps(config), ex=86400 * 365)
+    else:
+        await redis_client.delete(PROMPTS_CONFIG_KEY)
+    logfire.info("Reset prompt config", extra={"agent_id": agent_id})

@@ -65,6 +65,184 @@
       color: white;
     }
 
+    .header-actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .prompts-btn {
+      background: transparent;
+      color: #667eea;
+      border: 2px solid #667eea;
+      padding: 8px 12px;
+      border-radius: 999px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      white-space: nowrap;
+    }
+
+    .prompts-btn:hover {
+      background: #667eea;
+      color: white;
+    }
+
+    /* Prompts Modal */
+    .prompts-modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .prompts-modal.hidden {
+      display: none;
+    }
+
+    .prompts-modal-backdrop {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.5);
+    }
+
+    .prompts-modal-content {
+      position: relative;
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      max-width: 900px;
+      width: 100%;
+      max-height: 90vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .prompts-modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 20px 24px;
+      border-bottom: 1px solid #eee;
+    }
+
+    .prompts-modal-header h2 {
+      margin: 0;
+      font-size: 1.25em;
+      color: #333;
+    }
+
+    .prompts-modal-close {
+      background: none;
+      border: none;
+      font-size: 28px;
+      cursor: pointer;
+      color: #666;
+      line-height: 1;
+      padding: 0;
+    }
+
+    .prompts-modal-close:hover {
+      color: #333;
+    }
+
+    .prompts-modal-tabs {
+      display: flex;
+      gap: 4px;
+      padding: 12px 24px 0;
+      border-bottom: 2px solid #ddd;
+    }
+
+    .prompts-tab {
+      padding: 10px 20px;
+      background: transparent;
+      border: none;
+      border-bottom: 3px solid transparent;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      color: #666;
+    }
+
+    .prompts-tab:hover {
+      color: #667eea;
+    }
+
+    .prompts-tab.active {
+      color: #667eea;
+      border-bottom-color: #667eea;
+    }
+
+    .prompts-tab.customized::after {
+      content: " •";
+      color: #28a745;
+    }
+
+    .prompts-modal-body {
+      padding: 20px 24px 24px;
+      overflow-y: auto;
+      flex: 1;
+    }
+
+    .prompts-placeholder-info {
+      font-size: 0.9em;
+      color: #666;
+      margin-bottom: 12px;
+      padding: 10px;
+      background: #f8f9fa;
+      border-radius: 6px;
+    }
+
+    .prompts-textarea {
+      font-family: "Courier New", monospace;
+      font-size: 13px;
+      width: 100%;
+      min-height: 400px;
+      margin-bottom: 16px;
+      resize: vertical;
+    }
+
+    .prompts-modal-actions {
+      display: flex;
+      gap: 10px;
+    }
+
+    .prompts-btn-save {
+      background: #28a745;
+      color: white;
+    }
+
+    .prompts-btn-save:hover {
+      background: #218838;
+    }
+
+    .prompts-btn-reset {
+      background: #ffc107;
+      color: #333;
+    }
+
+    .prompts-btn-reset:hover {
+      background: #e0a800;
+    }
+
+    .prompts-btn-cancel {
+      background: #6c757d;
+      color: white;
+    }
+
+    .prompts-btn-cancel:hover {
+      background: #5a6268;
+    }
+
     .section {
       margin-bottom: 40px;
       padding: 20px;
@@ -660,10 +838,49 @@
   <div class="container">
     <div class="header-bar">
       <h1 data-i18n="header.title">🔍 Agente SQL - Interface de Consulta em Linguagem Natural</h1>
-      <button class="lang-toggle" type="button" onclick="toggleLanguage()" id="lang-toggle-btn"
-        aria-label="Toggle UI language">
-        <span id="lang-toggle-text">PT (BR) → EN</span>
-      </button>
+      <div class="header-actions">
+        <button class="prompts-btn lang-toggle" type="button" onclick="openPromptsModal()" id="prompts-btn"
+          data-i18n="prompts.customize_button">Customize Prompts</button>
+        <button class="lang-toggle" type="button" onclick="toggleLanguage()" id="lang-toggle-btn"
+          aria-label="Toggle UI language">
+          <span id="lang-toggle-text">PT (BR) → EN</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Prompts Customization Modal -->
+    <div id="prompts-modal" class="prompts-modal hidden">
+      <div class="prompts-modal-backdrop" onclick="closePromptsModal()"></div>
+      <div class="prompts-modal-content">
+        <div class="prompts-modal-header">
+          <h2 data-i18n="prompts.modal_title">Customize Agent Prompts</h2>
+          <button type="button" class="prompts-modal-close" onclick="closePromptsModal()"
+            aria-label="Close">&times;</button>
+        </div>
+        <div class="prompts-modal-tabs">
+          <button type="button" class="prompts-tab active" data-agent="interpreter"
+            data-i18n="prompts.tab_interpreter">Interpreter</button>
+          <button type="button" class="prompts-tab" data-agent="mapper" data-i18n="prompts.tab_mapper">Mapper</button>
+          <button type="button" class="prompts-tab" data-agent="generator"
+            data-i18n="prompts.tab_generator">Generator</button>
+          <button type="button" class="prompts-tab" data-agent="validator"
+            data-i18n="prompts.tab_validator">Validator</button>
+        </div>
+        <div class="prompts-modal-body">
+          <div class="prompts-placeholder-info" data-i18n="prompts.placeholder_info">
+            Use {{placeholder}} syntax for dynamic values. Placeholders are replaced at runtime.
+          </div>
+          <textarea id="prompts-textarea" class="prompts-textarea" rows="20" spellcheck="false"
+            placeholder="Prompt template..."></textarea>
+          <div class="prompts-modal-actions">
+            <button type="button" class="prompts-btn-save" onclick="savePrompt()" data-i18n="prompts.save">Save</button>
+            <button type="button" class="prompts-btn-reset" onclick="resetPrompt()" data-i18n="prompts.reset">Reset to
+              Default</button>
+            <button type="button" class="prompts-btn-cancel" onclick="closePromptsModal()"
+              data-i18n="prompts.cancel">Cancel</button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Tab Navigation -->
@@ -984,6 +1201,20 @@
         "executions.load_error": "Erro ao carregar execuções:",
         "status.check_error": "Erro ao verificar status:",
         "dataset.load_error": "Erro ao carregar dataset: {msg}",
+        "prompts.customize_button": "Personalizar Prompts",
+        "prompts.modal_title": "Personalizar Prompts dos Agentes",
+        "prompts.tab_interpreter": "Interpreter",
+        "prompts.tab_mapper": "Mapper",
+        "prompts.tab_generator": "Generator",
+        "prompts.tab_validator": "Validator",
+        "prompts.placeholder_info": "Use a sintaxe {{placeholder}} para valores dinâmicos. Os placeholders são substituídos em tempo de execução.",
+        "prompts.save": "Salvar",
+        "prompts.reset": "Restaurar Padrão",
+        "prompts.cancel": "Cancelar",
+        "prompts.save_success": "Prompt salvo com sucesso.",
+        "prompts.reset_success": "Prompt restaurado ao padrão.",
+        "prompts.reset_confirm": "Restaurar este prompt ao padrão? Esta alteração será aplicada imediatamente.",
+        "prompts.load_error": "Erro ao carregar prompts:",
         "benchmarks.run_error": "Erro ao executar benchmark: {msg}",
         "benchmarks.check_results_error": "Erro ao verificar resultados:",
         "benchmarks.load_history_error": "Erro ao carregar histórico de resultados:",
@@ -1118,6 +1349,20 @@
         "executions.load_error": "Error loading executions:",
         "status.check_error": "Error checking status:",
         "dataset.load_error": "Error loading dataset: {msg}",
+        "prompts.customize_button": "Customize Prompts",
+        "prompts.modal_title": "Customize Agent Prompts",
+        "prompts.tab_interpreter": "Interpreter",
+        "prompts.tab_mapper": "Mapper",
+        "prompts.tab_generator": "Generator",
+        "prompts.tab_validator": "Validator",
+        "prompts.placeholder_info": "Use {{placeholder}} syntax for dynamic values. Placeholders are replaced at runtime.",
+        "prompts.save": "Save",
+        "prompts.reset": "Reset to Default",
+        "prompts.cancel": "Cancel",
+        "prompts.save_success": "Prompt saved successfully.",
+        "prompts.reset_success": "Prompt reset to default.",
+        "prompts.reset_confirm": "Reset this prompt to the default? This will take effect immediately.",
+        "prompts.load_error": "Error loading prompts:",
         "benchmarks.run_error": "Error running benchmark: {msg}",
         "benchmarks.check_results_error": "Error checking results:",
         "benchmarks.load_history_error": "Error loading results history:",
@@ -1148,6 +1393,85 @@
       loadResultsHistory();
       updateSelectionCount();
     }
+
+    // Prompts modal state
+    let promptsData = { prompts: [] };
+    let currentPromptAgent = "interpreter";
+
+    async function loadPrompts() {
+      try {
+        const resp = await fetch("/api/prompts");
+        if (!resp.ok) throw new Error(resp.statusText);
+        promptsData = await resp.json();
+        return promptsData;
+      } catch (e) {
+        console.error(t("prompts.load_error"), e);
+        return { prompts: [] };
+      }
+    }
+
+    function openPromptsModal() {
+      document.getElementById("prompts-modal").classList.remove("hidden");
+      loadPrompts().then(() => {
+        switchPromptTab("interpreter");
+        document.querySelectorAll(".prompts-tab").forEach((tab) => {
+          const agent = tab.dataset.agent;
+          const p = promptsData.prompts.find((x) => x.agent_id === agent);
+          tab.classList.toggle("customized", p && p.is_customized);
+        });
+      });
+    }
+
+    function closePromptsModal() {
+      document.getElementById("prompts-modal").classList.add("hidden");
+    }
+
+    function switchPromptTab(agentId) {
+      currentPromptAgent = agentId;
+      document.querySelectorAll(".prompts-tab").forEach((t) => t.classList.remove("active"));
+      const tab = document.querySelector(`.prompts-tab[data-agent="${agentId}"]`);
+      if (tab) tab.classList.add("active");
+      const p = promptsData.prompts.find((x) => x.agent_id === agentId);
+      document.getElementById("prompts-textarea").value = p ? p.prompt : "";
+    }
+
+    async function savePrompt() {
+      const prompt = document.getElementById("prompts-textarea").value.trim();
+      try {
+        const resp = await fetch("/api/prompts", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ agent_id: currentPromptAgent, prompt }),
+        });
+        if (!resp.ok) throw new Error((await resp.json()).detail || resp.statusText);
+        alert(t("prompts.save_success"));
+        document.querySelector(`.prompts-tab[data-agent="${currentPromptAgent}"]`).classList.add("customized");
+      } catch (e) {
+        alert(e.message || "Error saving prompt");
+      }
+    }
+
+    async function resetPrompt() {
+      if (!confirm(t("prompts.reset_confirm"))) return;
+      try {
+        const resp = await fetch(`/api/prompts/${currentPromptAgent}`, { method: "DELETE" });
+        if (!resp.ok) throw new Error((await resp.json()).detail || resp.statusText);
+        const defResp = await fetch(`/api/prompts/default?agent_id=${currentPromptAgent}`);
+        const defData = await defResp.json();
+        document.getElementById("prompts-textarea").value = defData.prompt || "";
+        document.querySelector(`.prompts-tab[data-agent="${currentPromptAgent}"]`).classList.remove("customized");
+        await loadPrompts();
+        alert(t("prompts.reset_success"));
+      } catch (e) {
+        alert(e.message || "Error resetting prompt");
+      }
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+      document.querySelectorAll(".prompts-tab").forEach((tab) => {
+        tab.addEventListener("click", () => switchPromptTab(tab.dataset.agent));
+      });
+    });
 
     function updateLanguageToggleLabel() {
       const btn = document.getElementById("lang-toggle-btn");

@@ -64,6 +64,11 @@ async def run_new_pipeline(
     # Initialize state with session_id
     state = AgentState(raw_question=user_message, session_id=session_id)
 
+    # Load custom prompts from Redis
+    from app.redis_orm import get_prompt_config
+
+    state.custom_prompts = await get_prompt_config()
+
     # Use provided DSN/DB or fallback to config
     from app.config import db_settings
 

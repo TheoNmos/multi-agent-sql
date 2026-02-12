@@ -15,22 +15,51 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 
 from app.config import db_settings, settings
+from app.prompts import AGENT_IDS, get_default_prompt
 from app.redis_orm import (
     ConnectionString,
     QueryExecution,
     Session,
     get_connection_string,
     get_execution,
+    get_prompt_config,
     get_session,
     list_connection_strings,
     list_executions,
     list_executions_by_session,
     list_sessions,
+    reset_prompt_config,
     save_connection_string,
     save_execution,
+    save_prompt_config,
     save_session,
     update_execution_status,
 )
+
+
+async def _seed_default_connection():
+    """Seed a default connection from env vars when running in Docker and no connections exist."""
+    try:
+        connections = await list_connection_strings()
+        if connections:
+            return
+        # Build full connection string from config (DB_URL + DB_NAME)
+        # In Docker, DB_URL is postgresql://user:password@db:5432 (uses service name)
+        db_url = db_settings.db_url
+        db_name = db_settings.db_name
+        if not db_url or not db_name:
+            return
+        # Build full connection string (e.g. postgresql://user:pass@db:5432/bird_benchmark)
+        parsed = urlparse(db_url)
+        if parsed.path and parsed.path.strip("/"):
+            conn_str = db_url  # Already has database in path
+        else:
+            conn_str = f"{db_url.rstrip('/')}/{db_name}"
+        conn = ConnectionString(connection_string=conn_str, database_name=db_name)
+        await save_connection_string(conn)
+        logfire.info("Seeded default connection from DB_URL/DB_NAME", database=db_name)
+    except Exception as e:
+        logfire.warning("Could not seed default connection", error=str(e))
 
 
 @asynccontextmanager
@@ -38,6 +67,7 @@ async def lifespan(app: FastAPI):
     logfire.configure(token=settings.logfire_token)
     logfire.instrument_pydantic_ai()
     logfire.instrument_fastapi(app, excluded_urls=[r"/api/queries.*"])
+    await _seed_default_connection()
     yield
 
 
@@ -306,6 +336,65 @@ async def get_session_executions_endpoint(session_id: str):
         }
         for e in executions
     ]
+
+
+# Prompt Config API
+
+
+@app.get("/api/prompts")
+async def get_prompts_endpoint():
+    """Get all prompts (defaults merged with custom; indicates which are customized)."""
+    custom = await get_prompt_config()
+    prompts = []
+    for agent_id in AGENT_IDS:
+        prompt = custom.get(agent_id) or get_default_prompt(agent_id)
+        prompts.append(
+            {
+                "agent_id": agent_id,
+                "prompt": prompt,
+                "is_customized": agent_id in custom,
+            }
+        )
+    return {"prompts": prompts}
+
+
+@app.get("/api/prompts/default")
+async def get_default_prompt_endpoint(agent_id: str):
+    """Get the default prompt for an agent (for Reset preview)."""
+    if agent_id not in AGENT_IDS:
+        raise HTTPException(status_code=400, detail=f"Invalid agent_id. Valid: {AGENT_IDS}")
+    return {"prompt": get_default_prompt(agent_id)}
+
+
+@app.put("/api/prompts")
+async def save_prompt_endpoint(request: Request):
+    """Save a custom prompt for an agent."""
+    body = await request.json()
+    agent_id = body.get("agent_id")
+    prompt = body.get("prompt")
+    if not agent_id:
+        raise HTTPException(status_code=400, detail="agent_id is required")
+    if prompt is None:
+        raise HTTPException(status_code=400, detail="prompt is required")
+    if agent_id not in AGENT_IDS:
+        raise HTTPException(status_code=400, detail=f"Invalid agent_id. Valid: {AGENT_IDS}")
+    try:
+        await save_prompt_config(agent_id, prompt)
+        return {"status": "saved", "agent_id": agent_id}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.delete("/api/prompts/{agent_id}")
+async def reset_prompt_endpoint(agent_id: str):
+    """Reset an agent's prompt to default."""
+    if agent_id not in AGENT_IDS:
+        raise HTTPException(status_code=400, detail=f"Invalid agent_id. Valid: {AGENT_IDS}")
+    try:
+        await reset_prompt_config(agent_id)
+        return {"status": "reset", "agent_id": agent_id}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.post("/api/queries")
