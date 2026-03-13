@@ -14,7 +14,7 @@ from app.agents.tools import (
     search_column_values,
 )
 from app.llm_models import gpt_5_mini
-from app.prompts import DEFAULT_MAPPER_PROMPT, render_prompt
+from app.prompts import DEFAULT_MAPPER_PROMPT, format_supervisor_tips, render_prompt
 from app.toon_utils import to_toon_block
 
 mapper = Agent[AgentState, mapperOutput](
@@ -42,7 +42,7 @@ def _build_mapper_template_vars(ctx: RunContext[AgentState]) -> dict[str, str]:
         tables_list_section = """
 ## 📋 TABLES LIST: ALL AVAILABLE TABLES IN THE DATABASE
 
-**WARNING**: No tables found in database! This is likely an error. Check that tables were retrieved in the compositor.
+**WARNING**: No tables found in database! This is likely an error. Check that tables were retrieved in the supervisor.
 
 """
     else:
@@ -100,6 +100,7 @@ def _build_mapper_template_vars(ctx: RunContext[AgentState]) -> dict[str, str]:
         "clarified_question": clarified_question,
         "sub_questions_context": sub_questions_context,
         "tables_list_section": tables_list_section,
+        "supervisor_tips": format_supervisor_tips(ctx.deps.supervisor_tips.get("mapper")),
     }
 
 
@@ -272,7 +273,7 @@ async def tool_search_column_values(
 
 mapper_USAGE_LIMITS = UsageLimits(
     tool_calls_limit=10,  # Reduced: tables provided upfront, only need to explore selected ones
-    input_tokens_limit=50000,
+    input_tokens_limit=100000,
 )
 
 

@@ -1,17 +1,18 @@
 """Default prompt templates for each agent. Use {{placeholder}} syntax for dynamic values."""
 
-AGENT_IDS = ["interpreter", "mapper", "generator", "validator"]
+AGENT_IDS = ["interpreter", "mapper", "generator", "validator", "supervisor"]
 
 # Placeholder names per agent (for documentation and validation)
 AGENT_PLACEHOLDERS: dict[str, list[str]] = {
-    "interpreter": ["raw_question"],
-    "mapper": ["clarified_question", "sub_questions_context", "tables_list_section"],
+    "interpreter": ["raw_question", "supervisor_tips"],
+    "mapper": ["clarified_question", "sub_questions_context", "tables_list_section", "supervisor_tips"],
     "generator": [
         "clarified_question",
         "explicit_intent",
         "sub_questions_context",
         "schema_context",
         "iteration_context",
+        "supervisor_tips",
     ],
     "validator": [
         "original_question",
@@ -20,11 +21,15 @@ AGENT_PLACEHOLDERS: dict[str, list[str]] = {
         "dataset_context",
         "sql_query",
         "syntax_status",
+        "supervisor_tips",
     ],
+    "supervisor": [],
 }
 
 DEFAULT_INTERPRETER_PROMPT = """
 You are the **Query Interpreter Agent**. Your job is to clarify natural language questions and provide clear reasoning for SQL generation.
+
+{{supervisor_tips}}
 
 ## Input Question
 
@@ -194,6 +199,8 @@ Return ONLY valid JSON.
 
 DEFAULT_MAPPER_PROMPT = """
 You are the **Schema & Context mapper Agent** (Agent 2 of a multi-agent Text-to-SQL system).
+
+{{supervisor_tips}}
 
 ### ⚠️ CRITICAL: HOW TO USE TOOLS ⚠️
 **YOU MUST USE STANDARD OPENAI FUNCTION CALLING FORMAT**
@@ -469,6 +476,8 @@ Remember: Your goal is to provide a clear, focused summary that helps the SQL Ge
 DEFAULT_GENERATOR_PROMPT = """
 You are the **SQL Generator Agent** (Agent 3 of a multi-agent Text-to-SQL system).
 
+{{supervisor_tips}}
+
 Your role is to generate a correct, efficient PostgreSQL SQL query that answers the user's question.
 
 ## Your Task
@@ -705,6 +714,8 @@ Remember:
 DEFAULT_VALIDATOR_PROMPT = """
 You are the **Validator & Refiner Agent** (Agent 4 of a multi-agent Text-to-SQL system).
 
+{{supervisor_tips}}
+
 **IMPORTANT: ALL OUTPUTS MUST BE IN THE SAME LANGUAGE THE USER QUESTION IS WRITTEN IN.** All feedback, error messages, and conclusions must be written in the same language as the user question.
 
 Your role is to validate SQL queries for correctness, efficiency, and best practices, then provide actionable feedback for improvement.
@@ -867,6 +878,65 @@ Semantic issue:
 Remember: Keep it short and direct. One paragraph with conclusions only.
 """.strip()
 
+DEFAULT_SUPERVISOR_PROMPT = """
+You are the **Supervisor Agent** for a multi-agent text-to-SQL pipeline. Your job is to orchestrate workers and produce a final SQL result.
+
+## Worker Descriptions
+
+Each worker has a specific role. Understand what they do so you can route effectively and pass helpful tips:
+
+- **Interpreter**: Clarifies ambiguous questions, extracts explicit intent, decomposes complex queries into sub-questions, resolves pronouns and vague terms. Produces clarified_question and explicit_intent.
+
+- **Mapper**: Selects relevant tables from the schema, fetches column info and sample values via tools, builds schema context for the generator. Needs all_tables and sample_rows in state (pre-loaded).
+
+- **Generator**: Produces SQL from clarified question + schema context. On retry, receives validator feedback. Outputs sql_query with reasoning_steps.
+
+- **Validator**: Checks syntax, semantics, and efficiency; provides refinement_feedback for invalid queries. Needs current_sql and syntax_valid in state.
+
+## Available Tools
+
+- `run_interpreter(tips=None)`: Run the interpreter. Call first.
+- `run_mapper(tips=None)`: Run the mapper. Call after interpreter.
+- `run_generator(tips=None)`: Run the generator. Call after mapper.
+- `run_validator(tips=None)`: Run the validator. Call after generator.
+- `execute_query(row_limit=20)`: Execute the current SQL against the database to verify it runs. Call after validator says valid.
+
+## Tips
+
+Each worker tool accepts optional `tips`. Use tips ONLY when they add direct, non-obvious guidance. Skip tips that restate what the agent already does.
+
+**Good tips**: "Question uses 'average monthly' — ensure interpreter clarifies whether that means AVG(records)/12 vs GROUP BY month"
+**Execution error tips**: When execute_query fails, pass the exact error to run_generator, e.g. tips="Execution failed: column X does not exist. Fix the SQL."
+**Skip**: "Make sure the SQL is valid" (validator already does this), "Clarify the question" (interpreter's default job)
+
+## Order and Flow
+
+1. Call run_interpreter (required first)
+2. Call run_mapper (required second)
+3. Call run_generator (required)
+4. Call run_validator (required after generator)
+5. If validator says invalid, call run_generator again with tips=validator feedback (max 2 generator attempts for validator rejections)
+6. If validator says valid, call execute_query to test the SQL
+7. If execute_query succeeds, produce status="success", final_sql=the SQL
+8. If execute_query fails, call run_generator with tips=the execution error. The generator is responsible for fixing SQL. Then call run_validator and execute_query again. You may retry this loop up to 2 times for execution failures.
+9. If after retries still failing, produce status="reject" with message=last error
+10. On any unrecoverable error, produce status="error" with message=error description
+
+## Output
+
+When done, produce SupervisorOutput with:
+- status: "success" | "reject" | "error"
+- message: summary or feedback
+- final_sql: the SQL string (only when status is "success")
+""".strip()
+
+
+def format_supervisor_tips(tip: str | None) -> str:
+    """Format supervisor tip for injection into agent prompt. Returns empty string if not present."""
+    if not tip or not tip.strip():
+        return ""
+    return f"## Supervisor Tips\n\n{tip.strip()}\n"
+
 
 def get_default_prompt(agent_id: str) -> str:
     """Return the default prompt template for an agent."""
@@ -875,6 +945,7 @@ def get_default_prompt(agent_id: str) -> str:
         "mapper": DEFAULT_MAPPER_PROMPT,
         "generator": DEFAULT_GENERATOR_PROMPT,
         "validator": DEFAULT_VALIDATOR_PROMPT,
+        "supervisor": DEFAULT_SUPERVISOR_PROMPT,
     }
     if agent_id not in prompts:
         raise ValueError(f"Unknown agent_id: {agent_id}. Valid: {list(prompts)}")

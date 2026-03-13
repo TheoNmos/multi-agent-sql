@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import logfire
-from pydantic_ai import Agent, RunContext
+from pydantic_ai import Agent, RunContext, UsageLimits
 
 from app.agents.context import AgentState, InterpreterOutput
 from app.llm_models import gpt_5_mini
-from app.prompts import DEFAULT_INTERPRETER_PROMPT, render_prompt
+from app.prompts import DEFAULT_INTERPRETER_PROMPT, format_supervisor_tips, render_prompt
 
 interpreter = Agent[AgentState, InterpreterOutput](
     name="query_interpreter",
@@ -19,10 +19,16 @@ interpreter = Agent[AgentState, InterpreterOutput](
 
 @interpreter.system_prompt
 def system_prompt(ctx: RunContext[AgentState]) -> str:
-    template_vars = {"raw_question": ctx.deps.raw_question}
+    template_vars = {
+        "raw_question": ctx.deps.raw_question,
+        "supervisor_tips": format_supervisor_tips(ctx.deps.supervisor_tips.get("interpreter")),
+    }
     custom = (ctx.deps.custom_prompts or {}).get("interpreter")
     template = custom if custom else DEFAULT_INTERPRETER_PROMPT
     return render_prompt(template, template_vars)
+
+
+INTERPRETER_USAGE_LIMITS = UsageLimits(input_tokens_limit=100000)
 
 
 @logfire.instrument("interpreter_agent")
@@ -30,7 +36,7 @@ async def run_interpreter(state: AgentState) -> InterpreterOutput:
     """Run the Query Interpreter agent."""
     logfire.info("Running Query Interpreter", raw_question=state.raw_question)
 
-    result = await interpreter.run(state.raw_question, deps=state)
+    result = await interpreter.run(state.raw_question, deps=state, usage_limits=INTERPRETER_USAGE_LIMITS)
     output = result.output
 
     logfire.info(

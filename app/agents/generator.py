@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import logfire
-from pydantic_ai import Agent, RunContext
+from pydantic_ai import Agent, RunContext, UsageLimits
 
 from app.agents.context import AgentState, GeneratorOutput
 from app.llm_models import gpt_5_mini
-from app.prompts import DEFAULT_GENERATOR_PROMPT, render_prompt
+from app.prompts import DEFAULT_GENERATOR_PROMPT, format_supervisor_tips, render_prompt
 
 generator = Agent[AgentState, GeneratorOutput](
     name="sql_generator",
@@ -61,6 +61,7 @@ This is a refinement iteration. Previous attempts have been made.
         "sub_questions_context": sub_questions_context,
         "schema_context": schema_context,
         "iteration_context": iteration_context,
+        "supervisor_tips": format_supervisor_tips(ctx.deps.supervisor_tips.get("generator")),
     }
 
 
@@ -70,6 +71,9 @@ def system_prompt(ctx: RunContext[AgentState]) -> str:
     custom = (ctx.deps.custom_prompts or {}).get("generator")
     template = custom if custom else DEFAULT_GENERATOR_PROMPT
     return render_prompt(template, template_vars)
+
+
+GENERATOR_USAGE_LIMITS = UsageLimits(input_tokens_limit=100000)
 
 
 @logfire.instrument("generator_agent")
@@ -88,7 +92,7 @@ async def run_generator(state: AgentState) -> GeneratorOutput:
     if state.validator_output and state.validator_output.refinement_feedback:
         prompt += f"\n\nPrevious validation feedback:\n{state.validator_output.refinement_feedback}"
 
-    result = await generator.run(prompt, deps=state)
+    result = await generator.run(prompt, deps=state, usage_limits=GENERATOR_USAGE_LIMITS)
     output = result.output
 
     logfire.info(

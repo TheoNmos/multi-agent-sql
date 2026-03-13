@@ -10,7 +10,7 @@ from pydantic_ai import Agent, RunContext, UsageLimits
 from app.agents.context import AgentState, ValidatorOutput
 from app.agents.tools import clean_sql, execute_sql_safe, get_query_plan
 from app.llm_models import gpt_5_mini
-from app.prompts import DEFAULT_VALIDATOR_PROMPT, render_prompt
+from app.prompts import DEFAULT_VALIDATOR_PROMPT, format_supervisor_tips, render_prompt
 
 validator = Agent[AgentState, ValidatorOutput](
     name="sql_validator",
@@ -30,7 +30,7 @@ def _build_validator_template_vars(ctx: RunContext[AgentState]) -> dict[str, str
 
     if state.syntax_valid is not None:
         if state.syntax_valid:
-            syntax_status = "✅ Syntax is VALID (pre-validated by compositor)"
+            syntax_status = "✅ Syntax is VALID (pre-validated by supervisor)"
         else:
             syntax_status = f"❌ Syntax is INVALID (pre-validated): {state.syntax_error or 'Unknown error'}"
     else:
@@ -47,6 +47,7 @@ def _build_validator_template_vars(ctx: RunContext[AgentState]) -> dict[str, str
         "dataset_context": dataset_context,
         "sql_query": sql_query,
         "syntax_status": syntax_status,
+        "supervisor_tips": format_supervisor_tips(ctx.deps.supervisor_tips.get("validator")),
     }
 
 
@@ -60,12 +61,12 @@ def system_prompt(ctx: RunContext[AgentState]) -> str:
 
 @validator.tool
 async def tool_get_syntax_status(ctx: RunContext[AgentState]) -> dict[str, Any]:
-    """Get pre-validated SQL syntax status from the compositor."""
+    """Get pre-validated SQL syntax status from the supervisor."""
     state = ctx.deps
     return {
         "syntax_valid": state.syntax_valid,
         "syntax_error": state.syntax_error,
-        "note": "Syntax validation was performed by the compositor before calling this agent",
+        "note": "Syntax validation was performed by the supervisor before calling this agent",
     }
 
 
@@ -101,7 +102,7 @@ async def tool_execute_sql_safe(ctx: RunContext[AgentState], sql: str, limit: in
 
 VALIDATOR_USAGE_LIMITS = UsageLimits(
     tool_calls_limit=3,  # execute_sql_safe (required) + get_query_plan (required for performance analysis)
-    input_tokens_limit=20000,  # Reduced for faster processing
+    input_tokens_limit=100000,
 )
 
 

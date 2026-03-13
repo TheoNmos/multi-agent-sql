@@ -6,7 +6,9 @@ from app.prompts.defaults import (
     DEFAULT_GENERATOR_PROMPT,
     DEFAULT_INTERPRETER_PROMPT,
     DEFAULT_MAPPER_PROMPT,
+    DEFAULT_SUPERVISOR_PROMPT,
     DEFAULT_VALIDATOR_PROMPT,
+    format_supervisor_tips,
     get_default_prompt,
     render_prompt,
 )
@@ -18,6 +20,8 @@ __all__ = [
     "DEFAULT_MAPPER_PROMPT",
     "DEFAULT_GENERATOR_PROMPT",
     "DEFAULT_VALIDATOR_PROMPT",
+    "DEFAULT_SUPERVISOR_PROMPT",
+    "format_supervisor_tips",
     "get_default_prompt",
     "render_prompt",
 ]

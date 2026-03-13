@@ -339,6 +339,60 @@
       margin-top: 20px;
     }
 
+    .architecture-header {
+      font-size: 0.9em;
+      color: #667eea;
+      font-weight: 600;
+      margin-bottom: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .supervisor-card {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 16px 20px;
+      border-radius: 8px;
+      text-align: center;
+      margin-bottom: 12px;
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+    }
+
+    .supervisor-card.running {
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+
+    .supervisor-card .supervisor-label {
+      font-size: 0.85em;
+      opacity: 0.9;
+      margin-bottom: 4px;
+    }
+
+    .supervisor-card .supervisor-status {
+      font-weight: 600;
+      font-size: 1.1em;
+    }
+
+    .delegates-label {
+      text-align: center;
+      font-size: 0.8em;
+      color: #999;
+      margin: 8px 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .delegates-label::before,
+    .delegates-label::after {
+      content: "";
+      flex: 1;
+      max-width: 80px;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, #ccc, transparent);
+    }
+
     .status-steps {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -396,6 +450,75 @@
     .step-status {
       font-size: 0.85em;
       color: #666;
+    }
+
+    .single-agent-header {
+      font-size: 0.9em;
+      color: #764ba2;
+      font-weight: 600;
+      margin-bottom: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .single-agent-card {
+      background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+      color: white;
+      padding: 16px 20px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+      box-shadow: 0 4px 12px rgba(118, 75, 162, 0.3);
+    }
+
+    .single-agent-card.running {
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+
+    .tool-timeline {
+      margin-top: 16px;
+      border-left: 3px solid #764ba2;
+      padding-left: 16px;
+    }
+
+    .tool-timeline-item {
+      background: #f8f9fa;
+      border-radius: 6px;
+      padding: 12px;
+      margin-bottom: 10px;
+      border: 1px solid #e9ecef;
+    }
+
+    .tool-timeline-item.running {
+      border-color: #764ba2;
+      background: #f3e8ff;
+    }
+
+    .tool-timeline-item.error {
+      border-color: #dc3545;
+      background: #f8d7da;
+    }
+
+    .tool-timeline-item .tool-name {
+      font-weight: 600;
+      color: #764ba2;
+      margin-bottom: 6px;
+    }
+
+    .tool-timeline-item .tool-args {
+      font-size: 0.85em;
+      color: #666;
+      margin-bottom: 4px;
+    }
+
+    .tool-timeline-item .tool-result {
+      font-size: 0.9em;
+      color: #333;
+    }
+
+    .tool-timeline-item .tool-timing {
+      font-size: 0.8em;
+      color: #999;
+      margin-top: 4px;
     }
 
     .sql-display {
@@ -858,7 +981,9 @@
             aria-label="Close">&times;</button>
         </div>
         <div class="prompts-modal-tabs">
-          <button type="button" class="prompts-tab active" data-agent="interpreter"
+          <button type="button" class="prompts-tab active" data-agent="supervisor"
+            data-i18n="prompts.tab_supervisor">Supervisor</button>
+          <button type="button" class="prompts-tab" data-agent="interpreter"
             data-i18n="prompts.tab_interpreter">Interpreter</button>
           <button type="button" class="prompts-tab" data-agent="mapper" data-i18n="prompts.tab_mapper">Mapper</button>
           <button type="button" class="prompts-tab" data-agent="generator"
@@ -960,6 +1085,13 @@
               {% for conn in connections %}
               <option value="{{ conn.id }}">{{ conn.connection_string }} ({{ conn.database_name }})</option>
               {% endfor %}
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="pipeline_mode" data-i18n="query.pipeline_mode_label">Modo de Pipeline:</label>
+            <select id="pipeline_mode" name="pipeline_mode">
+              <option value="supervisor" data-i18n="query.pipeline_mode_supervisor">Supervisor-Worker (multi-agente)</option>
+              <option value="single" data-i18n="query.pipeline_mode_single">Agente Único</option>
             </select>
           </div>
           <div class="form-group">
@@ -1100,18 +1232,41 @@
         "query.title": "Executar Consulta em Linguagem Natural",
         "query.select_connection_label": "Selecionar Conexão:",
         "query.select_connection_placeholder": "-- Selecione uma conexão --",
-        "query.user_query_label": "Consulta em Linguagem Natural:",
-        "query.user_query_placeholder": "ex: Quanto o cliente 6 consumiu no total entre agosto e novembro de 2013?",
+        "query.pipeline_mode_label": "Modo de Pipeline:",
+        "query.pipeline_mode_supervisor": "Supervisor-Worker (multi-agente)",
+        "query.pipeline_mode_single": "Agente Único",
+        "query.pipeline_mode_label": "Pipeline Mode:",
+        "query.pipeline_mode_supervisor": "Supervisor-Worker (multi-agent)",
+        "query.pipeline_mode_single": "Single Agent",
+        "query.user_query_label": "Natural Language Query:",
+        "query.user_query_placeholder": "e.g. How much did customer 6 consume in total between August and November 2013?",
         "query.run_analyzer_label": "Executar analisador após a execução da consulta",
         "query.run_button": "Executar Consulta",
         "query.status_title": "Status de Execução da Consulta",
         "query.initializing": "Inicializando...",
         "status.status": "Status",
         "status.current_step": "Etapa Atual",
+        "steps.supervisor": "Supervisor",
         "steps.interpreter": "Interpretador",
         "steps.mapper": "Mapeador",
         "steps.generator": "Gerador",
         "steps.validator": "Validador",
+        "architecture.supervisor_worker": "Arquitetura Supervisor-Worker",
+        "architecture.supervisor_orchestrating": "Orquestrando workers...",
+        "architecture.supervisor_starting": "Iniciando...",
+        "architecture.supervisor_done": "Concluído",
+        "architecture.supervisor_error": "Erro",
+        "architecture.supervisor_waiting": "Aguardando",
+        "architecture.delegates_to": "delega para",
+        "single_agent.title": "Agente Único - Linha do Tempo de Ferramentas",
+        "single_agent.agent_label": "Agente",
+        "single_agent.thinking": "Pensando e usando ferramentas...",
+        "single_agent.using_tool": "Usando: {tool}",
+        "single_agent.error_after_tool": "Erro (última ferramenta: {tool})",
+        "single_agent.starting": "Iniciando...",
+        "single_agent.done": "Concluído",
+        "single_agent.error": "Erro",
+        "single_agent.waiting": "Aguardando",
         "output.interpreter.title": "Saída do Interpretador",
         "output.interpreter.clarified": "Questão Esclarecida",
         "output.interpreter.intent": "Intenção Explícita",
@@ -1203,6 +1358,7 @@
         "dataset.load_error": "Erro ao carregar dataset: {msg}",
         "prompts.customize_button": "Personalizar Prompts",
         "prompts.modal_title": "Personalizar Prompts dos Agentes",
+        "prompts.tab_supervisor": "Supervisor",
         "prompts.tab_interpreter": "Interpreter",
         "prompts.tab_mapper": "Mapper",
         "prompts.tab_generator": "Generator",
@@ -1255,10 +1411,27 @@
         "query.initializing": "Initializing...",
         "status.status": "Status",
         "status.current_step": "Current step",
+        "steps.supervisor": "Supervisor",
         "steps.interpreter": "Interpreter",
         "steps.mapper": "Mapper",
         "steps.generator": "Generator",
         "steps.validator": "Validator",
+        "architecture.supervisor_worker": "Supervisor-Worker Architecture",
+        "architecture.supervisor_orchestrating": "Orchestrating workers...",
+        "architecture.supervisor_starting": "Starting...",
+        "architecture.supervisor_done": "Done",
+        "architecture.supervisor_error": "Error",
+        "architecture.supervisor_waiting": "Waiting",
+        "architecture.delegates_to": "delegates to",
+        "single_agent.title": "Single Agent - Tool Execution Timeline",
+        "single_agent.agent_label": "Agent",
+        "single_agent.thinking": "Thinking and using tools...",
+        "single_agent.using_tool": "Using: {tool}",
+        "single_agent.error_after_tool": "Error (last tool: {tool})",
+        "single_agent.starting": "Starting...",
+        "single_agent.done": "Done",
+        "single_agent.error": "Error",
+        "single_agent.waiting": "Waiting",
         "output.interpreter.title": "Interpreter output",
         "output.interpreter.clarified": "Clarified question",
         "output.interpreter.intent": "Explicit intent",
@@ -1351,6 +1524,7 @@
         "dataset.load_error": "Error loading dataset: {msg}",
         "prompts.customize_button": "Customize Prompts",
         "prompts.modal_title": "Customize Agent Prompts",
+        "prompts.tab_supervisor": "Supervisor",
         "prompts.tab_interpreter": "Interpreter",
         "prompts.tab_mapper": "Mapper",
         "prompts.tab_generator": "Generator",
@@ -1413,7 +1587,7 @@
     function openPromptsModal() {
       document.getElementById("prompts-modal").classList.remove("hidden");
       loadPrompts().then(() => {
-        switchPromptTab("interpreter");
+        switchPromptTab("supervisor");
         document.querySelectorAll(".prompts-tab").forEach((tab) => {
           const agent = tab.dataset.agent;
           const p = promptsData.prompts.find((x) => x.agent_id === agent);
@@ -1708,6 +1882,8 @@
         generator_output: execution.generator_output,
         validator_output: execution.validator_output,
         analyzer_output: execution.analyzer_output,
+        single_agent_tool_calls: execution.single_agent_tool_calls || [],
+        pipeline_mode: execution.pipeline_mode || "supervisor",
       };
 
       updateStatusDisplay(statusData);
@@ -1809,10 +1985,11 @@
 
           // Continue polling if not completed or error
           if (data.status === "pending" || data.status === "running") {
+            const interval = data.pipeline_mode === "single" ? 600 : 3000;
             setTimeout(() => {
               activePolling.delete(executionId);
               pollStatus(executionId);
-            }, 3000); // Poll every 3 seconds instead of 1
+            }, interval);
           } else {
             // Stop polling when completed or error
             activePolling.delete(executionId);
@@ -1862,6 +2039,47 @@
 
     function updateStatusDisplay(data) {
       const statusContent = document.getElementById("status-content");
+      const isSingleAgent = data.pipeline_mode === "single";
+
+      if (isSingleAgent) {
+        const toolCalls = data.single_agent_tool_calls || [];
+        const lastTool = toolCalls.length > 0 ? toolCalls[toolCalls.length - 1].tool : null;
+        let singleStatusText = data.status === "running"
+          ? (lastTool ? t("single_agent.using_tool", { tool: lastTool }) : t("single_agent.thinking"))
+          : data.status === "pending"
+            ? t("single_agent.starting")
+            : data.status === "completed"
+              ? t("single_agent.done")
+              : data.status === "error"
+                ? (lastTool ? t("single_agent.error_after_tool", { tool: lastTool }) : t("single_agent.error"))
+                : t("single_agent.waiting");
+        let toolTimelineHtml = '<div class="single-agent-header">' + t("single_agent.title") + '</div>';
+        toolTimelineHtml += '<div class="single-agent-card ' + (data.status === "running" || data.status === "pending" ? "running" : "") + '">';
+        toolTimelineHtml += '<div class="supervisor-label">' + t("single_agent.agent_label") + '</div>';
+        toolTimelineHtml += '<div class="supervisor-status">' + singleStatusText + '</div>';
+        toolTimelineHtml += '</div>';
+        toolTimelineHtml += '<div class="tool-timeline">';
+        toolCalls.forEach((tc, idx) => {
+          const isLast = idx === toolCalls.length - 1;
+          const itemClass = tc.error ? "error" : (isLast && (data.status === "running" || data.status === "pending") ? "running" : "");
+          const argsStr = tc.args && Object.keys(tc.args).length > 0
+            ? JSON.stringify(tc.args).slice(0, 80) + (JSON.stringify(tc.args).length > 80 ? "..." : "")
+            : "";
+          toolTimelineHtml += '<div class="tool-timeline-item ' + itemClass + '">';
+          toolTimelineHtml += '<div class="tool-name">' + escapeHtml(tc.tool || "?") + '</div>';
+          if (argsStr) toolTimelineHtml += '<div class="tool-args">' + escapeHtml(argsStr) + '</div>';
+          toolTimelineHtml += '<div class="tool-result">' + escapeHtml((tc.result_preview || tc.error || "-").slice(0, 150)) + '</div>';
+          toolTimelineHtml += '<div class="tool-timing">' + (tc.timing_ms || 0) + ' ms</div>';
+          toolTimelineHtml += '</div>';
+        });
+        toolTimelineHtml += '</div>';
+        let html = '<div><p><strong>' + t("status.status") + ':</strong> <span style="text-transform: capitalize;">' + data.status + '</span></p>' + toolTimelineHtml + '</div>';
+        if (data.sql_query) {
+          html += '<div class="sql-display" style="margin-top: 16px;"><strong>' + t("sql.generated") + ':</strong><pre>' + escapeHtml(data.sql_query) + '</pre></div>';
+        }
+        statusContent.innerHTML = html;
+        return;
+      }
 
       const steps = ["interpreter", "mapper", "generator", "validator"];
       const stepNames = {
@@ -1871,7 +2089,30 @@
         validator: t("steps.validator"),
       };
 
-      let stepsHtml = '<div class="status-steps">';
+      const supervisorStatus = data.status === "running" || data.status === "pending"
+        ? "running"
+        : data.status === "completed" || data.status === "error"
+          ? "done"
+          : "waiting";
+      const supervisorStatusText = data.status === "running"
+        ? t("architecture.supervisor_orchestrating")
+        : data.status === "pending"
+          ? t("architecture.supervisor_starting")
+          : data.status === "completed"
+            ? t("architecture.supervisor_done")
+            : data.status === "error"
+              ? t("architecture.supervisor_error")
+              : t("architecture.supervisor_waiting");
+
+      let stepsHtml = `
+                <div class="architecture-header">${t("architecture.supervisor_worker")}</div>
+                <div class="supervisor-card ${supervisorStatus}">
+                    <div class="supervisor-label">${t("steps.supervisor")}</div>
+                    <div class="supervisor-status">${supervisorStatusText}</div>
+                </div>
+                <div class="delegates-label">${t("architecture.delegates_to")}</div>
+                <div class="status-steps">
+            `;
       steps.forEach((step) => {
         const status = data.step_status[step] || "waiting";
         const isCurrent = data.current_step === step && data.status === "running";

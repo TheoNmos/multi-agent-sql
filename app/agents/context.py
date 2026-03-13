@@ -2,10 +2,20 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 import asyncpg
 from pydantic import BaseModel, ConfigDict, Field
+
+
+class SupervisorOutput(BaseModel):
+    """Output from the Supervisor agent when the pipeline is complete."""
+
+    status: Literal["success", "reject", "error"] = Field(
+        description="Pipeline outcome: success (valid SQL), reject (invalid after retries), error (failure)"
+    )
+    message: str = Field(description="Summary message or feedback")
+    final_sql: str | None = Field(default=None, description="The final SQL query if status is success")
 
 
 class InterpreterOutput(BaseModel):
@@ -163,7 +173,10 @@ class AgentState(BaseModel):
     # Custom prompt overrides (agent_id -> prompt template), loaded from Redis
     custom_prompts: dict[str, str] = Field(default_factory=dict)
 
-    # Pre-validated syntax results (set by compositor)
+    # Supervisor tips per agent (agent_id -> tip text); set by supervisor before calling workers
+    supervisor_tips: dict[str, str] = Field(default_factory=dict)
+
+    # Pre-validated syntax results (set by supervisor)
     syntax_valid: bool | None = None
     syntax_error: str | None = None
 

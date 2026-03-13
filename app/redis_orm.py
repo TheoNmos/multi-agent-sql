@@ -52,6 +52,8 @@ class QueryExecution(BaseModel):
     generator_output: dict[str, Any] | None = None  # GeneratorOutput as dict
     validator_output: dict[str, Any] | None = None  # ValidatorOutput as dict
     analyzer_output: dict[str, Any] | None = None  # AnalyzerOutput as dict
+    single_agent_tool_calls: list[dict[str, Any]] = Field(default_factory=list)  # Tool call timeline for single agent
+    pipeline_mode: str = "supervisor"  # "supervisor" | "single"
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
@@ -195,6 +197,16 @@ async def update_execution_status(
         "Updated execution status",
         extra={"exec_id": exec_id, "status": status, "error": error, "has_analyzer": analyzer_output is not None},
     )
+
+
+async def append_single_agent_tool_call(exec_id: str, tool_call: dict[str, Any]) -> None:
+    """Append a tool call to the single agent timeline (for real-time UI updates)."""
+    exec_obj = await get_execution(exec_id)
+    if exec_obj is None:
+        return
+    exec_obj.single_agent_tool_calls.append(tool_call)
+    exec_obj.updated_at = datetime.now(UTC)
+    await save_execution(exec_obj)
 
 
 async def list_executions(limit: int = 100) -> list[QueryExecution]:

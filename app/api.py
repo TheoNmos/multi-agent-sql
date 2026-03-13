@@ -331,6 +331,8 @@ async def get_session_executions_endpoint(session_id: str):
             "mapper_output": e.mapper_output,
             "generator_output": e.generator_output,
             "validator_output": e.validator_output,
+            "single_agent_tool_calls": getattr(e, "single_agent_tool_calls", []) or [],
+            "pipeline_mode": getattr(e, "pipeline_mode", "supervisor") or "supervisor",
             "created_at": e.created_at.isoformat(),
             "updated_at": e.updated_at.isoformat(),
         }
@@ -403,6 +405,7 @@ async def create_query(
     connection_id: str = Form(),
     user_query: str = Form(),
     session_id: str | None = Form(None),
+    pipeline_mode: str = Form("supervisor"),  # "supervisor" | "single"
 ):
     """Create a new query execution in a session."""
     if not connection_id:
@@ -453,19 +456,30 @@ async def create_query(
         connection_id=connection_id,
         user_query=user_query,
         status="pending",
+        pipeline_mode=pipeline_mode if pipeline_mode in ("supervisor", "single") else "supervisor",
     )
     exec_id = await save_execution(execution)
 
     # Start pipeline execution in background
-    asyncio.create_task(
-        run_pipeline_with_updates(
-            exec_id=exec_id,
-            user_message=user_query,
-            server_dsn=server_dsn,
-            database=db_name,
-            session_id=session_id,
+    if execution.pipeline_mode == "single":
+        asyncio.create_task(
+            run_single_pipeline_with_updates(
+                exec_id=exec_id,
+                user_message=user_query,
+                server_dsn=server_dsn,
+                database=db_name,
+            )
         )
-    )
+    else:
+        asyncio.create_task(
+            run_pipeline_with_updates(
+                exec_id=exec_id,
+                user_message=user_query,
+                server_dsn=server_dsn,
+                database=db_name,
+                session_id=session_id,
+            )
+        )
 
     return JSONResponse(content={"execution_id": exec_id, "session_id": session_id, "status": "pending"})
 
@@ -477,7 +491,7 @@ async def get_query_status(execution_id: str):
     if execution is None:
         raise HTTPException(status_code=404, detail="Execution not found")
 
-    return {
+    result = {
         "id": execution.id,
         "status": execution.status,
         "current_step": execution.current_step,
@@ -490,6 +504,11 @@ async def get_query_status(execution_id: str):
         "validator_output": execution.validator_output,
         "updated_at": execution.updated_at.isoformat(),
     }
+    if hasattr(execution, "single_agent_tool_calls"):
+        result["single_agent_tool_calls"] = execution.single_agent_tool_calls
+    if hasattr(execution, "pipeline_mode"):
+        result["pipeline_mode"] = execution.pipeline_mode
+    return result
 
 
 @app.get("/api/queries/{execution_id}")
@@ -499,7 +518,7 @@ async def get_query(execution_id: str):
     if execution is None:
         raise HTTPException(status_code=404, detail="Execution not found")
 
-    return {
+    result = {
         "id": execution.id,
         "session_id": execution.session_id,
         "connection_id": execution.connection_id,
@@ -517,6 +536,11 @@ async def get_query(execution_id: str):
         "created_at": execution.created_at.isoformat(),
         "updated_at": execution.updated_at.isoformat(),
     }
+    if hasattr(execution, "single_agent_tool_calls"):
+        result["single_agent_tool_calls"] = execution.single_agent_tool_calls
+    if hasattr(execution, "pipeline_mode"):
+        result["pipeline_mode"] = execution.pipeline_mode
+    return result
 
 
 @app.get("/api/queries/latest")
@@ -545,6 +569,42 @@ async def get_latest_execution():
 
 
 # Pipeline Integration
+
+
+async def run_single_pipeline_with_updates(exec_id: str, user_message: str, server_dsn: str, database: str):
+    """Run single agent pipeline with Redis updates."""
+    from app.agents.single_workflow import run_single_agent_pipeline
+
+    try:
+        sql, tool_calls, error = await run_single_agent_pipeline(
+            user_message=user_message,
+            server_dsn=server_dsn,
+            database=database,
+            execution_id=exec_id,
+        )
+        if error:
+            await update_execution_status(exec_id, "error", error=error)
+            return
+        if sql:
+            query_result = await execute_query(server_dsn, database, sql)
+            has_error = (
+                query_result
+                and len(query_result) == 1
+                and isinstance(query_result[0], dict)
+                and "error" in query_result[0]
+            )
+            await update_execution_status(
+                exec_id,
+                "error" if has_error else "completed",
+                sql_query=sql,
+                query_result=query_result,
+                error=query_result[0]["error"] if has_error else None,
+            )
+        else:
+            await update_execution_status(exec_id, "error", error="No SQL generated")
+    except Exception as e:
+        logfire.error("Single agent pipeline failed", error=str(e), exc_info=True)
+        await update_execution_status(exec_id, "error", error=str(e))
 
 
 async def run_pipeline_with_updates(exec_id: str, user_message: str, server_dsn: str, database: str, session_id: str):

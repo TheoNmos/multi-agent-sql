@@ -1,0 +1,64 @@
+"""Single agent workflow - runs the monolithic text-to-SQL agent."""
+
+from __future__ import annotations
+
+import re
+from typing import Any
+
+from app.agents.single_agent import run_single_agent
+from app.agents.tools import clean_sql
+from app.db.connection import database_connect
+
+
+def _extract_sql(text: str | None) -> str | None:
+    """Extract SQL from model output (handles markdown code blocks)."""
+    if not text or not text.strip():
+        return None
+    text = text.strip()
+    match = re.search(r"```(?:sql)?\s*\n?(.*?)```", text, re.DOTALL | re.IGNORECASE)
+    if match:
+        return clean_sql(match.group(1).strip())
+    if re.search(r"\bSELECT\b", text, re.IGNORECASE):
+        return clean_sql(text)
+    return clean_sql(text)
+
+
+async def run_single_agent_pipeline(
+    user_message: str,
+    server_dsn: str | None = None,
+    database: str | None = None,
+    execution_id: str | None = None,
+) -> tuple[str | None, list[dict[str, Any]], str | None]:
+    """
+    Run the single agent pipeline.
+
+    Returns:
+        (sql_query, tool_calls, error)
+    """
+    from app.config import db_settings
+    from app.redis_orm import append_single_agent_tool_call, update_execution_status
+
+    final_server_dsn = server_dsn or db_settings.db_url
+    final_database = database or db_settings.db_name
+
+    async def on_tool_call(tool_call: dict[str, Any]) -> None:
+        if execution_id:
+            await append_single_agent_tool_call(execution_id, tool_call)
+
+    async with database_connect(server_dsn=final_server_dsn, database=final_database) as conn:
+        try:
+            if execution_id:
+                await update_execution_status(execution_id, "running")
+            raw_sql, tool_calls = await run_single_agent(
+                question=user_message,
+                database_connection=conn,
+                db_name=final_database,
+                execution_id=execution_id,
+                on_tool_call=on_tool_call,
+            )
+            sql = _extract_sql(raw_sql)
+            return sql, tool_calls, None
+        except Exception as e:
+            if execution_id:
+                await update_execution_status(execution_id, "error", error=str(e))
+            return None, [], str(e)
