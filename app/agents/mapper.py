@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import time
 
 import logfire
 from pydantic_ai import Agent, RunContext, UsageLimits
 
 from app.agents.context import AgentState, ToolCall, mapperOutput
+from app.agents.telemetry import usage_to_dict
 from app.agents.tools import (
     get_table_info,
     sample_values,
@@ -42,7 +45,7 @@ def _build_mapper_template_vars(ctx: RunContext[AgentState]) -> dict[str, str]:
         tables_list_section = """
 ## 📋 TABLES LIST: ALL AVAILABLE TABLES IN THE DATABASE
 
-**WARNING**: No tables found in database! This is likely an error. Check that tables were retrieved in the supervisor.
+**WARNING**: No tables found in database! This is likely an error. Check that tables were retrieved in the pipeline.
 
 """
     else:
@@ -278,7 +281,7 @@ mapper_USAGE_LIMITS = UsageLimits(
 
 
 @logfire.instrument("mapper_agent")
-async def run_mapper(state: AgentState) -> mapperOutput:
+async def run_mapper(state: AgentState) -> tuple[mapperOutput, dict[str, Any]]:
     """Run the Schema & Context mapper agent."""
     clarified_question = state.clarified_question or state.raw_question
     logfire.info("Running Schema mapper", clarified_question=clarified_question)
@@ -294,4 +297,4 @@ async def run_mapper(state: AgentState) -> mapperOutput:
         output_preview=output[:200] if len(output) > 200 else output,
     )
 
-    return output
+    return output, usage_to_dict(result.usage())

@@ -954,6 +954,69 @@
       padding: 0 15px;
       opacity: 0;
     }
+
+    .versus-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 16px;
+      margin-top: 16px;
+    }
+
+    .versus-panel {
+      background: white;
+      border: 2px solid #ddd;
+      border-radius: 10px;
+      padding: 16px;
+    }
+
+    .versus-panel.pipeline {
+      border-color: #667eea;
+    }
+
+    .versus-panel.single {
+      border-color: #764ba2;
+    }
+
+    .versus-panel h4 {
+      margin-bottom: 12px;
+      color: #333;
+    }
+
+    .telemetry-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+      gap: 10px;
+      margin: 12px 0 16px;
+    }
+
+    .telemetry-card {
+      background: #f8f9fa;
+      border-radius: 8px;
+      padding: 10px;
+      border: 1px solid #e9ecef;
+    }
+
+    .telemetry-card .label {
+      font-size: 0.78em;
+      color: #666;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .telemetry-card .value {
+      font-size: 1.05em;
+      font-weight: 600;
+      color: #333;
+    }
+
+    .comparison-summary {
+      margin-top: 12px;
+      padding: 12px 14px;
+      border-radius: 8px;
+      background: #eef3ff;
+      color: #334;
+    }
   </style>
 </head>
 
@@ -981,9 +1044,7 @@
             aria-label="Close">&times;</button>
         </div>
         <div class="prompts-modal-tabs">
-          <button type="button" class="prompts-tab active" data-agent="supervisor"
-            data-i18n="prompts.tab_supervisor">Supervisor</button>
-          <button type="button" class="prompts-tab" data-agent="interpreter"
+          <button type="button" class="prompts-tab active" data-agent="interpreter"
             data-i18n="prompts.tab_interpreter">Interpreter</button>
           <button type="button" class="prompts-tab" data-agent="mapper" data-i18n="prompts.tab_mapper">Mapper</button>
           <button type="button" class="prompts-tab" data-agent="generator"
@@ -1090,8 +1151,9 @@
           <div class="form-group">
             <label for="pipeline_mode" data-i18n="query.pipeline_mode_label">Modo de Pipeline:</label>
             <select id="pipeline_mode" name="pipeline_mode">
-              <option value="supervisor" data-i18n="query.pipeline_mode_supervisor">Supervisor-Worker (multi-agente)</option>
+              <option value="supervisor" data-i18n="query.pipeline_mode_supervisor">Pipeline (multi-agente)</option>
               <option value="single" data-i18n="query.pipeline_mode_single">Agente Único</option>
+              <option value="versus" data-i18n="query.pipeline_mode_versus">Versus (Pipeline vs Agente Único)</option>
             </select>
           </div>
           <div class="form-group">
@@ -1171,6 +1233,8 @@
                 se ambos EM e RM forem False.</span>
             </small>
           </div>
+          <button type="button" onclick="runSelectedBenchmarkQuestionInVersus()" style="margin-right: 10px"
+            data-i18n="benchmarks.run_selected_versus">Executar questão selecionada em modo versus</button>
           <button type="submit" id="run-benchmark-btn" data-i18n="benchmarks.run_button">Executar Benchmark</button>
         </form>
         <div id="benchmark-progress" style="display: none; margin-top: 15px">
@@ -1233,11 +1297,13 @@
         "query.select_connection_label": "Selecionar Conexão:",
         "query.select_connection_placeholder": "-- Selecione uma conexão --",
         "query.pipeline_mode_label": "Modo de Pipeline:",
-        "query.pipeline_mode_supervisor": "Supervisor-Worker (multi-agente)",
+        "query.pipeline_mode_supervisor": "Pipeline (multi-agente)",
         "query.pipeline_mode_single": "Agente Único",
+        "query.pipeline_mode_versus": "Versus (Pipeline vs Agente Único)",
         "query.pipeline_mode_label": "Pipeline Mode:",
-        "query.pipeline_mode_supervisor": "Supervisor-Worker (multi-agent)",
+        "query.pipeline_mode_supervisor": "Pipeline (multi-agent)",
         "query.pipeline_mode_single": "Single Agent",
+        "query.pipeline_mode_versus": "Versus (Pipeline vs Single Agent)",
         "query.user_query_label": "Natural Language Query:",
         "query.user_query_placeholder": "e.g. How much did customer 6 consume in total between August and November 2013?",
         "query.run_analyzer_label": "Executar analisador após a execução da consulta",
@@ -1251,6 +1317,7 @@
         "steps.mapper": "Mapeador",
         "steps.generator": "Gerador",
         "steps.validator": "Validador",
+        "architecture.pipeline": "Pipeline (Interpreter → Mapper → Generator → Validator)",
         "architecture.supervisor_worker": "Arquitetura Supervisor-Worker",
         "architecture.supervisor_orchestrating": "Orquestrando workers...",
         "architecture.supervisor_starting": "Iniciando...",
@@ -1267,6 +1334,20 @@
         "single_agent.done": "Concluído",
         "single_agent.error": "Erro",
         "single_agent.waiting": "Aguardando",
+        "versus.title": "Comparação em Tempo Real",
+        "versus.summary": "Os dois sistemas estão executando a mesma pergunta em paralelo.",
+        "versus.panel_pipeline": "Pipeline Multi-agente",
+        "versus.panel_single": "Agente Único",
+        "versus.metric_tokens_in": "Tokens In",
+        "versus.metric_tokens_out": "Tokens Out",
+        "versus.metric_total": "Tokens Totais",
+        "versus.metric_requests": "Requisições",
+        "versus.metric_tools": "Ferramentas",
+        "versus.metric_latency": "Latência",
+        "versus.metric_model": "Modelo",
+        "versus.metric_activity": "Atividade",
+        "versus.branch_results": "Resultados desta abordagem",
+        "versus.run_selected_error": "Selecione exatamente uma questão para executar em modo versus.",
         "output.interpreter.title": "Saída do Interpretador",
         "output.interpreter.clarified": "Questão Esclarecida",
         "output.interpreter.intent": "Intenção Explícita",
@@ -1308,6 +1389,7 @@
         "benchmarks.run_analyzer_label": "Executar Analisador (AM - Analyzer Match)",
         "benchmarks.run_analyzer_help":
           "EM e RM são sempre calculados. O analisador executa apenas se ambos EM e RM forem False.",
+        "benchmarks.run_selected_versus": "Executar questão selecionada em modo versus",
         "benchmarks.run_button": "Executar Benchmark",
         "benchmarks.running_message": "Executando benchmark... Isso pode levar um tempo.",
         "benchmarks.results_title": "Resultados do Benchmark",
@@ -1403,6 +1485,10 @@
         "query.title": "Run a natural language query",
         "query.select_connection_label": "Select connection:",
         "query.select_connection_placeholder": "-- Select a connection --",
+        "query.pipeline_mode_label": "Pipeline mode:",
+        "query.pipeline_mode_supervisor": "Pipeline (multi-agent)",
+        "query.pipeline_mode_single": "Single agent",
+        "query.pipeline_mode_versus": "Versus (Pipeline vs Single Agent)",
         "query.user_query_label": "Natural language query:",
         "query.user_query_placeholder": "e.g., How much did customer 6 spend in total between Aug and Nov 2013?",
         "query.run_analyzer_label": "Run analyzer after executing the query",
@@ -1416,6 +1502,7 @@
         "steps.mapper": "Mapper",
         "steps.generator": "Generator",
         "steps.validator": "Validator",
+        "architecture.pipeline": "Pipeline (Interpreter → Mapper → Generator → Validator)",
         "architecture.supervisor_worker": "Supervisor-Worker Architecture",
         "architecture.supervisor_orchestrating": "Orchestrating workers...",
         "architecture.supervisor_starting": "Starting...",
@@ -1432,6 +1519,20 @@
         "single_agent.done": "Done",
         "single_agent.error": "Error",
         "single_agent.waiting": "Waiting",
+        "versus.title": "Real-time comparison",
+        "versus.summary": "Both systems are running the same question in parallel.",
+        "versus.panel_pipeline": "Multi-agent pipeline",
+        "versus.panel_single": "Single agent",
+        "versus.metric_tokens_in": "Input tokens",
+        "versus.metric_tokens_out": "Output tokens",
+        "versus.metric_total": "Total tokens",
+        "versus.metric_requests": "Requests",
+        "versus.metric_tools": "Tools",
+        "versus.metric_latency": "Latency",
+        "versus.metric_model": "Model",
+        "versus.metric_activity": "Activity",
+        "versus.branch_results": "Branch results",
+        "versus.run_selected_error": "Select exactly one question to run in versus mode.",
         "output.interpreter.title": "Interpreter output",
         "output.interpreter.clarified": "Clarified question",
         "output.interpreter.intent": "Explicit intent",
@@ -1473,6 +1574,7 @@
         "benchmarks.run_analyzer_label": "Run analyzer (AM — Analyzer Match)",
         "benchmarks.run_analyzer_help":
           "EM and RM are always computed. The analyzer runs only if both EM and RM are False.",
+        "benchmarks.run_selected_versus": "Run selected question in versus mode",
         "benchmarks.run_button": "Run benchmark",
         "benchmarks.running_message": "Running benchmark… this may take a while.",
         "benchmarks.results_title": "Benchmark results",
@@ -1587,7 +1689,7 @@
     function openPromptsModal() {
       document.getElementById("prompts-modal").classList.remove("hidden");
       loadPrompts().then(() => {
-        switchPromptTab("supervisor");
+        switchPromptTab("interpreter");
         document.querySelectorAll(".prompts-tab").forEach((tab) => {
           const agent = tab.dataset.agent;
           const p = promptsData.prompts.find((x) => x.agent_id === agent);
@@ -1883,7 +1985,14 @@
         validator_output: execution.validator_output,
         analyzer_output: execution.analyzer_output,
         single_agent_tool_calls: execution.single_agent_tool_calls || [],
+        pipeline_tool_calls: execution.pipeline_tool_calls || [],
         pipeline_mode: execution.pipeline_mode || "supervisor",
+        usage: execution.usage || null,
+        model_name: execution.model_name || null,
+        current_activity: execution.current_activity || null,
+        latency_ms: execution.latency_ms || null,
+        versus_state: execution.versus_state || null,
+        comparison_execution_ids: execution.comparison_execution_ids || null,
       };
 
       updateStatusDisplay(statusData);
@@ -1985,7 +2094,7 @@
 
           // Continue polling if not completed or error
           if (data.status === "pending" || data.status === "running") {
-            const interval = data.pipeline_mode === "single" ? 600 : 3000;
+            const interval = data.pipeline_mode === "single" ? 600 : data.pipeline_mode === "versus" ? 800 : 3000;
             setTimeout(() => {
               activePolling.delete(executionId);
               pollStatus(executionId);
@@ -2037,50 +2146,137 @@
       }
     }
 
-    function updateStatusDisplay(data) {
-      const statusContent = document.getElementById("status-content");
-      const isSingleAgent = data.pipeline_mode === "single";
+    function formatNumber(value) {
+      if (value === null || value === undefined || value === "") return "0";
+      return Number(value).toLocaleString(currentUiLang);
+    }
 
-      if (isSingleAgent) {
-        const toolCalls = data.single_agent_tool_calls || [];
-        const lastTool = toolCalls.length > 0 ? toolCalls[toolCalls.length - 1].tool : null;
-        let singleStatusText = data.status === "running"
-          ? (lastTool ? t("single_agent.using_tool", { tool: lastTool }) : t("single_agent.thinking"))
-          : data.status === "pending"
-            ? t("single_agent.starting")
-            : data.status === "completed"
-              ? t("single_agent.done")
-              : data.status === "error"
-                ? (lastTool ? t("single_agent.error_after_tool", { tool: lastTool }) : t("single_agent.error"))
-                : t("single_agent.waiting");
-        let toolTimelineHtml = '<div class="single-agent-header">' + t("single_agent.title") + '</div>';
-        toolTimelineHtml += '<div class="single-agent-card ' + (data.status === "running" || data.status === "pending" ? "running" : "") + '">';
-        toolTimelineHtml += '<div class="supervisor-label">' + t("single_agent.agent_label") + '</div>';
-        toolTimelineHtml += '<div class="supervisor-status">' + singleStatusText + '</div>';
-        toolTimelineHtml += '</div>';
-        toolTimelineHtml += '<div class="tool-timeline">';
-        toolCalls.forEach((tc, idx) => {
-          const isLast = idx === toolCalls.length - 1;
-          const itemClass = tc.error ? "error" : (isLast && (data.status === "running" || data.status === "pending") ? "running" : "");
-          const argsStr = tc.args && Object.keys(tc.args).length > 0
-            ? JSON.stringify(tc.args).slice(0, 80) + (JSON.stringify(tc.args).length > 80 ? "..." : "")
-            : "";
-          toolTimelineHtml += '<div class="tool-timeline-item ' + itemClass + '">';
-          toolTimelineHtml += '<div class="tool-name">' + escapeHtml(tc.tool || "?") + '</div>';
-          if (argsStr) toolTimelineHtml += '<div class="tool-args">' + escapeHtml(argsStr) + '</div>';
-          toolTimelineHtml += '<div class="tool-result">' + escapeHtml((tc.result_preview || tc.error || "-").slice(0, 150)) + '</div>';
-          toolTimelineHtml += '<div class="tool-timing">' + (tc.timing_ms || 0) + ' ms</div>';
-          toolTimelineHtml += '</div>';
-        });
-        toolTimelineHtml += '</div>';
-        let html = '<div><p><strong>' + t("status.status") + ':</strong> <span style="text-transform: capitalize;">' + data.status + '</span></p>' + toolTimelineHtml + '</div>';
-        if (data.sql_query) {
-          html += '<div class="sql-display" style="margin-top: 16px;"><strong>' + t("sql.generated") + ':</strong><pre>' + escapeHtml(data.sql_query) + '</pre></div>';
-        }
-        statusContent.innerHTML = html;
-        return;
+    function formatLatency(latencyMs) {
+      if (!latencyMs && latencyMs !== 0) return "-";
+      if (latencyMs < 1000) return `${latencyMs} ms`;
+      return `${(latencyMs / 1000).toFixed(2)} s`;
+    }
+
+    function renderTelemetryGrid(data) {
+      const usage = data.usage || {};
+      const cards = [
+        [t("versus.metric_tokens_in"), formatNumber(usage.input_tokens || 0)],
+        [t("versus.metric_tokens_out"), formatNumber(usage.output_tokens || 0)],
+        [t("versus.metric_total"), formatNumber(usage.total_tokens || 0)],
+        [t("versus.metric_requests"), formatNumber(usage.requests || 0)],
+        [t("versus.metric_tools"), formatNumber(usage.tool_calls || 0)],
+        [t("versus.metric_latency"), formatLatency(data.latency_ms)],
+        [t("versus.metric_model"), escapeHtml(data.model_name || "-")],
+        [t("versus.metric_activity"), escapeHtml(data.current_activity || "-")],
+      ];
+
+      return `
+        <div class="telemetry-grid">
+          ${cards
+            .map(
+              ([label, value]) => `
+                <div class="telemetry-card">
+                  <div class="label">${label}</div>
+                  <div class="value">${value}</div>
+                </div>
+              `
+            )
+            .join("")}
+        </div>
+      `;
+    }
+
+    function renderQueryResultsTable(queryResult) {
+      if (!queryResult || queryResult.length === 0) {
+        return `<div class="no-results-message"><p>${t("results.none")}</p></div>`;
       }
 
+      const columns = Object.keys(queryResult[0]);
+      let tableHtml = `<table class="results-table"><thead><tr>`;
+      columns.forEach((col) => {
+        tableHtml += `<th>${escapeHtml(col)}</th>`;
+      });
+      tableHtml += "</tr></thead><tbody>";
+
+      queryResult.forEach((row) => {
+        tableHtml += "<tr>";
+        columns.forEach((col) => {
+          const value = row[col];
+          tableHtml += `<td>${value !== null && value !== undefined ? escapeHtml(String(value)) : "<em>null</em>"}</td>`;
+        });
+        tableHtml += "</tr>";
+      });
+
+      tableHtml += "</tbody></table>";
+      return tableHtml;
+    }
+
+    function renderPipelineToolTimeline(toolCalls) {
+      if (!toolCalls || toolCalls.length === 0) return "";
+
+      return `
+        <div class="tool-timeline">
+          ${toolCalls
+            .map((tc) => `
+              <div class="tool-timeline-item ${tc.error ? "error" : ""}">
+                <div class="tool-name">${escapeHtml(tc.agent || "pipeline")} :: ${escapeHtml(tc.tool || "?")}</div>
+                <div class="tool-result">${escapeHtml((tc.result_preview || tc.error || "-").slice(0, 180))}</div>
+              </div>
+            `)
+            .join("")}
+        </div>
+      `;
+    }
+
+    function renderSingleAgentView(data) {
+      const toolCalls = data.single_agent_tool_calls || [];
+      const lastTool = toolCalls.length > 0 ? toolCalls[toolCalls.length - 1].tool : null;
+      let singleStatusText = data.status === "running"
+        ? (lastTool ? t("single_agent.using_tool", { tool: lastTool }) : t("single_agent.thinking"))
+        : data.status === "pending"
+          ? t("single_agent.starting")
+          : data.status === "completed"
+            ? t("single_agent.done")
+            : data.status === "error"
+              ? (lastTool ? t("single_agent.error_after_tool", { tool: lastTool }) : t("single_agent.error"))
+              : t("single_agent.waiting");
+
+      let html = '<div><p><strong>' + t("status.status") + ':</strong> <span style="text-transform: capitalize;">' + data.status + '</span></p>';
+      html += renderTelemetryGrid(data);
+      html += '<div class="single-agent-header">' + t("single_agent.title") + '</div>';
+      html += '<div class="single-agent-card ' + (data.status === "running" || data.status === "pending" ? "running" : "") + '">';
+      html += '<div class="supervisor-label">' + t("single_agent.agent_label") + '</div>';
+      html += '<div class="supervisor-status">' + singleStatusText + '</div>';
+      html += '</div>';
+      html += '<div class="tool-timeline">';
+      toolCalls.forEach((tc, idx) => {
+        const isLast = idx === toolCalls.length - 1;
+        const itemClass = tc.error ? "error" : (isLast && (data.status === "running" || data.status === "pending") ? "running" : "");
+        const argsStr = tc.args && Object.keys(tc.args).length > 0
+          ? JSON.stringify(tc.args).slice(0, 80) + (JSON.stringify(tc.args).length > 80 ? "..." : "")
+          : "";
+        html += '<div class="tool-timeline-item ' + itemClass + '">';
+        html += '<div class="tool-name">' + escapeHtml(tc.tool || "?") + '</div>';
+        if (argsStr) html += '<div class="tool-args">' + escapeHtml(argsStr) + '</div>';
+        html += '<div class="tool-result">' + escapeHtml((tc.result_preview || tc.error || "-").slice(0, 150)) + '</div>';
+        html += '<div class="tool-timing">' + (tc.timing_ms || 0) + ' ms</div>';
+        html += '</div>';
+      });
+      html += '</div>';
+      if (data.sql_query) {
+        html += '<div class="sql-display" style="margin-top: 16px;"><strong>' + t("sql.generated") + ':</strong><pre>' + escapeHtml(data.sql_query) + '</pre></div>';
+      }
+      if (data.error) {
+        html += '<div class="error-message"><strong>' + t("error.label") + ':</strong> ' + escapeHtml(data.error) + '</div>';
+      }
+      if (Array.isArray(data.query_result)) {
+        html += '<div class="results-section"><h3>' + t("results.query_title") + '</h3>' + renderQueryResultsTable(data.query_result) + '</div>';
+      }
+      html += '</div>';
+      return html;
+    }
+
+    function renderPipelineView(data, includeResults = true) {
       const steps = ["interpreter", "mapper", "generator", "validator"];
       const stepNames = {
         interpreter: t("steps.interpreter"),
@@ -2089,54 +2285,74 @@
         validator: t("steps.validator"),
       };
 
-      const supervisorStatus = data.status === "running" || data.status === "pending"
-        ? "running"
-        : data.status === "completed" || data.status === "error"
-          ? "done"
-          : "waiting";
-      const supervisorStatusText = data.status === "running"
-        ? t("architecture.supervisor_orchestrating")
-        : data.status === "pending"
-          ? t("architecture.supervisor_starting")
-          : data.status === "completed"
-            ? t("architecture.supervisor_done")
-            : data.status === "error"
-              ? t("architecture.supervisor_error")
-              : t("architecture.supervisor_waiting");
-
-      let stepsHtml = `
-                <div class="architecture-header">${t("architecture.supervisor_worker")}</div>
-                <div class="supervisor-card ${supervisorStatus}">
-                    <div class="supervisor-label">${t("steps.supervisor")}</div>
-                    <div class="supervisor-status">${supervisorStatusText}</div>
-                </div>
-                <div class="delegates-label">${t("architecture.delegates_to")}</div>
-                <div class="status-steps">
-            `;
+      let stepsHtml = `<div class="architecture-header">${t("architecture.pipeline")}</div><div class="status-steps">`;
       steps.forEach((step) => {
-        const status = data.step_status[step] || "waiting";
+        const status = (data.step_status || {})[step] || "waiting";
         const isCurrent = data.current_step === step && data.status === "running";
         const stepClass = isCurrent ? "running" : status;
-
         stepsHtml += `
-                    <div class="step-card ${stepClass}">
-                        <div class="step-name">${stepNames[step]}</div>
-                        <div class="step-status">${status}</div>
-                    </div>
-                `;
+          <div class="step-card ${stepClass}">
+            <div class="step-name">${stepNames[step]}</div>
+            <div class="step-status">${status}</div>
+          </div>
+        `;
       });
       stepsHtml += "</div>";
 
       let html = `
-                <div>
-                    <p><strong>${t("status.status")}:</strong> <span style="text-transform: capitalize;">${data.status}</span></p>
-                    ${data.current_step
-          ? `<p><strong>${t("status.current_step")}:</strong> ${stepNames[data.current_step] || data.current_step}</p>`
-          : ""
-        }
-                    ${stepsHtml}
-                </div>
-            `;
+        <div>
+          <p><strong>${t("status.status")}:</strong> <span style="text-transform: capitalize;">${data.status}</span></p>
+          ${data.current_step ? `<p><strong>${t("status.current_step")}:</strong> ${stepNames[data.current_step] || data.current_step}</p>` : ""}
+          ${renderTelemetryGrid(data)}
+          ${stepsHtml}
+          ${renderPipelineToolTimeline(data.pipeline_tool_calls || [])}
+        </div>
+      `;
+
+      if (data.sql_query) {
+        html += `<div class="sql-display" style="margin-top: 20px;"><strong>${t("sql.generated")}:</strong><pre>${escapeHtml(data.sql_query)}</pre></div>`;
+      }
+      if (data.error) {
+        html += `<div class="error-message"><strong>${t("error.label")}:</strong> ${escapeHtml(data.error)}</div>`;
+      }
+      if (includeResults && Array.isArray(data.query_result)) {
+        html += `<div class="results-section"><h3>${t("results.query_title")}</h3>${renderQueryResultsTable(data.query_result)}</div>`;
+      }
+      return html;
+    }
+
+    function renderVersusView(data) {
+      const pipeline = (data.versus_state || {}).pipeline;
+      const single = (data.versus_state || {}).single;
+      return `
+        <div>
+          <div class="comparison-summary">
+            <strong>${t("versus.title")}</strong><br />
+            ${t("versus.summary")}
+          </div>
+          <div class="versus-grid">
+            <div class="versus-panel pipeline">
+              <h4>${t("versus.panel_pipeline")}</h4>
+              ${pipeline ? renderPipelineView(pipeline) : `<p>${t("query.initializing")}</p>`}
+            </div>
+            <div class="versus-panel single">
+              <h4>${t("versus.panel_single")}</h4>
+              ${single ? renderSingleAgentView(single) : `<p>${t("query.initializing")}</p>`}
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function updateStatusDisplay(data) {
+      const statusContent = document.getElementById("status-content");
+      if (data.pipeline_mode === "versus" && data.versus_state) {
+        statusContent.innerHTML = renderVersusView(data);
+        return;
+      }
+
+      const isSingleAgent = data.pipeline_mode === "single";
+      let html = isSingleAgent ? renderSingleAgentView(data) : renderPipelineView(data, false);
 
       // Display Interpreter Output
       if (data.interpreter_output) {
@@ -2375,27 +2591,15 @@
                 `;
       }
 
-      if (data.sql_query) {
-        html += `
-                    <div class="sql-display" style="margin-top: 20px;">
-                        <strong>${t("sql.generated")}:</strong>
-                        <pre>${escapeHtml(data.sql_query)}</pre>
-                    </div>
-                `;
-      }
-
-      if (data.error) {
-        html += `
-                    <div class="error-message">
-                        <strong>${t("error.label")}:</strong> ${escapeHtml(data.error)}
-                    </div>
-                `;
-      }
-
       statusContent.innerHTML = html;
     }
 
     function displayResults(data) {
+      if (data.pipeline_mode === "versus") {
+        updateStatusDisplay(data);
+        return;
+      }
+
       const statusContent = document.getElementById("status-content");
 
       // Remove any existing results section to prevent duplicates
@@ -2595,6 +2799,65 @@
       const questionWord = count === 1 ? t("selection.question_singular") : t("selection.question_plural");
       const selectedWord = count === 1 ? t("selection.selected_singular") : t("selection.selected_plural");
       document.getElementById("selection-count").textContent = t("selection.count", { count, question_word: questionWord, selected_word: selectedWord });
+    }
+
+    function runSelectedBenchmarkQuestionInVersus() {
+      if (selectedIndices.size !== 1) {
+        alert(t("versus.run_selected_error"));
+        return;
+      }
+
+      const connectionId = document.getElementById("benchmark-connection").value;
+      if (!connectionId) {
+        alert(t("benchmarks.validation.select_connection"));
+        return;
+      }
+
+      const selectedIndex = Array.from(selectedIndices)[0];
+      const selectedQuestion = currentQuestions.find((q) => q.index === selectedIndex);
+      if (!selectedQuestion) {
+        alert(t("versus.run_selected_error"));
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append("connection_id", connectionId);
+      formData.append("user_query", selectedQuestion.question);
+      formData.append("pipeline_mode", "versus");
+      if (currentSessionId) {
+        formData.append("session_id", currentSessionId);
+      }
+
+      fetch("/api/queries", {
+        method: "POST",
+        body: formData,
+      })
+        .then((response) => response.json())
+        .then((data) => {
+          switchTab("query");
+          if (data.execution_id && data.session_id) {
+            if (data.session_id !== currentSessionId) {
+              loadSessions();
+              selectSession(data.session_id);
+            } else if (currentSessionId) {
+              loadSessionExecutions(currentSessionId);
+            }
+            if (!activePolling.has(data.execution_id)) {
+              const statusDiv = document.getElementById("query-status");
+              statusDiv.innerHTML = `
+                <div class="status-container" id="status-container">
+                  <h3>${t("query.status_title")}</h3>
+                  <div class="loading">${t("query.initializing")}</div>
+                  <div id="status-content" class="hidden"></div>
+                </div>
+              `;
+              pollStatus(data.execution_id);
+            }
+          }
+        })
+        .catch((error) => {
+          alert(error.message || "Error");
+        });
     }
 
     function runBenchmark(event) {

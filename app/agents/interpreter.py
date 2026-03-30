@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import logfire
 from pydantic_ai import Agent, RunContext, UsageLimits
 
 from app.agents.context import AgentState, InterpreterOutput
+from app.agents.telemetry import usage_to_dict
 from app.llm_models import gpt_5_mini
 from app.prompts import DEFAULT_INTERPRETER_PROMPT, format_supervisor_tips, render_prompt
 
@@ -32,7 +35,7 @@ INTERPRETER_USAGE_LIMITS = UsageLimits(input_tokens_limit=100000)
 
 
 @logfire.instrument("interpreter_agent")
-async def run_interpreter(state: AgentState) -> InterpreterOutput:
+async def run_interpreter(state: AgentState) -> tuple[InterpreterOutput, dict[str, Any]]:
     """Run the Query Interpreter agent."""
     logfire.info("Running Query Interpreter", raw_question=state.raw_question)
 
@@ -46,4 +49,4 @@ async def run_interpreter(state: AgentState) -> InterpreterOutput:
         ambiguities_count=len(output.ambiguities_resolved),
     )
 
-    return output
+    return output, usage_to_dict(result.usage())

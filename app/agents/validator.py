@@ -8,6 +8,8 @@ import logfire
 from pydantic_ai import Agent, RunContext, UsageLimits
 
 from app.agents.context import AgentState, ValidatorOutput
+from app.agents.context import ToolCall
+from app.agents.telemetry import usage_to_dict
 from app.agents.tools import clean_sql, execute_sql_safe, get_query_plan
 from app.llm_models import gpt_5_mini
 from app.prompts import DEFAULT_VALIDATOR_PROMPT, format_supervisor_tips, render_prompt
@@ -30,7 +32,7 @@ def _build_validator_template_vars(ctx: RunContext[AgentState]) -> dict[str, str
 
     if state.syntax_valid is not None:
         if state.syntax_valid:
-            syntax_status = "✅ Syntax is VALID (pre-validated by supervisor)"
+            syntax_status = "✅ Syntax is VALID (pre-validated)"
         else:
             syntax_status = f"❌ Syntax is INVALID (pre-validated): {state.syntax_error or 'Unknown error'}"
     else:
@@ -61,12 +63,12 @@ def system_prompt(ctx: RunContext[AgentState]) -> str:
 
 @validator.tool
 async def tool_get_syntax_status(ctx: RunContext[AgentState]) -> dict[str, Any]:
-    """Get pre-validated SQL syntax status from the supervisor."""
+    """Get pre-validated SQL syntax status from the pipeline."""
     state = ctx.deps
     return {
         "syntax_valid": state.syntax_valid,
         "syntax_error": state.syntax_error,
-        "note": "Syntax validation was performed by the supervisor before calling this agent",
+        "note": "Syntax validation was performed by the pipeline before calling this agent",
     }
 
 
@@ -79,8 +81,31 @@ async def tool_get_query_plan(ctx: RunContext[AgentState], sql: str) -> dict[str
     """
     if not ctx.deps.database_connection:
         return None
+
     sql_clean = clean_sql(sql)
-    return await get_query_plan(ctx.deps.database_connection, sql_clean)
+    try:
+        result = await get_query_plan(ctx.deps.database_connection, sql_clean)
+        ctx.deps.trace.tools.append(
+            ToolCall(
+                agent="validator",
+                tool="get_query_plan",
+                args_redacted={"sql_length": len(sql_clean)},
+                result_preview=str(result)[:120] if result else "No plan available",
+                timing_ms=0,
+            )
+        )
+        return result
+    except Exception as e:
+        ctx.deps.trace.tools.append(
+            ToolCall(
+                agent="validator",
+                tool="get_query_plan",
+                args_redacted={"sql_length": len(sql_clean)},
+                timing_ms=0,
+                error=str(e),
+            )
+        )
+        raise
 
 
 @validator.tool
@@ -90,14 +115,35 @@ async def tool_execute_sql_safe(ctx: RunContext[AgentState], sql: str, limit: in
         return {"success": False, "error": "No database connection", "results": None}
 
     sql_clean = clean_sql(sql)
-    success, results, error = await execute_sql_safe(ctx.deps.database_connection, sql_clean, limit)
-
-    return {
-        "success": success,
-        "results": results,
-        "error": error,
-        "row_count": len(results) if results else 0,
-    }
+    try:
+        success, results, error = await execute_sql_safe(ctx.deps.database_connection, sql_clean, limit)
+        ctx.deps.trace.tools.append(
+            ToolCall(
+                agent="validator",
+                tool="execute_sql_safe",
+                args_redacted={"sql_length": len(sql_clean), "limit": limit},
+                result_preview=f"{len(results) if results else 0} rows" if success else (error or "Execution failed")[:120],
+                timing_ms=0,
+                error=error,
+            )
+        )
+        return {
+            "success": success,
+            "results": results,
+            "error": error,
+            "row_count": len(results) if results else 0,
+        }
+    except Exception as e:
+        ctx.deps.trace.tools.append(
+            ToolCall(
+                agent="validator",
+                tool="execute_sql_safe",
+                args_redacted={"sql_length": len(sql_clean), "limit": limit},
+                timing_ms=0,
+                error=str(e),
+            )
+        )
+        raise
 
 
 VALIDATOR_USAGE_LIMITS = UsageLimits(
@@ -107,7 +153,7 @@ VALIDATOR_USAGE_LIMITS = UsageLimits(
 
 
 @logfire.instrument("validator_agent")
-async def run_validator(state: AgentState) -> ValidatorOutput:
+async def run_validator(state: AgentState) -> tuple[ValidatorOutput, dict[str, Any]]:
     """Run the Validator & Refiner agent."""
     sql_query = state.current_sql
     if not sql_query:
@@ -117,7 +163,7 @@ async def run_validator(state: AgentState) -> ValidatorOutput:
             is_optimal=False,
             syntax_errors=["Nenhuma consulta SQL fornecida"],
             refinement_feedback="Nenhuma consulta SQL fornecida para validação.",
-        )
+        ), usage_to_dict(None)
 
     # If syntax is invalid, return early without calling tools
     if state.syntax_valid is False:
@@ -127,7 +173,7 @@ async def run_validator(state: AgentState) -> ValidatorOutput:
             is_optimal=False,
             syntax_errors=[state.syntax_error] if state.syntax_error else ["Erro ao validar a sintaxe"],
             refinement_feedback=f"Erro de sintaxe: {state.syntax_error or 'Erro desconhecido'}.",
-        )
+        ), usage_to_dict(None)
 
     logfire.info("Running SQL Validator", sql_length=len(sql_query), attempt=state.attempt_count + 1)
 
@@ -151,4 +197,4 @@ async def run_validator(state: AgentState) -> ValidatorOutput:
         semantic_issue_count=len(output.semantic_issues),
     )
 
-    return output
+    return output, usage_to_dict(result.usage())

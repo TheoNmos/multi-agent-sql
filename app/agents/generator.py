@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import logfire
 from pydantic_ai import Agent, RunContext, UsageLimits
 
 from app.agents.context import AgentState, GeneratorOutput
+from app.agents.telemetry import usage_to_dict
 from app.llm_models import gpt_5_mini
 from app.prompts import DEFAULT_GENERATOR_PROMPT, format_supervisor_tips, render_prompt
 
@@ -30,6 +33,13 @@ def _build_generator_template_vars(ctx: RunContext[AgentState]) -> dict[str, str
 
     iteration_context = ""
     if state.attempt_count > 0:
+        execution_feedback = state.scratch.get("execution_feedback")
+        execution_feedback_section = ""
+        if execution_feedback:
+            execution_feedback_section = f"""
+### Previous Execution Feedback:
+{execution_feedback}
+"""
         iteration_context = f"""
 ## Iteration Context (Attempt {state.attempt_count + 1}/{state.max_attempts})
 
@@ -40,6 +50,8 @@ This is a refinement iteration. Previous attempts have been made.
 
 ### Previous Validation Feedback:
 {state.validator_output.refinement_feedback if state.validator_output else "None"}
+
+{execution_feedback_section}
 
 **IMPORTANT**: You must address the feedback above and generate an improved query.
 """
@@ -77,7 +89,7 @@ GENERATOR_USAGE_LIMITS = UsageLimits(input_tokens_limit=100000)
 
 
 @logfire.instrument("generator_agent")
-async def run_generator(state: AgentState) -> GeneratorOutput:
+async def run_generator(state: AgentState) -> tuple[GeneratorOutput, dict[str, Any]]:
     """Run the SQL Generator agent."""
     clarified_question = state.clarified_question or state.raw_question
     logfire.info(
@@ -91,6 +103,8 @@ async def run_generator(state: AgentState) -> GeneratorOutput:
     prompt = clarified_question
     if state.validator_output and state.validator_output.refinement_feedback:
         prompt += f"\n\nPrevious validation feedback:\n{state.validator_output.refinement_feedback}"
+    if state.scratch.get("execution_feedback"):
+        prompt += f"\n\nPrevious execution feedback:\n{state.scratch['execution_feedback']}"
 
     result = await generator.run(prompt, deps=state, usage_limits=GENERATOR_USAGE_LIMITS)
     output = result.output
@@ -103,4 +117,4 @@ async def run_generator(state: AgentState) -> GeneratorOutput:
         confidence=output.confidence,
     )
 
-    return output
+    return output, usage_to_dict(result.usage())

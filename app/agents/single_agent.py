@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import time
 from collections.abc import Callable
 from typing import Any
@@ -11,6 +12,7 @@ import logfire
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext, UsageLimits
 
+from app.agents.telemetry import usage_to_dict
 from app.agents.tools import (
     execute_sql_safe,
     get_query_plan,
@@ -33,11 +35,29 @@ class SingleAgentState(BaseModel):
     db_name: str | None = None
     tool_calls: list[dict[str, Any]] = Field(default_factory=list)
     execution_id: str | None = None
-    on_tool_call: Callable[[dict[str, Any]], None] | None = None  # Optional callback to persist tool calls
+    on_tool_call: Callable[[dict[str, Any]], Any] | None = None  # Optional callback to persist tool calls
+    on_usage: Callable[[dict[str, Any]], Any] | None = None
 
 
-def _record_tool_call(
-    state: SingleAgentState, tool_name: str, args: dict, result_preview: str, timing_ms: int, error: str | None = None
+async def _run_callback(callback: Callable[[dict[str, Any]], Any] | None, payload: dict[str, Any]) -> None:
+    if callback is None:
+        return
+
+    try:
+        result = callback(payload)
+        if inspect.isawaitable(result):
+            await result
+    except Exception:
+        pass
+
+
+async def _record_tool_call(
+    state: SingleAgentState,
+    tool_name: str,
+    args: dict[str, Any],
+    result_preview: str,
+    timing_ms: int,
+    error: str | None = None,
 ):
     """Record a tool call to state and optionally persist via callback."""
     entry = {
@@ -48,11 +68,7 @@ def _record_tool_call(
         "error": error,
     }
     state.tool_calls.append(entry)
-    if state.on_tool_call:
-        try:
-            state.on_tool_call(entry)
-        except Exception:
-            pass
+    await _run_callback(state.on_tool_call, entry)
 
 
 SINGLE_AGENT_PROMPT = """You are a **Text-to-SQL Agent**. Convert natural language questions into correct PostgreSQL SQL queries.
@@ -161,11 +177,11 @@ async def tool_get_schema_preview(ctx: RunContext[SingleAgentState]) -> str:
         }
         timing_ms = int((time.time() - start) * 1000)
         preview = f"{len(all_tables)} tables, {sum(1 for v in sample_rows_dict.values() if v is not None)} with samples"
-        _record_tool_call(state, "get_schema_preview", {}, preview, timing_ms)
+        await _record_tool_call(state, "get_schema_preview", {}, preview, timing_ms)
         return to_toon_block(result, "schema_preview")
     except Exception as e:
         timing_ms = int((time.time() - start) * 1000)
-        _record_tool_call(state, "get_schema_preview", {}, "", timing_ms, str(e))
+        await _record_tool_call(state, "get_schema_preview", {}, "", timing_ms, str(e))
         raise
 
 
@@ -182,11 +198,11 @@ async def tool_list_tables(ctx: RunContext[SingleAgentState]) -> str:
         )
         tables = [r["table_name"] for r in rows]
         timing_ms = int((time.time() - start) * 1000)
-        _record_tool_call(state, "list_tables", {}, f"{len(tables)} tables", timing_ms)
+        await _record_tool_call(state, "list_tables", {}, f"{len(tables)} tables", timing_ms)
         return ", ".join(tables) if tables else "No tables found."
     except Exception as e:
         timing_ms = int((time.time() - start) * 1000)
-        _record_tool_call(state, "list_tables", {}, "", timing_ms, str(e))
+        await _record_tool_call(state, "list_tables", {}, "", timing_ms, str(e))
         raise
 
 
@@ -202,11 +218,11 @@ async def tool_get_table_info(ctx: RunContext[SingleAgentState], table_names: li
         result = await get_table_info(state.database_connection, table_names)
         timing_ms = int((time.time() - start) * 1000)
         preview = f"{len(result)} tables"
-        _record_tool_call(state, "get_table_info", {"tables": names[:5]}, preview, timing_ms)
+        await _record_tool_call(state, "get_table_info", {"tables": names[:5]}, preview, timing_ms)
         return to_toon_block(result, "tables")
     except Exception as e:
         timing_ms = int((time.time() - start) * 1000)
-        _record_tool_call(state, "get_table_info", {"tables": names[:5]}, "", timing_ms, str(e))
+        await _record_tool_call(state, "get_table_info", {"tables": names[:5]}, "", timing_ms, str(e))
         raise
 
 
@@ -223,11 +239,11 @@ async def tool_sample_values(
         result = await sample_values(state.database_connection, table_name, column_name, limit)
         timing_ms = int((time.time() - start) * 1000)
         preview = f"{len(result)} values"
-        _record_tool_call(state, "sample_values", {"table": table_name, "column": column_name}, preview, timing_ms)
+        await _record_tool_call(state, "sample_values", {"table": table_name, "column": column_name}, preview, timing_ms)
         return to_toon_block(result, "values")
     except Exception as e:
         timing_ms = int((time.time() - start) * 1000)
-        _record_tool_call(state, "sample_values", {"table": table_name, "column": column_name}, "", timing_ms, str(e))
+        await _record_tool_call(state, "sample_values", {"table": table_name, "column": column_name}, "", timing_ms, str(e))
         raise
 
 
@@ -244,7 +260,7 @@ async def tool_search_column_values(
         result = await search_column_values(state.database_connection, table_name, column_name, keyword, limit)
         timing_ms = int((time.time() - start) * 1000)
         preview = f"{len(result)} matches"
-        _record_tool_call(
+        await _record_tool_call(
             state,
             "search_column_values",
             {"table": table_name, "column": column_name, "keyword": keyword},
@@ -254,7 +270,7 @@ async def tool_search_column_values(
         return to_toon_block(result, "values")
     except Exception as e:
         timing_ms = int((time.time() - start) * 1000)
-        _record_tool_call(
+        await _record_tool_call(
             state,
             "search_column_values",
             {"table": table_name, "column": column_name, "keyword": keyword},
@@ -277,11 +293,11 @@ async def tool_search_tables(ctx: RunContext[SingleAgentState], keywords: list[s
         result = await search_tables(state.database_connection, keywords)
         timing_ms = int((time.time() - start) * 1000)
         preview = f"{len(result)} tables"
-        _record_tool_call(state, "search_tables", {"keywords": kws[:5]}, preview, timing_ms)
+        await _record_tool_call(state, "search_tables", {"keywords": kws[:5]}, preview, timing_ms)
         return ", ".join(result) if result else "No matches."
     except Exception as e:
         timing_ms = int((time.time() - start) * 1000)
-        _record_tool_call(state, "search_tables", {"keywords": kws[:5]}, "", timing_ms, str(e))
+        await _record_tool_call(state, "search_tables", {"keywords": kws[:5]}, "", timing_ms, str(e))
         raise
 
 
@@ -295,12 +311,12 @@ async def tool_validate_sql(ctx: RunContext[SingleAgentState], sql: str) -> str:
     try:
         valid, err = await validate_sql_syntax(state.database_connection, sql)
         timing_ms = int((time.time() - start) * 1000)
-        preview = "valid" if valid else f"error: {err[:100]}"
-        _record_tool_call(state, "validate_sql", {"sql_len": len(sql)}, preview, timing_ms)
+        preview = "valid" if valid else f"error: {(err or '')[:100]}"
+        await _record_tool_call(state, "validate_sql", {"sql_len": len(sql)}, preview, timing_ms)
         return f"Valid: {valid}" if valid else f"Syntax error: {err}"
     except Exception as e:
         timing_ms = int((time.time() - start) * 1000)
-        _record_tool_call(state, "validate_sql", {"sql_len": len(sql)}, "", timing_ms, str(e))
+        await _record_tool_call(state, "validate_sql", {"sql_len": len(sql)}, "", timing_ms, str(e))
         raise
 
 
@@ -318,13 +334,13 @@ async def tool_execute_sql(ctx: RunContext[SingleAgentState], sql: str, limit: i
             preview = f"{len(results) if results else 0} rows"
         else:
             preview = f"error: {(error or '')[:100]}"
-        _record_tool_call(state, "execute_sql", {"sql_len": len(sql), "limit": limit}, preview, timing_ms)
+        await _record_tool_call(state, "execute_sql", {"sql_len": len(sql), "limit": limit}, preview, timing_ms)
         if success:
             return to_toon_block(results or [], "results")
         return f"Execution failed: {error}"
     except Exception as e:
         timing_ms = int((time.time() - start) * 1000)
-        _record_tool_call(state, "execute_sql", {"sql_len": len(sql), "limit": limit}, "", timing_ms, str(e))
+        await _record_tool_call(state, "execute_sql", {"sql_len": len(sql), "limit": limit}, "", timing_ms, str(e))
         raise
 
 
@@ -339,11 +355,11 @@ async def tool_get_query_plan(ctx: RunContext[SingleAgentState], sql: str) -> st
         result = await get_query_plan(state.database_connection, sql)
         timing_ms = int((time.time() - start) * 1000)
         preview = str(result)[:80] if result else "N/A"
-        _record_tool_call(state, "get_query_plan", {"sql_len": len(sql)}, preview, timing_ms)
+        await _record_tool_call(state, "get_query_plan", {"sql_len": len(sql)}, preview, timing_ms)
         return to_toon_block(result, "plan") if result else "Could not get plan."
     except Exception as e:
         timing_ms = int((time.time() - start) * 1000)
-        _record_tool_call(state, "get_query_plan", {"sql_len": len(sql)}, "", timing_ms, str(e))
+        await _record_tool_call(state, "get_query_plan", {"sql_len": len(sql)}, "", timing_ms, str(e))
         raise
 
 
@@ -353,19 +369,38 @@ async def run_single_agent(
     database_connection: asyncpg.Connection,
     db_name: str,
     execution_id: str | None = None,
-    on_tool_call: callable | None = None,
-) -> tuple[str, list[dict[str, Any]]]:
-    """Run the single agent. Returns (sql_query, tool_calls)."""
+    on_tool_call: Callable[[dict[str, Any]], Any] | None = None,
+    on_usage: Callable[[dict[str, Any]], Any] | None = None,
+) -> tuple[str, list[dict[str, Any]], dict[str, Any]]:
+    """Run the single agent. Returns (sql_query, tool_calls, usage)."""
     state = SingleAgentState(
         database_connection=database_connection,
         db_name=db_name,
         execution_id=execution_id,
         on_tool_call=on_tool_call,
+        on_usage=on_usage,
     )
-    result = await single_agent.run(
+    previous_usage: dict[str, Any] | None = None
+    async with single_agent.iter(
         f"Convert this question to SQL: {question}",
         deps=state,
         usage_limits=SINGLE_AGENT_USAGE_LIMITS,
-    )
-    sql = result.output or ""
-    return sql, state.tool_calls
+    ) as agent_run:
+        async for node in agent_run:
+            usage = usage_to_dict(agent_run.usage())
+            if usage != previous_usage:
+                previous_usage = usage
+                await _run_callback(
+                    state.on_usage,
+                    {
+                        "usage": usage,
+                        "node": type(node).__name__,
+                    },
+                )
+
+        result = agent_run.result
+
+    sql = result.output if result else ""
+    final_usage = usage_to_dict(result.usage() if result else None)
+    await _run_callback(state.on_usage, {"usage": final_usage, "node": "completed"})
+    return sql, state.tool_calls, final_usage

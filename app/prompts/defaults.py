@@ -1,6 +1,6 @@
 """Default prompt templates for each agent. Use {{placeholder}} syntax for dynamic values."""
 
-AGENT_IDS = ["interpreter", "mapper", "generator", "validator", "supervisor"]
+AGENT_IDS = ["interpreter", "mapper", "generator", "validator"]
 
 # Placeholder names per agent (for documentation and validation)
 AGENT_PLACEHOLDERS: dict[str, list[str]] = {
@@ -23,7 +23,6 @@ AGENT_PLACEHOLDERS: dict[str, list[str]] = {
         "syntax_status",
         "supervisor_tips",
     ],
-    "supervisor": [],
 }
 
 DEFAULT_INTERPRETER_PROMPT = """
@@ -945,7 +944,6 @@ def get_default_prompt(agent_id: str) -> str:
         "mapper": DEFAULT_MAPPER_PROMPT,
         "generator": DEFAULT_GENERATOR_PROMPT,
         "validator": DEFAULT_VALIDATOR_PROMPT,
-        "supervisor": DEFAULT_SUPERVISOR_PROMPT,
     }
     if agent_id not in prompts:
         raise ValueError(f"Unknown agent_id: {agent_id}. Valid: {list(prompts)}")

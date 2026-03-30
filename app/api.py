@@ -33,6 +33,7 @@ from app.redis_orm import (
     save_execution,
     save_prompt_config,
     save_session,
+    update_execution_metrics,
     update_execution_status,
 )
 
@@ -96,6 +97,72 @@ def parse_connection_string(conn_str: str) -> tuple[str, str]:
     logfire.info(f"Server DSN: {server_dsn}")
 
     return server_dsn, database
+
+
+def _serialize_execution(execution: QueryExecution) -> dict[str, Any]:
+    result = {
+        "id": execution.id,
+        "session_id": execution.session_id,
+        "connection_id": execution.connection_id,
+        "user_query": execution.user_query,
+        "status": execution.status,
+        "current_step": execution.current_step,
+        "step_status": execution.step_status,
+        "sql_query": execution.sql_query,
+        "query_result": execution.query_result,
+        "error": execution.error,
+        "interpreter_output": execution.interpreter_output,
+        "mapper_output": execution.mapper_output,
+        "generator_output": execution.generator_output,
+        "validator_output": execution.validator_output,
+        "analyzer_output": execution.analyzer_output,
+        "single_agent_tool_calls": execution.single_agent_tool_calls,
+        "pipeline_tool_calls": execution.pipeline_tool_calls,
+        "pipeline_mode": execution.pipeline_mode,
+        "usage": execution.usage,
+        "model_name": execution.model_name,
+        "current_activity": execution.current_activity,
+        "latency_ms": execution.latency_ms,
+        "parent_execution_id": execution.parent_execution_id,
+        "comparison_execution_ids": execution.comparison_execution_ids,
+        "created_at": execution.created_at.isoformat(),
+        "updated_at": execution.updated_at.isoformat(),
+    }
+    return result
+
+
+def _derive_versus_status(executions: list[QueryExecution]) -> str:
+    statuses = {execution.status for execution in executions if execution is not None}
+    if not statuses:
+        return "pending"
+    if "running" in statuses:
+        return "running"
+    if statuses == {"pending"}:
+        return "pending"
+    if "completed" in statuses:
+        return "completed"
+    if statuses == {"error"}:
+        return "error"
+    return "error"
+
+
+async def _serialize_execution_with_comparison(execution: QueryExecution) -> dict[str, Any]:
+    result = _serialize_execution(execution)
+    if execution.pipeline_mode != "versus" or not execution.comparison_execution_ids:
+        return result
+
+    comparison_ids = execution.comparison_execution_ids
+    pipeline_execution = await get_execution(comparison_ids.get("pipeline", ""))
+    single_execution = await get_execution(comparison_ids.get("single", ""))
+    children = [child for child in (pipeline_execution, single_execution) if child is not None]
+
+    result["status"] = _derive_versus_status(children)
+    result["versus_state"] = {
+        "pipeline": _serialize_execution(pipeline_execution) if pipeline_execution else None,
+        "single": _serialize_execution(single_execution) if single_execution else None,
+    }
+    result["current_activity"] = "Running versus comparison" if result["status"] == "running" else execution.current_activity
+    return result
 
 
 # Routes
@@ -271,16 +338,23 @@ async def create_session_endpoint(request: Request, name: str | None = Form(None
 async def get_sessions_endpoint():
     """Get all sessions."""
     sessions = await list_sessions()
-    return [
-        {
-            "id": s.id,
-            "name": s.name,
-            "execution_count": len(s.execution_ids),
-            "created_at": s.created_at.isoformat(),
-            "updated_at": s.updated_at.isoformat(),
-        }
-        for s in sessions
-    ]
+    result = []
+    for session in sessions:
+        execution_count = 0
+        for exec_id in session.execution_ids:
+            execution = await get_execution(exec_id)
+            if execution and execution.parent_execution_id is None:
+                execution_count += 1
+        result.append(
+            {
+                "id": session.id,
+                "name": session.name,
+                "execution_count": execution_count,
+                "created_at": session.created_at.isoformat(),
+                "updated_at": session.updated_at.isoformat(),
+            }
+        )
+    return result
 
 
 @app.get("/api/sessions/{session_id}")
@@ -317,27 +391,10 @@ async def get_session_details_endpoint(session_id: str):
 async def get_session_executions_endpoint(session_id: str):
     """Get all executions for a session."""
     executions = await list_executions_by_session(session_id)
-    return [
-        {
-            "id": e.id,
-            "user_query": e.user_query,
-            "status": e.status,
-            "current_step": e.current_step,
-            "step_status": e.step_status,
-            "sql_query": e.sql_query,
-            "query_result": e.query_result,
-            "error": e.error,
-            "interpreter_output": e.interpreter_output,
-            "mapper_output": e.mapper_output,
-            "generator_output": e.generator_output,
-            "validator_output": e.validator_output,
-            "single_agent_tool_calls": getattr(e, "single_agent_tool_calls", []) or [],
-            "pipeline_mode": getattr(e, "pipeline_mode", "supervisor") or "supervisor",
-            "created_at": e.created_at.isoformat(),
-            "updated_at": e.updated_at.isoformat(),
-        }
-        for e in executions
-    ]
+    result = []
+    for execution in executions:
+        result.append(await _serialize_execution_with_comparison(execution))
+    return result
 
 
 # Prompt Config API
@@ -405,7 +462,7 @@ async def create_query(
     connection_id: str = Form(),
     user_query: str = Form(),
     session_id: str | None = Form(None),
-    pipeline_mode: str = Form("supervisor"),  # "supervisor" | "single"
+    pipeline_mode: str = Form("supervisor"),  # "supervisor" | "single" | "versus"
 ):
     """Create a new query execution in a session."""
     if not connection_id:
@@ -456,7 +513,7 @@ async def create_query(
         connection_id=connection_id,
         user_query=user_query,
         status="pending",
-        pipeline_mode=pipeline_mode if pipeline_mode in ("supervisor", "single") else "supervisor",
+        pipeline_mode=pipeline_mode if pipeline_mode in ("supervisor", "single", "versus") else "supervisor",
     )
     exec_id = await save_execution(execution)
 
@@ -468,6 +525,41 @@ async def create_query(
                 user_message=user_query,
                 server_dsn=server_dsn,
                 database=db_name,
+            )
+        )
+    elif execution.pipeline_mode == "versus":
+        pipeline_execution = QueryExecution(
+            session_id=session_id,
+            connection_id=connection_id,
+            user_query=user_query,
+            status="pending",
+            pipeline_mode="supervisor",
+            parent_execution_id=exec_id,
+        )
+        single_execution = QueryExecution(
+            session_id=session_id,
+            connection_id=connection_id,
+            user_query=user_query,
+            status="pending",
+            pipeline_mode="single",
+            parent_execution_id=exec_id,
+        )
+        pipeline_execution_id = await save_execution(pipeline_execution)
+        single_execution_id = await save_execution(single_execution)
+        await update_execution_metrics(
+            exec_id,
+            comparison_execution_ids={"pipeline": pipeline_execution_id, "single": single_execution_id},
+            current_activity="Starting versus comparison",
+        )
+        asyncio.create_task(
+            run_versus_pipeline_with_updates(
+                exec_id=exec_id,
+                pipeline_exec_id=pipeline_execution_id,
+                single_exec_id=single_execution_id,
+                user_message=user_query,
+                server_dsn=server_dsn,
+                database=db_name,
+                session_id=session_id,
             )
         )
     else:
@@ -490,24 +582,7 @@ async def get_query_status(execution_id: str):
     execution = await get_execution(execution_id)
     if execution is None:
         raise HTTPException(status_code=404, detail="Execution not found")
-
-    result = {
-        "id": execution.id,
-        "status": execution.status,
-        "current_step": execution.current_step,
-        "step_status": execution.step_status,
-        "sql_query": execution.sql_query,
-        "error": execution.error,
-        "interpreter_output": execution.interpreter_output,
-        "mapper_output": execution.mapper_output,
-        "generator_output": execution.generator_output,
-        "validator_output": execution.validator_output,
-        "updated_at": execution.updated_at.isoformat(),
-    }
-    if hasattr(execution, "single_agent_tool_calls"):
-        result["single_agent_tool_calls"] = execution.single_agent_tool_calls
-    if hasattr(execution, "pipeline_mode"):
-        result["pipeline_mode"] = execution.pipeline_mode
+    result = await _serialize_execution_with_comparison(execution)
     return result
 
 
@@ -517,30 +592,7 @@ async def get_query(execution_id: str):
     execution = await get_execution(execution_id)
     if execution is None:
         raise HTTPException(status_code=404, detail="Execution not found")
-
-    result = {
-        "id": execution.id,
-        "session_id": execution.session_id,
-        "connection_id": execution.connection_id,
-        "user_query": execution.user_query,
-        "status": execution.status,
-        "current_step": execution.current_step,
-        "step_status": execution.step_status,
-        "sql_query": execution.sql_query,
-        "query_result": execution.query_result,
-        "error": execution.error,
-        "interpreter_output": execution.interpreter_output,
-        "mapper_output": execution.mapper_output,
-        "generator_output": execution.generator_output,
-        "validator_output": execution.validator_output,
-        "created_at": execution.created_at.isoformat(),
-        "updated_at": execution.updated_at.isoformat(),
-    }
-    if hasattr(execution, "single_agent_tool_calls"):
-        result["single_agent_tool_calls"] = execution.single_agent_tool_calls
-    if hasattr(execution, "pipeline_mode"):
-        result["pipeline_mode"] = execution.pipeline_mode
-    return result
+    return await _serialize_execution_with_comparison(execution)
 
 
 @app.get("/api/queries/latest")
@@ -551,21 +603,7 @@ async def get_latest_execution():
         return {"execution": None}
 
     exec = executions[0]
-    return {
-        "execution": {
-            "id": exec.id,
-            "connection_id": exec.connection_id,
-            "user_query": exec.user_query,
-            "status": exec.status,
-            "current_step": exec.current_step,
-            "step_status": exec.step_status,
-            "sql_query": exec.sql_query,
-            "query_result": exec.query_result,
-            "error": exec.error,
-            "created_at": exec.created_at.isoformat(),
-            "updated_at": exec.updated_at.isoformat(),
-        }
-    }
+    return {"execution": await _serialize_execution_with_comparison(exec)}
 
 
 # Pipeline Integration
@@ -576,7 +614,12 @@ async def run_single_pipeline_with_updates(exec_id: str, user_message: str, serv
     from app.agents.single_workflow import run_single_agent_pipeline
 
     try:
-        sql, tool_calls, error = await run_single_agent_pipeline(
+        await update_execution_metrics(
+            exec_id,
+            model_name="openai/gpt-5-mini",
+            current_activity="Starting single-agent run",
+        )
+        sql, tool_calls, usage, error = await run_single_agent_pipeline(
             user_message=user_message,
             server_dsn=server_dsn,
             database=database,
@@ -600,6 +643,11 @@ async def run_single_pipeline_with_updates(exec_id: str, user_message: str, serv
                 query_result=query_result,
                 error=query_result[0]["error"] if has_error else None,
             )
+            await update_execution_metrics(
+                exec_id,
+                usage=usage,
+                current_activity="Single-agent run completed",
+            )
         else:
             await update_execution_status(exec_id, "error", error="No SQL generated")
     except Exception as e:
@@ -614,6 +662,11 @@ async def run_pipeline_with_updates(exec_id: str, user_message: str, server_dsn:
     try:
         # Update status to running
         await update_execution_status(exec_id, "running")
+        await update_execution_metrics(
+            exec_id,
+            model_name="openai/gpt-5-mini",
+            current_activity="Starting multi-agent pipeline",
+        )
 
         # Run the compositor pipeline - it will update Redis at each step
         result = await run_new_pipeline(
@@ -640,7 +693,9 @@ async def run_pipeline_with_updates(exec_id: str, user_message: str, server_dsn:
                     "completed",
                     sql_query=sql_query,
                     query_result=query_result,
+                    latency_ms=result.trace.latency_ms,
                 )
+                await update_execution_metrics(exec_id, current_activity="Pipeline completed", latency_ms=result.trace.latency_ms)
             else:
                 # Query was rejected/invalid, but we executed it anyway to show the error
                 # Check if execution failed (error in result)
@@ -659,14 +714,66 @@ async def run_pipeline_with_updates(exec_id: str, user_message: str, server_dsn:
                     sql_query=sql_query,
                     query_result=query_result,
                     error=error_message,
+                    latency_ms=result.trace.latency_ms,
                 )
+                await update_execution_metrics(exec_id, current_activity="Pipeline finished with errors", latency_ms=result.trace.latency_ms)
         elif result.status == "ERROR":
-            await update_execution_status(exec_id, "error", error=result.error or "Unknown error")
+            await update_execution_status(
+                exec_id, "error", error=result.error or "Unknown error", latency_ms=result.trace.latency_ms
+            )
         else:
-            await update_execution_status(exec_id, "error", error=result.error or "Pipeline failed")
+            await update_execution_status(
+                exec_id, "error", error=result.error or "Pipeline failed", latency_ms=result.trace.latency_ms
+            )
 
     except Exception as e:
         logfire.error("Pipeline execution failed", error=str(e), exc_info=True)
+        await update_execution_status(exec_id, "error", error=str(e))
+
+
+async def run_versus_pipeline_with_updates(
+    exec_id: str,
+    pipeline_exec_id: str,
+    single_exec_id: str,
+    user_message: str,
+    server_dsn: str,
+    database: str,
+    session_id: str,
+):
+    """Run the multi-agent pipeline and single agent at the same time."""
+    started_at = datetime.now()
+    try:
+        await update_execution_status(exec_id, "running")
+        await update_execution_metrics(exec_id, current_activity="Running versus comparison")
+        await asyncio.gather(
+            run_pipeline_with_updates(
+                exec_id=pipeline_exec_id,
+                user_message=user_message,
+                server_dsn=server_dsn,
+                database=database,
+                session_id=session_id,
+            ),
+            run_single_pipeline_with_updates(
+                exec_id=single_exec_id,
+                user_message=user_message,
+                server_dsn=server_dsn,
+                database=database,
+            ),
+        )
+        pipeline_execution = await get_execution(pipeline_exec_id)
+        single_execution = await get_execution(single_exec_id)
+        child_statuses = {
+            execution.status for execution in (pipeline_execution, single_execution) if execution is not None
+        }
+        overall_status = "completed" if "completed" in child_statuses else "error"
+        error_message = None
+        if overall_status == "error":
+            error_message = "Both approaches failed." if child_statuses == {"error"} else "One approach failed."
+        elapsed_ms = int((datetime.now() - started_at).total_seconds() * 1000)
+        await update_execution_status(exec_id, overall_status, error=error_message, latency_ms=elapsed_ms)
+        await update_execution_metrics(exec_id, current_activity="Versus comparison completed", latency_ms=elapsed_ms)
+    except Exception as e:
+        logfire.error("Versus execution failed", error=str(e), exc_info=True)
         await update_execution_status(exec_id, "error", error=str(e))
 
 
