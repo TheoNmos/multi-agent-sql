@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import time
 from datetime import UTC, datetime
 from typing import Any
@@ -11,12 +12,47 @@ import logfire
 from app.agents.context import AgentState, GeneratorTrace, PipelineResult, StepInfo, Trace, mapperTrace
 from app.agents.generator import run_generator
 from app.agents.interpreter import run_interpreter
+from app.agents.llm_timeout import format_model_error
 from app.agents.mapper import run_mapper
 from app.agents.telemetry import empty_usage_dict, merge_usage_dicts
 from app.agents.tools import clean_sql, execute_sql_safe, validate_sql_syntax
 from app.agents.validator import run_validator
 from app.db.connection import database_connect
-from app.llm_models import gpt_5_mini
+from app.llm_models import interpreter_model
+
+_PG_MISSING_COLUMN_RE = re.compile(
+    r'column\s+(?:"?(?P<qual>[\w.]+)"?)\s+does\s+not\s+exist',
+    re.IGNORECASE,
+)
+_MYSQL_UNKNOWN_COLUMN_RE = re.compile(r"Unknown\s+column\s+'(?P<qual>[^']+)'", re.IGNORECASE)
+
+
+def _base_column_name(qualified: str) -> str:
+    cleaned = qualified.strip().strip('"').strip("'")
+    return cleaned.rsplit(".", 1)[-1] if "." in cleaned else cleaned
+
+
+def _enrich_column_not_exist_feedback(execution_error: str | None, state: AgentState) -> str:
+    """Append mapper-aware hint when execution fails on a missing column reference."""
+    if not execution_error or not state.mapper_output:
+        return ""
+    match = _PG_MISSING_COLUMN_RE.search(execution_error) or _MYSQL_UNKNOWN_COLUMN_RE.search(execution_error)
+    if not match:
+        return ""
+    qual = match.group("qual")
+    base = _base_column_name(qual)
+    if not base:
+        return ""
+    tables: list[str] = []
+    for col in state.mapper_output.columns:
+        if col.column_name.lower() == base.lower() and col.table_name not in tables:
+            tables.append(col.table_name)
+    if not tables:
+        return ""
+    return (
+        f"Diagnostic: `{qual}` is invalid. Column `{base}` is listed on mapper-selected table(s): "
+        f"{', '.join(tables)}. Use the join/alias for the table that actually defines `{base}`."
+    )
 
 
 @logfire.instrument("new_pipeline")
@@ -99,14 +135,15 @@ async def run_new_pipeline(
 
     logfire.debug("Database configuration", final_server_dsn=final_server_dsn, final_database=final_database)
 
-    # Establish database connection
+    # Establish database connection (returns a dialect-aware adapter)
     async with database_connect(server_dsn=final_server_dsn, database=final_database) as conn:
         state.database_connection = conn
-        logfire.debug("Database connection established")
+        state.sql_dialect = conn.dialect
+        logfire.debug("Database connection established", dialect=conn.dialect)
         if update_metrics and execution_id:
             await update_metrics(
                 execution_id,
-                model_name=gpt_5_mini.model_name,
+                model_name=interpreter_model.model_name,
                 usage=accumulated_usage,
                 current_activity="Starting multi-agent pipeline",
             )
@@ -185,30 +222,23 @@ async def run_new_pipeline(
             state.trace.latency_ms = int((time.time() - pipeline_start_time) * 1000)
             if update_step and execution_id:
                 await update_step(execution_id, "interpreter", "error")
+            interpreter_error = format_model_error(e, step="Query Interpreter")
             if update_status and execution_id:
-                await update_status(execution_id, "error", error=f"Query Interpreter failed: {str(e)}")
+                await update_status(execution_id, "error", error=interpreter_error)
             await emit_usage_snapshot("Interpreter failed")
             if update_metrics and execution_id:
                 await update_metrics(execution_id, latency_ms=state.trace.latency_ms)
             logfire.error("Query Interpreter failed", error=str(e), error_type=type(e).__name__)
             return PipelineResult(
                 status="ERROR",
-                error=f"Query Interpreter failed: {str(e)}",
+                error=interpreter_error,
                 sql=None,
                 trace=state.trace,
             )
 
         # Step 2: Get all table names upfront and pass to mapper
         logfire.info("Step 2: Getting all table names")
-        table_rows = await conn.fetch(
-            """
-            SELECT table_name
-            FROM information_schema.tables
-            WHERE table_schema = 'public'
-            ORDER BY table_name
-            """
-        )
-        all_tables = [row["table_name"] for row in table_rows]
+        all_tables = await conn.list_tables()
         state.scratch["all_tables"] = all_tables
         state.trace.mapper.all_tables_count = len(all_tables)
         logfire.info("Retrieved all tables", table_count=len(all_tables))
@@ -219,20 +249,13 @@ async def run_new_pipeline(
 
         for table_name in all_tables:
             try:
-                column_rows = await conn.fetch(
-                    """
-                    SELECT column_name
-                    FROM information_schema.columns
-                    WHERE table_schema = 'public' AND table_name = $1
-                    ORDER BY ordinal_position
-                    """,
-                    table_name,
-                )
-                column_names = [row["column_name"] for row in column_rows]
+                column_names = await conn.list_column_names(table_name)
 
                 if column_names:
-                    quoted_columns = ", ".join(f'"{col}"' for col in column_names)
-                    sample_query = f'SELECT {quoted_columns} FROM "{table_name}" LIMIT 1'
+                    quoted_columns = ", ".join(conn.quote_identifier(col) for col in column_names)
+                    sample_query = (
+                        f"SELECT {quoted_columns} FROM {conn.quote_identifier(table_name)} LIMIT 1"
+                    )
                     sample_rows = await conn.fetch(sample_query)
 
                     if sample_rows:
@@ -275,9 +298,10 @@ async def run_new_pipeline(
             mapper_output, mapper_usage = await run_mapper(state)
             accumulated_usage = merge_usage_dicts(accumulated_usage, mapper_usage)
             state.mapper_output = mapper_output
+            mapper_output_payload = mapper_output.model_dump()
             step_timing_ms = int((time.time() - step_start_time) * 1000)
             if update_step and execution_id:
-                await update_step(execution_id, "mapper", "done", output=mapper_output)
+                await update_step(execution_id, "mapper", "done", output=mapper_output_payload)
             await flush_new_tool_calls()
             await emit_usage_snapshot("Mapper completed")
 
@@ -290,16 +314,20 @@ async def run_new_pipeline(
                         "all_tables_count": len(all_tables),
                     },
                     output_summary={
-                        "output_length": len(mapper_output),
-                        "output_preview": mapper_output[:300] if len(mapper_output) > 300 else mapper_output,
+                        "selected_tables": [table.table_name for table in mapper_output.selected_tables],
+                        "column_count": len(mapper_output.columns),
+                        "join_count": len(mapper_output.joins),
+                        "confidence": mapper_output.confidence,
                     },
                 )
             )
 
             logfire.info(
                 "Schema mapper completed",
-                output_length=len(mapper_output),
-                output_preview=mapper_output[:300] if len(mapper_output) > 300 else mapper_output,
+                selected_table_count=len(mapper_output.selected_tables),
+                column_count=len(mapper_output.columns),
+                join_count=len(mapper_output.joins),
+                confidence=mapper_output.confidence,
             )
         except Exception as e:
             step_timing_ms = int((time.time() - step_start_time) * 1000)
@@ -319,7 +347,8 @@ async def run_new_pipeline(
             if update_step and execution_id:
                 await update_step(execution_id, "mapper", "error")
             if update_status and execution_id:
-                await update_status(execution_id, "error", error=f"Schema mapper failed: {str(e)}")
+                mapper_error = format_model_error(e, step="Schema mapper")
+                await update_status(execution_id, "error", error=mapper_error)
             await flush_new_tool_calls()
             await emit_usage_snapshot("Mapper failed")
             if update_metrics and execution_id:
@@ -327,7 +356,7 @@ async def run_new_pipeline(
             logfire.error("Schema mapper failed", error=str(e), error_type=type(e).__name__)
             return PipelineResult(
                 status="ERROR",
-                error=f"Schema mapper failed: {str(e)}",
+                error=format_model_error(e, step="Schema mapper"),
                 sql=None,
                 interpreter_output=state.interpreter_output,
                 trace=state.trace,
@@ -514,11 +543,15 @@ async def run_new_pipeline(
                             if validator_output.refinement_feedback
                             else f"SQL execution error: {execution_error}"
                         )
-                        state.scratch["execution_feedback"] = (
-                            "The previous SQL passed high-level validation but failed when executed in PostgreSQL.\n"
-                            f"Execution error: {execution_error}\n"
-                            "Generate a corrected SQL query that preserves the original intent."
-                        )
+                        exec_fb_lines = [
+                            f"The previous SQL passed high-level validation but failed when executed against {conn.dialect_label}.",
+                            f"Execution error: {execution_error}",
+                            "Generate a corrected SQL query that preserves the original intent.",
+                        ]
+                        col_hint = _enrich_column_not_exist_feedback(execution_error, state)
+                        if col_hint:
+                            exec_fb_lines.append(col_hint)
+                        state.scratch["execution_feedback"] = "\n".join(exec_fb_lines)
                         logfire.warning(
                             "Validated SQL failed execution, retrying generation",
                             attempt=generator_attempt + 1,
@@ -578,7 +611,7 @@ async def run_new_pipeline(
                             await update_metrics(execution_id, latency_ms=state.trace.latency_ms)
                         return PipelineResult(
                             status="ERROR",
-                            error=f"SQL Validator failed: {str(e)}",
+                            error=format_model_error(e, step="SQL Validator"),
                             sql=cleaned_sql if cleaned_sql else None,
                             attempts=generator_attempt + 1,
                             all_queries=state.sql_history,
@@ -643,14 +676,15 @@ async def run_new_pipeline(
                     continue
                 state.trace.end_ts = datetime.now(UTC).isoformat()
                 state.trace.latency_ms = int((time.time() - pipeline_start_time) * 1000)
+                generator_error = format_model_error(e, step="SQL Generator")
                 if update_status and execution_id:
-                    await update_status(execution_id, "error", error=f"SQL Generator failed: {str(e)}")
+                    await update_status(execution_id, "error", error=generator_error)
                 await emit_usage_snapshot("Generator failed")
                 if update_metrics and execution_id:
                     await update_metrics(execution_id, latency_ms=state.trace.latency_ms)
                 return PipelineResult(
                     status="ERROR",
-                    error=f"SQL Generator failed: {str(e)}",
+                    error=generator_error,
                     sql=state.current_sql,
                     attempts=generator_attempt + 1,
                     all_queries=state.sql_history,

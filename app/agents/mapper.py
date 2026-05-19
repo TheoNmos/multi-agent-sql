@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any
-
+import re
 import time
+from typing import Any
 
 import logfire
 from pydantic_ai import Agent, RunContext, UsageLimits
@@ -16,16 +16,94 @@ from app.agents.tools import (
     sample_values,
     search_column_values,
 )
-from app.llm_models import gpt_5_mini
-from app.prompts import DEFAULT_MAPPER_PROMPT, format_supervisor_tips, render_prompt
+from app.llm_models import mapper_model
+from app.prompts import (
+    DEFAULT_MAPPER_PROMPT,
+    dialect_label,
+    dialect_notes,
+    format_supervisor_tips,
+    render_prompt,
+)
 from app.toon_utils import to_toon_block
 
 mapper = Agent[AgentState, mapperOutput](
     name="schema_mapper",
-    model=gpt_5_mini,
+    model=mapper_model,
     deps_type=AgentState,
     output_type=mapperOutput,
 )
+
+
+_MAPPER_VALUE_TOOL_CALLS_SEEN_KEY = "mapper_value_tool_calls_seen"
+_IDENTIFIER_VALUE_RE = re.compile(r"[+-]?\d+|[0-9a-fA-F-]{32,36}")
+
+
+def _normalize_tool_arg(value: Any) -> str:
+    """Normalize tool arguments so repeated calls are caught even with casing/whitespace changes."""
+    return str(value).strip().lower()
+
+
+def _value_tool_signature(
+    tool_name: str, table_name: str, column_name: str, keyword: str | None = None
+) -> tuple[str, ...]:
+    signature = (tool_name, _normalize_tool_arg(table_name), _normalize_tool_arg(column_name))
+    if keyword is not None:
+        signature = (*signature, _normalize_tool_arg(keyword))
+    return signature
+
+
+def _has_seen_value_tool_call(scratch: dict[str, Any], signature: tuple[str, ...]) -> bool:
+    seen = scratch.setdefault(_MAPPER_VALUE_TOOL_CALLS_SEEN_KEY, set())
+    if not isinstance(seen, set):
+        seen = set(seen)
+        scratch[_MAPPER_VALUE_TOOL_CALLS_SEEN_KEY] = seen
+    if signature in seen:
+        return True
+    seen.add(signature)
+    return False
+
+
+def _repeated_value_tool_response(tool_name: str, signature: tuple[str, ...]) -> str:
+    return to_toon_block(
+        {
+            "skipped": True,
+            "reason": (
+                f"{tool_name} was already called with the same table/column/value. "
+                "Use the previous tool result and return MapperOutput if schema, join, and filter evidence are sufficient."
+            ),
+            "signature": list(signature),
+        },
+        "values",
+    )
+
+
+def _record_mapper_tool_skip(state: AgentState, tool_name: str, args_redacted: dict[str, Any], reason: str) -> None:
+    state.trace.tools.append(
+        ToolCall(
+            agent="mapper",
+            tool=tool_name,
+            args_redacted=args_redacted,
+            result_preview=f"Skipped: {reason}",
+            timing_ms=0,
+        )
+    )
+
+
+def _is_identifier_like_column(column_name: str) -> bool:
+    normalized = column_name.strip().lower()
+    return normalized == "id" or normalized.endswith("_id")
+
+
+def _looks_like_identifier_value(keyword: str) -> bool:
+    return bool(_IDENTIFIER_VALUE_RE.fullmatch(keyword.strip()))
+
+
+def _filter_identifier_search_results(column_name: str, keyword: str, values: list[Any]) -> list[Any]:
+    """Avoid substring false positives such as 2625 matching 26250 on identifier columns."""
+    if not (_is_identifier_like_column(column_name) and _looks_like_identifier_value(keyword)):
+        return values
+    keyword_text = keyword.strip()
+    return [value for value in values if str(value).strip() == keyword_text]
 
 
 def _build_mapper_template_vars(ctx: RunContext[AgentState]) -> dict[str, str]:
@@ -90,11 +168,11 @@ def _build_mapper_template_vars(ctx: RunContext[AgentState]) -> dict[str, str]:
 {tables_display}
 
 **CRITICAL**: You have been given the COMPLETE list of ALL tables above.
-- **DO NOT** search for tables - they're all listed here!
-- **SELECT** 3-5 most relevant tables from this list
-- **USE** `get_table_info` to explore your selected tables
-- **NO NEED** to search for columns - `get_table_info` shows them all!
-- **SAMPLE ROWS**: You have access to sample rows for all tables (see PRE-FETCHED SAMPLE ROWS section above)
+- **DO NOT** search for tables - they're all listed here.
+- **SELECT** the smallest sufficient set of tables, usually 1-4.
+- **FIRST USE** the pre-fetched sample rows to infer likely columns, formats, and values.
+- **CALL** `get_table_info` at most once, only for final candidate tables that need column/key confirmation.
+- **PREFER VALUE TOOLS** (`sample_values`, `search_column_values`) when exact filter values or encodings affect correctness.
 
 {sample_rows_section}
 """
@@ -104,6 +182,8 @@ def _build_mapper_template_vars(ctx: RunContext[AgentState]) -> dict[str, str]:
         "sub_questions_context": sub_questions_context,
         "tables_list_section": tables_list_section,
         "supervisor_tips": format_supervisor_tips(ctx.deps.supervisor_tips.get("mapper")),
+        "sql_dialect_label": dialect_label(ctx.deps.sql_dialect),
+        "sql_dialect_notes": dialect_notes(ctx.deps.sql_dialect),
     }
 
 
@@ -134,6 +214,19 @@ async def tool_get_table_info(ctx: RunContext[AgentState], table_names: list[str
         table_list = [table_names]
     else:
         table_list = table_names
+
+    if ctx.deps.scratch.get("mapper_get_table_info_called"):
+        return to_toon_block(
+            {
+                "skipped": True,
+                "reason": "get_table_info may only be called once; use existing context and value tools now.",
+            },
+            "tables",
+        )
+
+    table_list = table_list[:6]
+    table_names = table_list
+    ctx.deps.scratch["mapper_get_table_info_called"] = True
 
     # Record tool call start
     tool_start_time = time.time()
@@ -180,14 +273,24 @@ async def tool_get_table_info(ctx: RunContext[AgentState], table_names: list[str
 async def tool_sample_values(ctx: RunContext[AgentState], table_name: str, column_name: str, limit: int = 10) -> str:
     """Get sample distinct values from a column to understand value encodings.
 
+    Do not call this repeatedly for the same table/column. If a concrete filter value has already been confirmed,
+    return MapperOutput instead of sampling again.
+
     Returns sample values in TOON format for efficient LLM processing.
     """
     if not ctx.deps.database_connection:
         return to_toon_block([], "values")
 
+    signature = _value_tool_signature("sample_values", table_name, column_name)
+    capped_limit = min(max(limit, 1), 10)
+    if _has_seen_value_tool_call(ctx.deps.scratch, signature):
+        args = {"table_name": table_name, "column_name": column_name, "limit": capped_limit}
+        _record_mapper_tool_skip(ctx.deps, "sample_values", args, "repeated table/column sample")
+        return _repeated_value_tool_response("sample_values", signature)
+
     tool_start_time = time.time()
     try:
-        result = await sample_values(ctx.deps.database_connection, table_name, column_name, limit)
+        result = await sample_values(ctx.deps.database_connection, table_name, column_name, capped_limit)
         tool_timing_ms = int((time.time() - tool_start_time) * 1000)
 
         # Record tool call in trace (keep trace logging with raw result for accuracy)
@@ -197,7 +300,7 @@ async def tool_sample_values(ctx: RunContext[AgentState], table_name: str, colum
             ToolCall(
                 agent="mapper",
                 tool="sample_values",
-                args_redacted={"table_name": table_name, "column_name": column_name, "limit": limit},
+                args_redacted={"table_name": table_name, "column_name": column_name, "limit": capped_limit},
                 result_preview=result_preview,
                 timing_ms=tool_timing_ms,
             )
@@ -211,7 +314,7 @@ async def tool_sample_values(ctx: RunContext[AgentState], table_name: str, colum
             ToolCall(
                 agent="mapper",
                 tool="sample_values",
-                args_redacted={"table_name": table_name, "column_name": column_name, "limit": limit},
+                args_redacted={"table_name": table_name, "column_name": column_name, "limit": min(max(limit, 1), 10)},
                 timing_ms=tool_timing_ms,
                 error=str(e),
             )
@@ -225,14 +328,28 @@ async def tool_search_column_values(
 ) -> str:
     """Search for specific values in a column using LIKE pattern matching to find exact matches.
 
+    This is for confirming human names, category labels, codes, or enum values. Avoid ID-chasing: if a name is
+    confirmed in a dimension table and a join key exists, return the name filter and join instead of resolving an ID.
+    For identifier-like columns, numeric keywords are filtered to exact matches to avoid substring false positives.
+
     Returns matching values in TOON format for efficient LLM processing.
     """
     if not ctx.deps.database_connection:
         return to_toon_block([], "values")
 
+    signature = _value_tool_signature("search_column_values", table_name, column_name, keyword)
+    capped_limit = min(max(limit, 1), 10)
+    if _has_seen_value_tool_call(ctx.deps.scratch, signature):
+        args = {"table_name": table_name, "column_name": column_name, "keyword": keyword, "limit": capped_limit}
+        _record_mapper_tool_skip(ctx.deps, "search_column_values", args, "repeated table/column/keyword search")
+        return _repeated_value_tool_response("search_column_values", signature)
+
     tool_start_time = time.time()
     try:
-        result = await search_column_values(ctx.deps.database_connection, table_name, column_name, keyword, limit)
+        result = await search_column_values(
+            ctx.deps.database_connection, table_name, column_name, keyword, capped_limit
+        )
+        result = _filter_identifier_search_results(column_name, keyword, result)
         tool_timing_ms = int((time.time() - tool_start_time) * 1000)
 
         # Record tool call in trace (keep trace logging with raw result for accuracy)
@@ -246,7 +363,7 @@ async def tool_search_column_values(
                     "table_name": table_name,
                     "column_name": column_name,
                     "keyword": keyword,
-                    "limit": limit,
+                    "limit": capped_limit,
                 },
                 result_preview=result_preview,
                 timing_ms=tool_timing_ms,
@@ -265,7 +382,7 @@ async def tool_search_column_values(
                     "table_name": table_name,
                     "column_name": column_name,
                     "keyword": keyword,
-                    "limit": limit,
+                    "limit": min(max(limit, 1), 10),
                 },
                 timing_ms=tool_timing_ms,
                 error=str(e),
@@ -275,7 +392,7 @@ async def tool_search_column_values(
 
 
 mapper_USAGE_LIMITS = UsageLimits(
-    tool_calls_limit=10,  # Reduced: tables provided upfront, only need to explore selected ones
+    tool_calls_limit=12,  # One schema confirmation plus a few non-repeated value checks.
     input_tokens_limit=100000,
 )
 
@@ -285,16 +402,23 @@ async def run_mapper(state: AgentState) -> tuple[mapperOutput, dict[str, Any]]:
     """Run the Schema & Context mapper agent."""
     clarified_question = state.clarified_question or state.raw_question
     logfire.info("Running Schema mapper", clarified_question=clarified_question)
+    state.scratch.pop("mapper_get_table_info_called", None)
+    state.scratch.pop(_MAPPER_VALUE_TOOL_CALLS_SEEN_KEY, None)
 
-    # Enforce sequential tool calls to prevent asyncpg connection errors
-    with mapper.sequential_tool_calls():
+    # Enforce sequential tool calls to prevent async database connection errors.
+    with mapper.sequential_tool_calls():  # pyright: ignore[reportDeprecated]
         result = await mapper.run(clarified_question, deps=state, usage_limits=mapper_USAGE_LIMITS)
     output = result.output
 
+    for table in output.selected_tables:
+        if table.table_name not in state.trace.mapper.selected_tables:
+            state.trace.mapper.selected_tables.append(table.table_name)
+
     logfire.info(
         "Schema mapper completed",
-        output_length=len(output),
-        output_preview=output[:200] if len(output) > 200 else output,
+        selected_table_count=len(output.selected_tables),
+        column_count=len(output.columns),
+        confidence=output.confidence,
     )
 
     return output, usage_to_dict(result.usage())

@@ -9,6 +9,8 @@ import asyncpg
 
 from app.db.connection import database_connect
 
+NUMERIC_CANON_FORMAT = ".12g"
+
 
 def _make_json_serializable(obj: Any) -> Any:
     """Convert database types to JSON-serializable types."""
@@ -42,6 +44,20 @@ def exact_match(gold_sql: str, pred_sql: str) -> bool:
     return gold_sql.strip() == pred_sql.strip()
 
 
+def _canonical_value(value: Any) -> str:
+    if value is None:
+        return "NULL"
+    # bool is a subclass of int; keep true/false semantics instead of normalizing as 1/0.
+    if isinstance(value, bool):
+        return str(value).strip().lower()
+    if isinstance(value, (int, float, Decimal)):
+        try:
+            return format(float(value), NUMERIC_CANON_FORMAT)
+        except (ValueError, OverflowError):
+            return str(value).strip().lower()
+    return str(value).strip().lower()
+
+
 async def _normalize_row(row: asyncpg.Record) -> frozenset[tuple[str, str]]:
     """
     Normalize a database row to a set of (column_name, canonical_value) tuples.
@@ -52,15 +68,7 @@ async def _normalize_row(row: asyncpg.Record) -> frozenset[tuple[str, str]]:
     Returns:
         Frozen set of (column_name, canonical_value) tuples
     """
-    normalized: set[tuple[str, str]] = set()
-    for key, value in row.items():
-        # Canonicalize value: convert to string, trim, lower, handle NULL
-        if value is None:
-            canonical = "NULL"
-        else:
-            canonical = str(value).strip().lower()
-        normalized.add((key.lower(), canonical))
-    return frozenset(normalized)
+    return frozenset((str(key).lower(), _canonical_value(value)) for key, value in row.items())
 
 
 async def _normalize_row_values_only(row: asyncpg.Record) -> tuple[str, ...]:
@@ -73,14 +81,7 @@ async def _normalize_row_values_only(row: asyncpg.Record) -> tuple[str, ...]:
     Returns:
         Tuple of canonicalized values preserving column order
     """
-    values: list[str] = []
-    for _, value in row.items():
-        if value is None:
-            canonical = "NULL"
-        else:
-            canonical = str(value).strip().lower()
-        values.append(canonical)
-    return tuple(values)
+    return tuple(_canonical_value(value) for _, value in row.items())
 
 
 async def _execute_and_normalize(

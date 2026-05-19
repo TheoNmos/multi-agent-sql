@@ -2,57 +2,36 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from urllib.parse import urlparse, urlunparse
 
 import asyncpg
 
 from app.config import db_settings
+from app.db.adapter import DatabaseAdapter
+from app.db.dialects import (
+    detect_dialect,
+    normalize_postgres_url,
+    parse_mysql_dsn,
+    split_url_and_database,
+)
+from app.db.postgres_adapter import PostgresAdapter
 
-# Global connection pool
+# Postgres-only connection pool kept for callers that still want pooled access.
 _connection_pool: asyncpg.Pool | None = None
 
 
-def _normalize_connection_string(server_dsn: str, database: str) -> str:
-    """
-    Normalize PostgreSQL connection string for asyncpg.
-
-    Converts postgresql:// to postgres:// and properly constructs
-    the full connection string with database name.
-    """
-    # Parse the server DSN
-    parsed = urlparse(server_dsn)
-
-    # Normalize scheme: asyncpg prefers postgres:// over postgresql://
-    if parsed.scheme == "postgresql":
-        scheme = "postgres"
-    elif parsed.scheme == "postgres":
-        scheme = "postgres"
-    else:
-        raise ValueError(f"Unsupported database scheme: {parsed.scheme}. Must be 'postgres' or 'postgresql'")
-
-    # Construct the connection string with database name
-    # Format: postgres://user:password@host:port/database
-    connection_string = urlunparse(
-        (
-            scheme,
-            parsed.netloc,  # user:password@host:port
-            f"/{database}",  # database name in path
-            parsed.params,
-            parsed.query,
-            parsed.fragment,
-        )
-    )
-
-    return connection_string
-
-
 async def get_connection_pool() -> asyncpg.Pool:
-    """Get or create the global connection pool."""
+    """Get or create the global connection pool (PostgreSQL only)."""
     global _connection_pool
     if _connection_pool is None:
         server_dsn = db_settings.db_url
         database = db_settings.db_name
-        connection_string = _normalize_connection_string(server_dsn, database)
+        dialect = detect_dialect(server_dsn)
+        if dialect != "postgres":
+            raise RuntimeError(
+                "get_connection_pool only supports PostgreSQL DSNs; "
+                "use database_connect for MySQL connections."
+            )
+        connection_string = normalize_postgres_url(server_dsn, database)
         _connection_pool = await asyncpg.create_pool(
             connection_string,
             min_size=1,
@@ -72,30 +51,62 @@ async def close_connection_pool() -> None:
 
 @asynccontextmanager
 async def database_pool_connection() -> AsyncGenerator[asyncpg.Connection, None]:
-    """
-    Async context manager that yields a connection from the pool.
-    This allows multiple concurrent operations.
-    """
+    """Yield a raw asyncpg connection from the pool (PostgreSQL only)."""
     pool = await get_connection_pool()
     async with pool.acquire() as conn:
         yield conn
 
 
+def _resolve_endpoint(server_dsn: str | None, database: str | None) -> tuple[str, str]:
+    """Resolve the server DSN and database name from arguments and config."""
+    final_server_dsn = server_dsn or db_settings.db_url
+    final_database = database or db_settings.db_name
+
+    if not final_server_dsn:
+        raise ValueError("No database server DSN configured")
+
+    embedded_dsn, embedded_db = split_url_and_database(final_server_dsn)
+    if embedded_db and not database:
+        final_database = embedded_db
+    if embedded_dsn:
+        final_server_dsn = embedded_dsn
+
+    if not final_database:
+        raise ValueError("No database name configured")
+
+    return final_server_dsn, final_database
+
+
 @asynccontextmanager
 async def database_connect(
     server_dsn: str | None = None, database: str | None = None
-) -> AsyncGenerator[asyncpg.Connection, None]:
-    """
-    Async context manager to ensure database exists and yield a live connection.
+) -> AsyncGenerator[DatabaseAdapter, None]:
+    """Open a database connection and yield a dialect-aware adapter.
 
-    - Connects to server DSN without DB, creates DB if missing
-    - Connects to target DB and yields a connection
+    Supports PostgreSQL (``postgres://``, ``postgresql://``) via asyncpg and
+    MySQL (``mysql://``, ``mysql+asyncmy://``) via asyncmy.
     """
-    server_dsn = server_dsn or db_settings.db_url
-    database = database or db_settings.db_name
+    final_server_dsn, final_database = _resolve_endpoint(server_dsn, database)
+    dialect = detect_dialect(final_server_dsn)
 
-    conn = await asyncpg.connect(f"{server_dsn}/{database}")
+    if dialect == "postgres":
+        url = normalize_postgres_url(final_server_dsn, final_database)
+        conn = await asyncpg.connect(url)
+        adapter: DatabaseAdapter = PostgresAdapter(conn=conn, database_name=final_database)
+        try:
+            yield adapter
+        finally:
+            await adapter.close()
+        return
+
+    # MySQL path (lazy import to avoid the dependency when only PostgreSQL is used)
+    from app.db.mysql_adapter import MySQLAdapter, _import_asyncmy
+
+    asyncmy = _import_asyncmy()
+    kwargs = parse_mysql_dsn(final_server_dsn, final_database)
+    conn = await asyncmy.connect(**kwargs)
+    adapter = MySQLAdapter(conn=conn, database_name=final_database)
     try:
-        yield conn
+        yield adapter
     finally:
-        await conn.close()
+        await adapter.close()

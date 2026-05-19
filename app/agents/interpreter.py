@@ -8,13 +8,14 @@ import logfire
 from pydantic_ai import Agent, RunContext, UsageLimits
 
 from app.agents.context import AgentState, InterpreterOutput
+from app.agents.llm_timeout import run_with_llm_timeout
 from app.agents.telemetry import usage_to_dict
-from app.llm_models import gpt_5_mini
+from app.llm_models import interpreter_model
 from app.prompts import DEFAULT_INTERPRETER_PROMPT, format_supervisor_tips, render_prompt
 
 interpreter = Agent[AgentState, InterpreterOutput](
     name="query_interpreter",
-    model=gpt_5_mini,
+    model=interpreter_model,
     deps_type=AgentState,
     output_type=InterpreterOutput,
 )
@@ -39,7 +40,10 @@ async def run_interpreter(state: AgentState) -> tuple[InterpreterOutput, dict[st
     """Run the Query Interpreter agent."""
     logfire.info("Running Query Interpreter", raw_question=state.raw_question)
 
-    result = await interpreter.run(state.raw_question, deps=state, usage_limits=INTERPRETER_USAGE_LIMITS)
+    result = await run_with_llm_timeout(
+        interpreter.run(state.raw_question, deps=state, usage_limits=INTERPRETER_USAGE_LIMITS),
+        context="query interpreter",
+    )
     output = result.output
 
     logfire.info(

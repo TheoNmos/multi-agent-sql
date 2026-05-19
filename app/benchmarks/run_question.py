@@ -2,6 +2,7 @@
 
 import time
 
+from app.agents.llm_timeout import format_model_error
 from app.config import db_settings
 
 from .types import RunQuestionResult
@@ -59,6 +60,6 @@ async def run_question(question: str, db_name: str) -> RunQuestionResult:
             tokens_in=None,
             tokens_out=None,
             model_name=None,
-            error=str(e),
+            error=format_model_error(e),
             trace=None,
         )

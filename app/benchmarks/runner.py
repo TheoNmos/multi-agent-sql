@@ -7,6 +7,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from app.agents.llm_timeout import format_model_error
 from app.config import db_settings
 
 from .analyzer import analyze_benchmark_result
@@ -130,136 +131,191 @@ async def _process_single_index(
 ) -> EvalCaseResult:
     """Process a single benchmark index with concurrency control."""
     async with semaphore:
-        question = extract_question_text(item, dataset)
-        gold_sql = extract_gold_sql(item, dataset)
-        # Get predicted SQL
-        if use_gold_as_pred:
-            run_result = RunQuestionResult(predicted_sql=gold_sql, trace=None)
+        try:
+            return await _process_single_index_body(
+                idx=idx,
+                item=item,
+                dataset=dataset,
+                final_db_name=final_db_name,
+                final_server_dsn=final_server_dsn,
+                metrics=metrics,
+                timeout_s=timeout_s,
+                use_gold_as_pred=use_gold_as_pred,
+                run_analyzer=run_analyzer,
+                save_callback=save_callback,
+            )
+        except Exception as e:
+            logger.error(f"Index {idx}: unhandled benchmark error: {e}", exc_info=True)
+            question = extract_question_text(item, dataset)
+            gold_sql = extract_gold_sql(item, dataset)
+            result = EvalCaseResult(
+                dataset=dataset,
+                index=idx,
+                question_id=item.get("question_id"),
+                db_id=item.get("db_id") if dataset == "bird" else None,
+                question=question,
+                gold_sql=gold_sql,
+                predicted_sql="",
+                exact_match=False,
+                execution_match=None,
+                analyzer_match=None,
+                error=format_model_error(e),
+                execution_error=None,
+                gold_execution_results=None,
+                predicted_execution_results=None,
+                db_name=final_db_name,
+                metadata={},
+                agent_trace=None,
+                analyzer_output=None,
+            )
+            if save_callback:
+                save_callback(result)
+            return result
+
+
+async def _process_single_index_body(
+    idx: int,
+    item: dict[str, Any],
+    dataset: str,
+    final_db_name: str,
+    final_server_dsn: str,
+    metrics: list[str],
+    timeout_s: int,
+    use_gold_as_pred: bool,
+    run_analyzer: bool,
+    save_callback: Callable[[EvalCaseResult], None] | None,
+) -> EvalCaseResult:
+    question = extract_question_text(item, dataset)
+    gold_sql = extract_gold_sql(item, dataset)
+    # Get predicted SQL
+    if use_gold_as_pred:
+        run_result = RunQuestionResult(predicted_sql=gold_sql, trace=None)
+    else:
+        print(f"Running question: {question} on database {final_db_name}")
+        run_result = await run_question(question, final_db_name)
+        print(f"Run result: {run_result}")
+
+    pred_sql = run_result.predicted_sql
+
+    # Compute metrics
+    compute_em = "em" in metrics
+    compute_exa = "exa" in metrics
+
+    em_result = False
+    if compute_em:
+        em_result = exact_match(gold_sql, pred_sql)
+
+    exa_result: bool | None = None
+    exa_error: str | None = None
+    gold_execution_results: list[dict[str, Any]] | None = None
+    predicted_execution_results: list[dict[str, Any]] | None = None
+    if compute_exa:
+        if not pred_sql.strip():
+            exa_error = "Predicted SQL is empty, skipping execution"
+            logger.warning(f"Index {idx}: Skipping execution - predicted SQL is empty")
         else:
-            print(f"Running question: {question} on database {final_db_name}")
-            run_result = await run_question(question, final_db_name)
-            print(f"Run result: {run_result}")
+            logger.debug(f"Index {idx}: Executing queries for execution accuracy check")
+            (
+                exa_result,
+                exa_error,
+                gold_execution_results,
+                predicted_execution_results,
+            ) = await execution_match_async(final_server_dsn, final_db_name, gold_sql, pred_sql, timeout_s)
+    else:
+        logger.debug(f"Index {idx}: Skipping execution - 'exa' metric not requested")
 
-        pred_sql = run_result.predicted_sql
+    # Run analyzer if enabled and neither EM nor RM is True
+    analyzer_output = None
+    analyzer_match: bool | None = None
 
-        # Compute metrics
-        compute_em = "em" in metrics
-        compute_exa = "exa" in metrics
-
-        em_result = False
-        if compute_em:
-            em_result = exact_match(gold_sql, pred_sql)
-
-        exa_result: bool | None = None
-        exa_error: str | None = None
-        gold_execution_results: list[dict] | None = None
-        predicted_execution_results: list[dict] | None = None
-        if compute_exa:
-            if not pred_sql.strip():
-                exa_error = "Predicted SQL is empty, skipping execution"
-                logger.warning(f"Index {idx}: Skipping execution - predicted SQL is empty")
-            else:
-                logger.debug(f"Index {idx}: Executing queries for execution accuracy check")
-                (
-                    exa_result,
-                    exa_error,
-                    gold_execution_results,
-                    predicted_execution_results,
-                ) = await execution_match_async(final_server_dsn, final_db_name, gold_sql, pred_sql, timeout_s)
-        else:
-            logger.debug(f"Index {idx}: Skipping execution - 'exa' metric not requested")
-
-        # Run analyzer if enabled and neither EM nor RM is True
-        analyzer_output = None
-        analyzer_match: bool | None = None
-
-        # If EM or RM is True, analyzer_match is True (rule-based match confirms correctness)
-        if em_result or (exa_result is True):
-            analyzer_match = True
-            analyzer_output = {
-                "analyzer_match": True,
-                "approved": True,
-                "failure_step": "none",
-                "failure_reason": "Result is correct - rule-based match (EM or RM) confirms correctness",
-                "query_issues": "No issues found - query matches expected results",
-                "root_cause": "Result is correct - validated by exact match or execution match",
-                "suggestions": [],
+    # If EM or RM is True, analyzer_match is True (rule-based match confirms correctness)
+    if em_result or (exa_result is True):
+        analyzer_match = True
+        analyzer_output = {
+            "analyzer_match": True,
+            "approved": True,
+            "failure_step": "none",
+            "failure_reason": "Result is correct - rule-based match (EM or RM) confirms correctness",
+            "query_issues": "No issues found - query matches expected results",
+            "root_cause": "Result is correct - validated by exact match or execution match",
+            "suggestions": [],
+        }
+        logger.info(f"Index {idx}: Skipping analyzer - rule-based match (EM or RM) confirms correctness")
+    elif run_analyzer:
+        # Run analyzer only if enabled and neither EM nor RM matched
+        logger.info(f"Index {idx}: Running analyzer to check business impact (AM)")
+        try:
+            # Prepare result data for analyzer
+            result_data = {
+                "dataset": dataset,
+                "index": idx,
+                "question_id": item.get("question_id"),
+                "db_id": item.get("db_id") if dataset == "bird" else None,
+                "question": question,
+                "gold_sql": gold_sql,
+                "predicted_sql": pred_sql,
+                "exact_match": em_result,
+                "execution_match": exa_result,
+                "error": run_result.error,
+                "execution_error": exa_error,
+                "gold_execution_results": gold_execution_results,
+                "predicted_execution_results": predicted_execution_results,
+                "agent_trace": run_result.trace,
             }
-            logger.info(f"Index {idx}: Skipping analyzer - rule-based match (EM or RM) confirms correctness")
-        elif run_analyzer:
-            # Run analyzer only if enabled and neither EM nor RM matched
-            logger.info(f"Index {idx}: Running analyzer to check business impact (AM)")
-            try:
-                # Prepare result data for analyzer
-                result_data = {
-                    "dataset": dataset,
-                    "index": idx,
-                    "question_id": item.get("question_id"),
-                    "db_id": item.get("db_id") if dataset == "bird" else None,
-                    "question": question,
-                    "gold_sql": gold_sql,
-                    "predicted_sql": pred_sql,
-                    "exact_match": em_result,
-                    "execution_match": exa_result,
-                    "error": run_result.error,
-                    "execution_error": exa_error,
-                    "gold_execution_results": gold_execution_results,
-                    "predicted_execution_results": predicted_execution_results,
-                    "agent_trace": run_result.trace,
-                }
-                analyzer_result = await analyze_benchmark_result(result_data)
-                # Convert Pydantic model to dict for storage
-                analyzer_output = analyzer_result.model_dump()
-                analyzer_match = analyzer_result.analyzer_match
-            except Exception as e:
-                logger.error(f"Index {idx}: Error running analyzer: {e}", exc_info=True)
-                analyzer_output = {
-                    "analyzer_match": False,
-                    "approved": False,
-                    "failure_step": "analyzer",
-                    "failure_reason": f"Analyzer failed with error: {str(e)}",
-                    "query_issues": "Unable to analyze due to analyzer error",
-                    "root_cause": "Analyzer agent encountered an error",
-                    "suggestions": ["Fix analyzer agent error handling"],
-                }
-                analyzer_match = False
-        else:
-            # Analyzer disabled and no rule-based match
-            analyzer_match = None
-            logger.info(f"Index {idx}: Analyzer disabled - no AM check performed")
+            analyzer_result = await analyze_benchmark_result(result_data)
+            # Convert Pydantic model to dict for storage
+            analyzer_output = analyzer_result.model_dump()
+            analyzer_match = analyzer_result.analyzer_match
+        except Exception as e:
+            logger.error(f"Index {idx}: Error running analyzer: {e}", exc_info=True)
+            analyzer_failure = format_model_error(e, step="Analyzer")
+            analyzer_output = {
+                "analyzer_match": False,
+                "approved": False,
+                "failure_step": "analyzer",
+                "failure_reason": analyzer_failure,
+                "query_issues": "Unable to analyze due to analyzer error",
+                "root_cause": "Analyzer agent encountered an error",
+                "suggestions": ["Fix analyzer agent error handling"],
+            }
+            analyzer_match = False
+    else:
+        # Analyzer disabled and no rule-based match
+        analyzer_match = None
+        logger.info(f"Index {idx}: Analyzer disabled - no AM check performed")
 
-        # Build result
-        result = EvalCaseResult(
-            dataset=dataset,
-            index=idx,
-            question_id=item.get("question_id"),
-            db_id=item.get("db_id") if dataset == "bird" else None,
-            question=question,
-            gold_sql=gold_sql,
-            predicted_sql=pred_sql,
-            exact_match=em_result,
-            execution_match=exa_result,
-            analyzer_match=analyzer_match,
-            error=run_result.error,
-            execution_error=exa_error,
-            gold_execution_results=gold_execution_results,
-            predicted_execution_results=predicted_execution_results,
-            db_name=final_db_name,
-            metadata={
-                "latency_ms": run_result.latency_ms,
-                "tokens_in": run_result.tokens_in,
-                "tokens_out": run_result.tokens_out,
-                "model_name": run_result.model_name,
-            },
-            agent_trace=run_result.trace,
-            analyzer_output=analyzer_output,
-        )
+    # Build result
+    result = EvalCaseResult(
+        dataset=dataset,
+        index=idx,
+        question_id=item.get("question_id"),
+        db_id=item.get("db_id") if dataset == "bird" else None,
+        question=question,
+        gold_sql=gold_sql,
+        predicted_sql=pred_sql,
+        exact_match=em_result,
+        execution_match=exa_result,
+        analyzer_match=analyzer_match,
+        error=run_result.error,
+        execution_error=exa_error,
+        gold_execution_results=gold_execution_results,
+        predicted_execution_results=predicted_execution_results,
+        db_name=final_db_name,
+        metadata={
+            "latency_ms": run_result.latency_ms,
+            "tokens_in": run_result.tokens_in,
+            "tokens_out": run_result.tokens_out,
+            "model_name": run_result.model_name,
+        },
+        agent_trace=run_result.trace,
+        analyzer_output=analyzer_output,
+    )
 
-        # Save result incrementally if callback provided
-        if save_callback:
-            save_callback(result)
+    # Save result incrementally if callback provided
+    if save_callback:
+        save_callback(result)
 
-        return result
+    return result
 
 
 async def run_benchmark(
@@ -344,8 +400,42 @@ async def run_benchmark(
         for idx, item in zip(indices, selected_items, strict=True)
     ]
 
-    # Run all tasks concurrently (limited by semaphore)
-    results = await asyncio.gather(*tasks)
+    # Run all tasks concurrently; return_exceptions so one hung task cannot block the batch.
+    raw_results = await asyncio.gather(*tasks, return_exceptions=True)
+    results: list[EvalCaseResult] = []
+    for task_idx, raw in enumerate(raw_results):
+        if isinstance(raw, EvalCaseResult):
+            results.append(raw)
+            continue
+        index = indices[task_idx]
+        item = selected_items[task_idx]
+        exc = raw
+        logger.error(f"Index {index}: task raised unexpectedly: {exc}", exc_info=exc)
+        question = extract_question_text(item, dataset)
+        gold_sql = extract_gold_sql(item, dataset)
+        fallback = EvalCaseResult(
+            dataset=dataset,
+            index=index,
+            question_id=item.get("question_id"),
+            db_id=item.get("db_id") if dataset == "bird" else None,
+            question=question,
+            gold_sql=gold_sql,
+            predicted_sql="",
+            exact_match=False,
+            execution_match=None,
+            analyzer_match=None,
+            error=format_model_error(exc),
+            execution_error=None,
+            gold_execution_results=None,
+            predicted_execution_results=None,
+            db_name=final_db_name,
+            metadata={},
+            agent_trace=None,
+            analyzer_output=None,
+        )
+        if save_callback:
+            save_callback(fallback)
+        results.append(fallback)
 
     # Sort results by index to maintain order
     results = sorted(results, key=lambda r: r.index)

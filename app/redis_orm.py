@@ -15,7 +15,7 @@ PROMPTS_CONFIG_KEY = "prompts:config"
 
 
 class ConnectionString(BaseModel):
-    """PostgreSQL connection string model."""
+    """SQL database connection string model (PostgreSQL or MySQL)."""
 
     id: str = Field(default_factory=lambda: str(uuid4()))
     connection_string: str
@@ -48,7 +48,7 @@ class QueryExecution(BaseModel):
     error: str | None = None
     # Agent outputs
     interpreter_output: dict[str, Any] | None = None  # InterpreterOutput as dict
-    mapper_output: str | None = None  # mapperOutput is a string
+    mapper_output: dict[str, Any] | str | None = None  # MapperOutput as dict; legacy runs may be strings
     generator_output: dict[str, Any] | None = None  # GeneratorOutput as dict
     validator_output: dict[str, Any] | None = None  # ValidatorOutput as dict
     analyzer_output: dict[str, Any] | None = None  # AnalyzerOutput as dict
@@ -58,7 +58,7 @@ class QueryExecution(BaseModel):
     model_name: str | None = None
     current_activity: str | None = None
     latency_ms: int | None = None
-    pipeline_mode: str = "supervisor"  # "supervisor" | "single" | "versus"
+    pipeline_mode: str = "pipeline"  # "pipeline" | "single" | "versus"
     parent_execution_id: str | None = None
     comparison_execution_ids: dict[str, str] | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -170,7 +170,7 @@ async def update_execution_step(
     if status == "done" and output is not None:
         if step == "interpreter" and isinstance(output, dict):
             exec.interpreter_output = output
-        elif step == "mapper" and isinstance(output, str):
+        elif step == "mapper":
             exec.mapper_output = output
         elif step == "generator" and isinstance(output, dict):
             exec.generator_output = output

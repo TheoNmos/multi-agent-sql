@@ -5,9 +5,8 @@ from __future__ import annotations
 import inspect
 import time
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Literal
 
-import asyncpg
 import logfire
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext, UsageLimits
@@ -22,7 +21,8 @@ from app.agents.tools import (
     search_tables,
     validate_sql_syntax,
 )
-from app.llm_models import gpt_5_mini
+from app.db.adapter import DatabaseAdapter
+from app.llm_models import gpt_5_mini_minimal
 from app.toon_utils import to_toon_block
 
 
@@ -31,8 +31,9 @@ class SingleAgentState(BaseModel):
 
     model_config = {"arbitrary_types_allowed": True}
 
-    database_connection: asyncpg.Connection | None = None
+    database_connection: DatabaseAdapter | None = None
     db_name: str | None = None
+    sql_dialect: Literal["postgres", "mysql"] = "postgres"
     tool_calls: list[dict[str, Any]] = Field(default_factory=list)
     execution_id: str | None = None
     on_tool_call: Callable[[dict[str, Any]], Any] | None = None  # Optional callback to persist tool calls
@@ -71,7 +72,11 @@ async def _record_tool_call(
     await _run_callback(state.on_tool_call, entry)
 
 
-SINGLE_AGENT_PROMPT = """You are a **Text-to-SQL Agent**. Convert natural language questions into correct PostgreSQL SQL queries.
+SINGLE_AGENT_PROMPT_TEMPLATE = """You are a **Text-to-SQL Agent**. Convert natural language questions into correct {{dialect_label}} SQL queries.
+
+## SQL Dialect
+
+Generated SQL must be valid for **{{dialect_label}}**. {{dialect_notes}}
 
 ## Your Process
 
@@ -103,9 +108,27 @@ SINGLE_AGENT_PROMPT = """You are a **Text-to-SQL Agent**. Convert natural langua
 """
 
 
+_POSTGRES_DIALECT_NOTES = (
+    "Quote identifiers with double quotes when needed. "
+    "Use PostgreSQL features such as `COUNT(*) FILTER (WHERE ...)`, `column::text` casts, "
+    "and `ILIKE` for case-insensitive matching."
+)
+_MYSQL_DIALECT_NOTES = (
+    "Quote identifiers with backticks when needed (e.g. `` `column` ``). "
+    "Use MySQL-friendly idioms: `SUM(CASE WHEN ... THEN 1 ELSE 0 END)` instead of `FILTER`, "
+    "`CAST(column AS CHAR)` instead of `::text`, and `LIKE`/`LOWER(...)` for case-insensitive matching."
+)
+
+
+def _build_single_agent_prompt(dialect: Literal["postgres", "mysql"]) -> str:
+    label = "PostgreSQL" if dialect == "postgres" else "MySQL"
+    notes = _POSTGRES_DIALECT_NOTES if dialect == "postgres" else _MYSQL_DIALECT_NOTES
+    return SINGLE_AGENT_PROMPT_TEMPLATE.replace("{{dialect_label}}", label).replace("{{dialect_notes}}", notes)
+
+
 single_agent = Agent[SingleAgentState, str](
     name="single_text_to_sql",
-    model=gpt_5_mini,
+    model=gpt_5_mini_minimal,
     deps_type=SingleAgentState,
     output_type=str,
 )
@@ -119,7 +142,7 @@ SINGLE_AGENT_USAGE_LIMITS = UsageLimits(
 
 @single_agent.system_prompt
 def system_prompt(ctx: RunContext[SingleAgentState]) -> str:
-    return SINGLE_AGENT_PROMPT
+    return _build_single_agent_prompt(ctx.deps.sql_dialect)
 
 
 @single_agent.tool
@@ -132,24 +155,14 @@ async def tool_get_schema_preview(ctx: RunContext[SingleAgentState]) -> str:
     start = time.time()
     try:
         conn = state.database_connection
-        table_rows = await conn.fetch(
-            "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name"
-        )
-        all_tables = [r["table_name"] for r in table_rows]
+        all_tables = await conn.list_tables()
         sample_rows_dict: dict[str, dict[str, Any] | None] = {}
         for table_name in all_tables:
             try:
-                column_rows = await conn.fetch(
-                    """
-                    SELECT column_name FROM information_schema.columns
-                    WHERE table_schema = 'public' AND table_name = $1 ORDER BY ordinal_position
-                    """,
-                    table_name,
-                )
-                column_names = [r["column_name"] for r in column_rows]
+                column_names = await conn.list_column_names(table_name)
                 if column_names:
-                    quoted = ", ".join(f'"{c}"' for c in column_names)
-                    rows = await conn.fetch(f'SELECT {quoted} FROM "{table_name}" LIMIT 1')
+                    quoted = ", ".join(conn.quote_identifier(c) for c in column_names)
+                    rows = await conn.fetch(f"SELECT {quoted} FROM {conn.quote_identifier(table_name)} LIMIT 1")
                     if rows:
                         row = dict(rows[0])
                         truncated = {}
@@ -193,10 +206,7 @@ async def tool_list_tables(ctx: RunContext[SingleAgentState]) -> str:
         return "No database connection."
     start = time.time()
     try:
-        rows = await state.database_connection.fetch(
-            "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name"
-        )
-        tables = [r["table_name"] for r in rows]
+        tables = await state.database_connection.list_tables()
         timing_ms = int((time.time() - start) * 1000)
         await _record_tool_call(state, "list_tables", {}, f"{len(tables)} tables", timing_ms)
         return ", ".join(tables) if tables else "No tables found."
@@ -239,11 +249,15 @@ async def tool_sample_values(
         result = await sample_values(state.database_connection, table_name, column_name, limit)
         timing_ms = int((time.time() - start) * 1000)
         preview = f"{len(result)} values"
-        await _record_tool_call(state, "sample_values", {"table": table_name, "column": column_name}, preview, timing_ms)
+        await _record_tool_call(
+            state, "sample_values", {"table": table_name, "column": column_name}, preview, timing_ms
+        )
         return to_toon_block(result, "values")
     except Exception as e:
         timing_ms = int((time.time() - start) * 1000)
-        await _record_tool_call(state, "sample_values", {"table": table_name, "column": column_name}, "", timing_ms, str(e))
+        await _record_tool_call(
+            state, "sample_values", {"table": table_name, "column": column_name}, "", timing_ms, str(e)
+        )
         raise
 
 
@@ -366,7 +380,7 @@ async def tool_get_query_plan(ctx: RunContext[SingleAgentState], sql: str) -> st
 @logfire.instrument("single_agent")
 async def run_single_agent(
     question: str,
-    database_connection: asyncpg.Connection,
+    database_connection: DatabaseAdapter,
     db_name: str,
     execution_id: str | None = None,
     on_tool_call: Callable[[dict[str, Any]], Any] | None = None,
@@ -376,6 +390,7 @@ async def run_single_agent(
     state = SingleAgentState(
         database_connection=database_connection,
         db_name=db_name,
+        sql_dialect=database_connection.dialect,
         execution_id=execution_id,
         on_tool_call=on_tool_call,
         on_usage=on_usage,

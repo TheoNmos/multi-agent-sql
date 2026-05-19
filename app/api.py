@@ -5,16 +5,26 @@ import json
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any, Literal
 from urllib.parse import urlparse
 
-import asyncpg
 import logfire
 from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel
 
-from app.config import db_settings, settings
+from app.analytics import (
+    close_analytics,
+    extract_feedback_snapshot,
+    get_feedback,
+    get_versus_feedback,
+    init_analytics,
+    is_analytics_ready,
+    save_feedback,
+)
+from app.config import db_settings, feature_settings, settings
+from app.db.dialects import detect_dialect, split_url_and_database
 from app.prompts import AGENT_IDS, get_default_prompt
 from app.redis_orm import (
     ConnectionString,
@@ -69,34 +79,51 @@ async def lifespan(app: FastAPI):
     logfire.instrument_pydantic_ai()
     logfire.instrument_fastapi(app, excluded_urls=[r"/api/queries.*"])
     await _seed_default_connection()
-    yield
+    await init_analytics()
+    try:
+        yield
+    finally:
+        await close_analytics()
 
 
 app = FastAPI(lifespan=lifespan)
 templates = Jinja2Templates(directory="app/templates")
 
 
+class FeedbackRequest(BaseModel):
+    value: Literal["positive", "negative", "pipeline", "single"]
+
+
+def _normalize_pipeline_mode(mode: str | None) -> str:
+    """Normalize old persisted mode names to the current UI/API names."""
+    return "pipeline" if mode in (None, "", "supervisor") else mode
+
+
 def parse_connection_string(conn_str: str) -> tuple[str, str]:
-    """Parse PostgreSQL connection string to extract server DSN and database name."""
+    """Parse a database connection string into a server DSN and database name.
+
+    Accepts PostgreSQL (``postgres``/``postgresql``) and MySQL
+    (``mysql``/``mysql+asyncmy``/``mysql+pymysql``/``mysql+aiomysql``) URLs.
+    """
     logfire.info(f"Parsing connection string: {conn_str[:50]}...")
-    parsed = urlparse(conn_str)
-    logfire.info(f"Parsed URL - scheme: {parsed.scheme}, netloc: {parsed.netloc}, path: {parsed.path}")
+    try:
+        dialect = detect_dialect(conn_str)
+    except ValueError as e:
+        logfire.error(str(e))
+        raise
 
-    # Accept both postgresql and postgres schemes
-    if parsed.scheme not in ("postgresql", "postgres"):
-        error_msg = f"Connection string must be PostgreSQL (got scheme: {parsed.scheme})"
-        logfire.error(error_msg)
-        raise ValueError(error_msg)
-
-    # Extract database name from path
-    database = parsed.path.lstrip("/") if parsed.path else ""
-    logfire.info(f"Extracted database name: {database}")
-
-    # Reconstruct server DSN without database
-    server_dsn = f"{parsed.scheme}://{parsed.netloc}"
-    logfire.info(f"Server DSN: {server_dsn}")
-
+    server_dsn, database = split_url_and_database(conn_str)
+    logfire.info(
+        "Parsed connection string",
+        dialect=dialect,
+        database=database,
+        server_dsn=server_dsn[:60] if server_dsn else "",
+    )
     return server_dsn, database
+
+
+def _feedback_enabled() -> bool:
+    return feature_settings.enable_feedback and is_analytics_ready()
 
 
 def _serialize_execution(execution: QueryExecution) -> dict[str, Any]:
@@ -118,7 +145,7 @@ def _serialize_execution(execution: QueryExecution) -> dict[str, Any]:
         "analyzer_output": execution.analyzer_output,
         "single_agent_tool_calls": execution.single_agent_tool_calls,
         "pipeline_tool_calls": execution.pipeline_tool_calls,
-        "pipeline_mode": execution.pipeline_mode,
+        "pipeline_mode": _normalize_pipeline_mode(execution.pipeline_mode),
         "usage": execution.usage,
         "model_name": execution.model_name,
         "current_activity": execution.current_activity,
@@ -131,8 +158,18 @@ def _serialize_execution(execution: QueryExecution) -> dict[str, Any]:
     return result
 
 
+async def _serialize_execution_with_feedback(execution: QueryExecution) -> dict[str, Any]:
+    result = _serialize_execution(execution)
+    feedback_enabled = _feedback_enabled()
+    result["feedback_enabled"] = feedback_enabled
+    result["user_feedback"] = (
+        await get_feedback(execution.id) if feedback_enabled and result["pipeline_mode"] != "versus" else None
+    )
+    return result
+
+
 def _derive_versus_status(executions: list[QueryExecution]) -> str:
-    statuses = {execution.status for execution in executions if execution is not None}
+    statuses = {execution.status for execution in executions}
     if not statuses:
         return "pending"
     if "running" in statuses:
@@ -147,8 +184,8 @@ def _derive_versus_status(executions: list[QueryExecution]) -> str:
 
 
 async def _serialize_execution_with_comparison(execution: QueryExecution) -> dict[str, Any]:
-    result = _serialize_execution(execution)
-    if execution.pipeline_mode != "versus" or not execution.comparison_execution_ids:
+    result = await _serialize_execution_with_feedback(execution)
+    if _normalize_pipeline_mode(execution.pipeline_mode) != "versus" or not execution.comparison_execution_ids:
         return result
 
     comparison_ids = execution.comparison_execution_ids
@@ -158,10 +195,18 @@ async def _serialize_execution_with_comparison(execution: QueryExecution) -> dic
 
     result["status"] = _derive_versus_status(children)
     result["versus_state"] = {
-        "pipeline": _serialize_execution(pipeline_execution) if pipeline_execution else None,
-        "single": _serialize_execution(single_execution) if single_execution else None,
+        "pipeline": await _serialize_execution_with_feedback(pipeline_execution) if pipeline_execution else None,
+        "single": await _serialize_execution_with_feedback(single_execution) if single_execution else None,
     }
-    result["current_activity"] = "Running versus comparison" if result["status"] == "running" else execution.current_activity
+    result["versus_feedback"] = (
+        await get_versus_feedback(comparison_ids.get("pipeline", ""), comparison_ids.get("single", ""))
+        if _feedback_enabled()
+        else None
+    )
+    result["user_feedback"] = result["versus_feedback"]
+    result["current_activity"] = (
+        "Running versus comparison" if result["status"] == "running" else execution.current_activity
+    )
     return result
 
 
@@ -177,11 +222,14 @@ async def index(request: Request):
     logfire.info(f"Found {len(connections)} connections and {len(sessions)} sessions")
 
     return templates.TemplateResponse(
+        request,
         "index.html",
         {
             "request": request,
             "connections": connections,
             "sessions": sessions,
+            "benchmarks_enabled": feature_settings.enable_benchmarks,
+            "feedback_enabled": _feedback_enabled(),
         },
     )
 
@@ -189,8 +237,8 @@ async def index(request: Request):
 @app.post("/api/connections")
 async def create_connection(
     request: Request,
-    connection_string: str = Form(),
-    database_name: str = Form(),
+    connection_string: Annotated[str, Form()],
+    database_name: Annotated[str, Form()],
 ):
     """Save a new connection string."""
     if not connection_string:
@@ -204,7 +252,7 @@ async def create_connection(
 
     # Validate connection string format
     try:
-        server_dsn, db_name = parse_connection_string(connection_string)
+        _server_dsn, db_name = parse_connection_string(connection_string)
         # Use provided database_name if connection string doesn't have one
         if not db_name:
             db_name = database_name
@@ -302,20 +350,22 @@ async def test_connection(connection_id: str):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid connection string: {str(e)}")
 
-    # Test connection
+    # Test connection through the dialect-aware adapter
+    from app.db.connection import database_connect
+
     try:
-        test_conn = await asyncpg.connect(f"{server_dsn}/{db_name}")
-        try:
-            # Execute a simple query to verify connection
-            result = await test_conn.fetchval("SELECT version()")
-            logfire.info(f"Connection test successful for {connection_id}")
+        async with database_connect(server_dsn=server_dsn, database=db_name) as adapter:
+            version = await adapter.server_version()
+            logfire.info(
+                f"Connection test successful for {connection_id}",
+                dialect=adapter.dialect,
+            )
             return {
                 "success": True,
                 "message": "Connection successful",
-                "database_version": result,
+                "database_version": version,
+                "dialect": adapter.dialect,
             }
-        finally:
-            await test_conn.close()
     except Exception as e:
         error_msg = str(e)
         logfire.error(f"Connection test failed for {connection_id}: {error_msg}")
@@ -326,7 +376,7 @@ async def test_connection(connection_id: str):
 
 
 @app.post("/api/sessions")
-async def create_session_endpoint(request: Request, name: str | None = Form(None)):
+async def create_session_endpoint(request: Request, name: Annotated[str | None, Form()] = None):
     """Create a new session."""
     session = Session(name=name)
     session_id = await save_session(session)
@@ -459,10 +509,10 @@ async def reset_prompt_endpoint(agent_id: str):
 @app.post("/api/queries")
 async def create_query(
     request: Request,
-    connection_id: str = Form(),
-    user_query: str = Form(),
-    session_id: str | None = Form(None),
-    pipeline_mode: str = Form("supervisor"),  # "supervisor" | "single" | "versus"
+    connection_id: Annotated[str, Form()],
+    user_query: Annotated[str, Form()],
+    session_id: Annotated[str | None, Form()] = None,
+    pipeline_mode: Annotated[str, Form()] = "pipeline",  # "pipeline" | "single" | "versus"
 ):
     """Create a new query execution in a session."""
     if not connection_id:
@@ -508,12 +558,16 @@ async def create_query(
         raise HTTPException(status_code=400, detail=f"Invalid connection string: {str(e)}")
 
     # Create execution record with session_id
+    requested_pipeline_mode = _normalize_pipeline_mode(pipeline_mode)
+    if requested_pipeline_mode not in ("pipeline", "single", "versus"):
+        requested_pipeline_mode = "pipeline"
+
     execution = QueryExecution(
         session_id=session_id,
         connection_id=connection_id,
         user_query=user_query,
         status="pending",
-        pipeline_mode=pipeline_mode if pipeline_mode in ("supervisor", "single", "versus") else "supervisor",
+        pipeline_mode=requested_pipeline_mode,
     )
     exec_id = await save_execution(execution)
 
@@ -533,7 +587,7 @@ async def create_query(
             connection_id=connection_id,
             user_query=user_query,
             status="pending",
-            pipeline_mode="supervisor",
+            pipeline_mode="pipeline",
             parent_execution_id=exec_id,
         )
         single_execution = QueryExecution(
@@ -595,6 +649,104 @@ async def get_query(execution_id: str):
     return await _serialize_execution_with_comparison(execution)
 
 
+@app.get("/api/queries/{execution_id}/feedback")
+@app.get("/api/executions/{execution_id}/feedback")
+async def get_query_feedback(execution_id: str):
+    """Get current feedback for a query execution."""
+    if not _feedback_enabled():
+        return {"feedback_enabled": False, "user_feedback": None}
+
+    execution = await get_execution(execution_id)
+    if execution is None:
+        raise HTTPException(status_code=404, detail="Execution not found")
+
+    if _normalize_pipeline_mode(execution.pipeline_mode) == "versus":
+        comparison_ids = execution.comparison_execution_ids or {}
+        return {
+            "feedback_enabled": True,
+            "user_feedback": await get_versus_feedback(
+                comparison_ids.get("pipeline", ""), comparison_ids.get("single", "")
+            ),
+        }
+
+    return {"feedback_enabled": True, "user_feedback": await get_feedback(execution_id)}
+
+
+@app.post("/api/queries/{execution_id}/feedback")
+@app.post("/api/executions/{execution_id}/feedback")
+async def save_query_feedback(execution_id: str, payload: FeedbackRequest):
+    """Save positive or negative feedback for a terminal query execution."""
+    if not _feedback_enabled():
+        raise HTTPException(status_code=503, detail="Feedback analytics is disabled")
+
+    execution = await get_execution(execution_id)
+    if execution is None:
+        raise HTTPException(status_code=404, detail="Execution not found")
+
+    if execution.status not in {"completed", "error"}:
+        raise HTTPException(status_code=409, detail="Feedback can only be saved for terminal executions")
+
+    pipeline_mode = _normalize_pipeline_mode(execution.pipeline_mode)
+    if pipeline_mode == "versus":
+        if payload.value not in {"pipeline", "single"}:
+            raise HTTPException(status_code=400, detail="Versus feedback must be 'pipeline' or 'single'")
+
+        comparison_ids = execution.comparison_execution_ids or {}
+        pipeline_execution_id = comparison_ids.get("pipeline")
+        single_execution_id = comparison_ids.get("single")
+        if not pipeline_execution_id or not single_execution_id:
+            raise HTTPException(status_code=409, detail="Versus comparison executions are not available")
+
+        existing_preference = await get_versus_feedback(pipeline_execution_id, single_execution_id)
+        if existing_preference is not None:
+            raise HTTPException(status_code=409, detail="Feedback has already been submitted")
+
+        pipeline_execution = await get_execution(pipeline_execution_id)
+        single_execution = await get_execution(single_execution_id)
+        if pipeline_execution is None or single_execution is None:
+            raise HTTPException(status_code=404, detail="Versus comparison execution not found")
+        if pipeline_execution.status not in {"completed", "error"} or single_execution.status not in {
+            "completed",
+            "error",
+        }:
+            raise HTTPException(status_code=409, detail="Feedback can only be saved after both runs finish")
+
+        preferred: Literal["pipeline", "single"] = "pipeline" if payload.value == "pipeline" else "single"
+        snapshots = [
+            extract_feedback_snapshot(pipeline_execution, "positive" if preferred == "pipeline" else "negative"),
+            extract_feedback_snapshot(single_execution, "positive" if preferred == "single" else "negative"),
+        ]
+        try:
+            for snapshot in snapshots:
+                await save_feedback(snapshot)
+        except RuntimeError as e:
+            raise HTTPException(status_code=503, detail=str(e))
+        except Exception as e:
+            logfire.warning("Could not save versus feedback", exec_id=execution_id, error=str(e))
+            raise HTTPException(status_code=500, detail="Could not save feedback")
+
+        return {"ok": True, "feedback_enabled": True, "user_feedback": preferred}
+
+    if payload.value not in {"positive", "negative"}:
+        raise HTTPException(status_code=400, detail="Feedback must be 'positive' or 'negative'")
+
+    existing_feedback = await get_feedback(execution_id)
+    if existing_feedback is not None:
+        raise HTTPException(status_code=409, detail="Feedback has already been submitted")
+
+    feedback_value: Literal["positive", "negative"] = "positive" if payload.value == "positive" else "negative"
+    snapshot = extract_feedback_snapshot(execution, feedback_value)
+    try:
+        await save_feedback(snapshot)
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        logfire.warning("Could not save execution feedback", exec_id=execution_id, error=str(e))
+        raise HTTPException(status_code=500, detail="Could not save feedback")
+
+    return {"ok": True, "feedback_enabled": True, "user_feedback": payload.value}
+
+
 @app.get("/api/queries/latest")
 async def get_latest_execution():
     """Get the latest execution (for restoring state on page load)."""
@@ -613,46 +765,71 @@ async def run_single_pipeline_with_updates(exec_id: str, user_message: str, serv
     """Run single agent pipeline with Redis updates."""
     from app.agents.single_workflow import run_single_agent_pipeline
 
+    started_at = datetime.now()
+
+    def elapsed_ms() -> int:
+        return int((datetime.now() - started_at).total_seconds() * 1000)
+
     try:
         await update_execution_metrics(
             exec_id,
             model_name="openai/gpt-5-mini",
             current_activity="Starting single-agent run",
         )
-        sql, tool_calls, usage, error = await run_single_agent_pipeline(
+        sql, _tool_calls, usage, error = await run_single_agent_pipeline(
             user_message=user_message,
             server_dsn=server_dsn,
             database=database,
             execution_id=exec_id,
         )
         if error:
-            await update_execution_status(exec_id, "error", error=error)
+            latency_ms = elapsed_ms()
+            await update_execution_status(exec_id, "error", error=error, latency_ms=latency_ms)
+            await update_execution_metrics(
+                exec_id,
+                usage=usage,
+                current_activity="Single-agent run failed",
+                latency_ms=latency_ms,
+            )
             return
         if sql:
             query_result = await execute_query(server_dsn, database, sql)
-            has_error = (
-                query_result
-                and len(query_result) == 1
-                and isinstance(query_result[0], dict)
-                and "error" in query_result[0]
-            )
+            has_error = query_result and len(query_result) == 1 and "error" in query_result[0]
+            latency_ms = elapsed_ms()
             await update_execution_status(
                 exec_id,
                 "error" if has_error else "completed",
                 sql_query=sql,
                 query_result=query_result,
                 error=query_result[0]["error"] if has_error else None,
+                latency_ms=latency_ms,
             )
             await update_execution_metrics(
                 exec_id,
                 usage=usage,
                 current_activity="Single-agent run completed",
+                latency_ms=latency_ms,
             )
         else:
-            await update_execution_status(exec_id, "error", error="No SQL generated")
+            latency_ms = elapsed_ms()
+            await update_execution_status(exec_id, "error", error="No SQL generated", latency_ms=latency_ms)
+            await update_execution_metrics(
+                exec_id,
+                usage=usage,
+                current_activity="Single-agent run failed",
+                latency_ms=latency_ms,
+            )
     except Exception as e:
+        from app.agents.llm_timeout import format_model_error
+
         logfire.error("Single agent pipeline failed", error=str(e), exc_info=True)
-        await update_execution_status(exec_id, "error", error=str(e))
+        latency_ms = elapsed_ms()
+        await update_execution_status(exec_id, "error", error=format_model_error(e), latency_ms=latency_ms)
+        await update_execution_metrics(
+            exec_id,
+            current_activity="Single-agent run failed",
+            latency_ms=latency_ms,
+        )
 
 
 async def run_pipeline_with_updates(exec_id: str, user_message: str, server_dsn: str, database: str, session_id: str):
@@ -695,7 +872,9 @@ async def run_pipeline_with_updates(exec_id: str, user_message: str, server_dsn:
                     query_result=query_result,
                     latency_ms=result.trace.latency_ms,
                 )
-                await update_execution_metrics(exec_id, current_activity="Pipeline completed", latency_ms=result.trace.latency_ms)
+                await update_execution_metrics(
+                    exec_id, current_activity="Pipeline completed", latency_ms=result.trace.latency_ms
+                )
             else:
                 # Query was rejected/invalid, but we executed it anyway to show the error
                 # Check if execution failed (error in result)
@@ -716,7 +895,9 @@ async def run_pipeline_with_updates(exec_id: str, user_message: str, server_dsn:
                     error=error_message,
                     latency_ms=result.trace.latency_ms,
                 )
-                await update_execution_metrics(exec_id, current_activity="Pipeline finished with errors", latency_ms=result.trace.latency_ms)
+                await update_execution_metrics(
+                    exec_id, current_activity="Pipeline finished with errors", latency_ms=result.trace.latency_ms
+                )
         elif result.status == "ERROR":
             await update_execution_status(
                 exec_id, "error", error=result.error or "Unknown error", latency_ms=result.trace.latency_ms
@@ -727,8 +908,10 @@ async def run_pipeline_with_updates(exec_id: str, user_message: str, server_dsn:
             )
 
     except Exception as e:
+        from app.agents.llm_timeout import format_model_error
+
         logfire.error("Pipeline execution failed", error=str(e), exc_info=True)
-        await update_execution_status(exec_id, "error", error=str(e))
+        await update_execution_status(exec_id, "error", error=format_model_error(e))
 
 
 async def run_versus_pipeline_with_updates(
@@ -780,44 +963,32 @@ async def run_versus_pipeline_with_updates(
 async def execute_query(server_dsn: str, database: str, sql_query: str) -> list[dict[str, Any]]:
     """Execute SQL query and return results as list of dicts.
 
-    Uses the same connection method as the agents to ensure consistency.
+    Uses the dialect-aware adapter so the same path serves PostgreSQL and MySQL.
     """
     from app.agents.tools import clean_sql
     from app.db.connection import database_connect
 
     try:
-        # Clean the SQL query (remove escaped newlines, trailing semicolons, etc.)
         sql_clean = clean_sql(sql_query)
 
-        # Ensure database name is not empty
         if not database:
             logfire.error("Database name is empty", server_dsn=server_dsn)
             return [{"error": "Database name is required"}]
 
         logfire.info(
-            "Executing query", server_dsn=server_dsn[:50] + "...", database=database, sql_preview=sql_clean[:100]
+            "Executing query",
+            server_dsn=server_dsn[:50] + "...",
+            database=database,
+            sql_preview=sql_clean[:100],
         )
 
-        # Use the same connection method as agents (database_connect)
         async with database_connect(server_dsn=server_dsn, database=database) as conn:
-            rows = await conn.fetch(sql_clean)
-            # Convert rows to list of dicts
-            result = []
-            for row in rows:
-                result.append(dict(row))
-            logfire.info("Query executed successfully", row_count=len(result))
-            return result
-    except asyncpg.exceptions.PostgresSyntaxError as e:
-        error_msg = f"SQL syntax error: {str(e)}"
-        print(error_msg)
-        logfire.error("SQL syntax error", error=error_msg, sql_preview=sql_query[:200])
-        return [{"error": error_msg}]
-    except asyncpg.exceptions.PostgresError as e:
-        print(e)
-        error_msg = f"Database error: {str(e)}"
-        print(error_msg)
-        logfire.error("Database error", error=error_msg, sql_preview=sql_query[:200])
-        return [{"error": error_msg}]
+            success, rows, error = await conn.execute_sql_safe(sql_clean, limit=1000)
+            if not success:
+                logfire.error("Database error", error=error, sql_preview=sql_query[:200])
+                return [{"error": error or "Unknown database error"}]
+            logfire.info("Query executed successfully", row_count=len(rows or []))
+            return rows or []
     except Exception as e:
         error_msg = f"Unexpected error: {str(e)}"
         logfire.error("Error executing query", error=error_msg, exc_info=True, sql_preview=sql_query[:200])
@@ -889,12 +1060,12 @@ async def get_benchmark_questions(dataset: str):
 @app.post("/api/benchmarks/run")
 async def run_benchmark_endpoint(
     request: Request,
-    dataset: str = Form(),
-    indices: str = Form(),  # Comma-separated or range string like "1,2,3" or "1-5"
-    connection_id: str = Form(),
-    metrics: str = Form(default="em,exa"),  # Comma-separated: "em", "exa", or "em,exa"
-    timeout_s: int = Form(default=30),
-    max_concurrent: int = Form(default=5),
+    dataset: Annotated[str, Form()],
+    indices: Annotated[str, Form()],  # Comma-separated or range string like "1,2,3" or "1-5"
+    connection_id: Annotated[str, Form()],
+    metrics: Annotated[str, Form()] = "em,exa",  # Comma-separated: "em", "exa", or "em,exa"
+    timeout_s: Annotated[int, Form()] = 30,
+    max_concurrent: Annotated[int, Form()] = 5,
 ):
     """Run benchmark on selected questions."""
     from app.benchmarks.datasets import load_bird, load_livraria, parse_indices

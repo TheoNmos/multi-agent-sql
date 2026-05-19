@@ -5,10 +5,11 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from app.agents.llm_timeout import format_model_error
 from app.agents.single_agent import run_single_agent
 from app.agents.tools import clean_sql
-from app.llm_models import gpt_5_mini
 from app.db.connection import database_connect
+from app.llm_models import gpt_5_mini
 
 
 def _extract_sql(text: str | None) -> str | None:
@@ -84,6 +85,7 @@ async def run_single_agent_pipeline(
                 )
             return sql, tool_calls, usage, None
         except Exception as e:
+            error_message = format_model_error(e)
             if execution_id:
-                await update_execution_status(execution_id, "error", error=str(e))
-            return None, [], None, str(e)
+                await update_execution_status(execution_id, "error", error=error_message)
+            return None, [], None, error_message
