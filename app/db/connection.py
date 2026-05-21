@@ -100,9 +100,9 @@ async def database_connect(
         return
 
     # MySQL path (lazy import to avoid the dependency when only PostgreSQL is used)
-    from app.db.mysql_adapter import MySQLAdapter, _import_asyncmy
+    from app.db.mysql_adapter import MySQLAdapter, import_asyncmy
 
-    asyncmy = _import_asyncmy()
+    asyncmy = import_asyncmy()
     kwargs = parse_mysql_dsn(final_server_dsn, final_database)
     conn = await asyncmy.connect(**kwargs)
     adapter = MySQLAdapter(conn=conn, database_name=final_database)

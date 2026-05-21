@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from inspect import isawaitable
 from typing import Any, ClassVar, override
 
 import logfire
@@ -21,7 +22,7 @@ from app.db.value_sanitize import (
 )
 
 
-def _import_asyncmy() -> Any:
+def import_asyncmy() -> Any:
     """Import asyncmy lazily so the module can be loaded without the driver installed."""
     try:
         import asyncmy
@@ -33,13 +34,7 @@ def _import_asyncmy() -> Any:
 
 
 def _import_asyncmy_errors() -> Any:
-    try:
-        from asyncmy import errors  # type: ignore[import-not-found]
-    except ImportError as e:  # pragma: no cover
-        raise ImportError(
-            "asyncmy is required for MySQL connections. Install it with `pip install asyncmy`."
-        ) from e
-    return errors
+    return import_asyncmy().errors
 
 
 class MySQLAdapter(DatabaseAdapter):
@@ -63,7 +58,7 @@ class MySQLAdapter(DatabaseAdapter):
             close = getattr(self._conn, "close", None)
             if callable(close):
                 result = close()
-                if hasattr(result, "__await__"):
+                if isawaitable(result):
                     await result
 
     @override
@@ -346,8 +341,6 @@ class MySQLAdapter(DatabaseAdapter):
             if not rows:
                 return None
             first = rows[0]
-            if not isinstance(first, dict):
-                return None
             json_text = next(iter(first.values()), None)
             if not json_text:
                 return None
