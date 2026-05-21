@@ -1,0 +1,42 @@
+# Virtual env — dependencies are installed inside the image via `uv sync`
+.venv/
+venv/
+
+# Git and IDE
+.git/
+.gitignore
+.cursor/
+.vscode/
+.idea/
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+
+# Local secrets and env files
+.env
+.env.*
+!.env.example
+
+# Benchmark outputs (mounted as volume in docker-compose)
+benchmark_results/
+
+# Large dataset dumps not needed in the image (mounted as volume)
+datasets/bird/BIRD_dev.sql
+bird/
+
+# OS / editor junk
+.DS_Store
+*.swp
+*.swo
+
+# Docs and planning (not needed at runtime)
+AGENTS.md
+PLANO_VALIDACAO_SAAS.md
+README.md

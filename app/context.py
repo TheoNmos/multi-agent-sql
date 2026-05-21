@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from typing import Any
 
-import asyncpg
 from pydantic import BaseModel, ConfigDict, Field
+
+from app.db.adapter import DatabaseAdapter
 
 
 class QueryPlan(BaseModel):
@@ -67,8 +68,8 @@ class RuntimeData(BaseModel):
 
     previous_query: str = ""
     all_generated_queries: list[str] = Field(default_factory=list)
-    # Database connection
-    database_connection: asyncpg.Connection | None = None
+    # Database connection (adapter)
+    database_connection: DatabaseAdapter | None = None
 
     # Scratchpad for future tools or orchestrator
     scratch: dict[str, Any] = Field(default_factory=dict)

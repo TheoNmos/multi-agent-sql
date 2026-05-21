@@ -5,12 +5,13 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "asyncmy>=0.2.9",
     "asyncpg>=0.30.0",
     "fastapi>=0.104.0",
     "jinja2>=3.1.0",
     "logfire[asyncpg,fastapi]>=4.3.5",
     "pydantic>=2.11.7",
-    "pydantic-ai>=0.7.4",
+    "pydantic-ai>=1.92.0",
     "pydantic-evals>=0.7.4",
     "pydantic-settings>=2.10.1",
     "python-multipart>=0.0.6",

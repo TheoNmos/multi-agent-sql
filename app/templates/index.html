@@ -65,6 +65,184 @@
       color: white;
     }
 
+    .header-actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .prompts-btn {
+      background: transparent;
+      color: #667eea;
+      border: 2px solid #667eea;
+      padding: 8px 12px;
+      border-radius: 999px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      white-space: nowrap;
+    }
+
+    .prompts-btn:hover {
+      background: #667eea;
+      color: white;
+    }
+
+    /* Prompts Modal */
+    .prompts-modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .prompts-modal.hidden {
+      display: none;
+    }
+
+    .prompts-modal-backdrop {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.5);
+    }
+
+    .prompts-modal-content {
+      position: relative;
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      max-width: 900px;
+      width: 100%;
+      max-height: 90vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .prompts-modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 20px 24px;
+      border-bottom: 1px solid #eee;
+    }
+
+    .prompts-modal-header h2 {
+      margin: 0;
+      font-size: 1.25em;
+      color: #333;
+    }
+
+    .prompts-modal-close {
+      background: none;
+      border: none;
+      font-size: 28px;
+      cursor: pointer;
+      color: #666;
+      line-height: 1;
+      padding: 0;
+    }
+
+    .prompts-modal-close:hover {
+      color: #333;
+    }
+
+    .prompts-modal-tabs {
+      display: flex;
+      gap: 4px;
+      padding: 12px 24px 0;
+      border-bottom: 2px solid #ddd;
+    }
+
+    .prompts-tab {
+      padding: 10px 20px;
+      background: transparent;
+      border: none;
+      border-bottom: 3px solid transparent;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      color: #666;
+    }
+
+    .prompts-tab:hover {
+      color: #667eea;
+    }
+
+    .prompts-tab.active {
+      color: #667eea;
+      border-bottom-color: #667eea;
+    }
+
+    .prompts-tab.customized::after {
+      content: " •";
+      color: #28a745;
+    }
+
+    .prompts-modal-body {
+      padding: 20px 24px 24px;
+      overflow-y: auto;
+      flex: 1;
+    }
+
+    .prompts-placeholder-info {
+      font-size: 0.9em;
+      color: #666;
+      margin-bottom: 12px;
+      padding: 10px;
+      background: #f8f9fa;
+      border-radius: 6px;
+    }
+
+    .prompts-textarea {
+      font-family: "Courier New", monospace;
+      font-size: 13px;
+      width: 100%;
+      min-height: 400px;
+      margin-bottom: 16px;
+      resize: vertical;
+    }
+
+    .prompts-modal-actions {
+      display: flex;
+      gap: 10px;
+    }
+
+    .prompts-btn-save {
+      background: #28a745;
+      color: white;
+    }
+
+    .prompts-btn-save:hover {
+      background: #218838;
+    }
+
+    .prompts-btn-reset {
+      background: #ffc107;
+      color: #333;
+    }
+
+    .prompts-btn-reset:hover {
+      background: #e0a800;
+    }
+
+    .prompts-btn-cancel {
+      background: #6c757d;
+      color: white;
+    }
+
+    .prompts-btn-cancel:hover {
+      background: #5a6268;
+    }
+
     .section {
       margin-bottom: 40px;
       padding: 20px;
@@ -157,8 +335,113 @@
       margin-top: 4px;
     }
 
+    .connection-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+      margin-left: 12px;
+    }
+
+    .test-btn {
+      background: #667eea;
+      color: white;
+      border: none;
+      padding: 8px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.9em;
+      white-space: nowrap;
+    }
+
+    .test-btn:hover:not(:disabled) {
+      background: #5568d3;
+    }
+
+    .test-btn:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+
+    .connection-status {
+      font-size: 0.85em;
+      padding: 4px 8px;
+      border-radius: 4px;
+      max-width: 280px;
+      word-break: break-word;
+    }
+
+    .connection-status.success {
+      color: #155724;
+      background: #d4edda;
+    }
+
+    .connection-status.error {
+      color: #721c24;
+      background: #f8d7da;
+    }
+
+    .connection-status.testing {
+      color: #856404;
+      background: #fff3cd;
+    }
+
     .status-container {
       margin-top: 20px;
+    }
+
+    .architecture-header {
+      font-size: 0.9em;
+      color: #667eea;
+      font-weight: 600;
+      margin-bottom: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .supervisor-card {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 16px 20px;
+      border-radius: 8px;
+      text-align: center;
+      margin-bottom: 12px;
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+    }
+
+    .supervisor-card.running {
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+
+    .supervisor-card .supervisor-label {
+      font-size: 0.85em;
+      opacity: 0.9;
+      margin-bottom: 4px;
+    }
+
+    .supervisor-card .supervisor-status {
+      font-weight: 600;
+      font-size: 1.1em;
+    }
+
+    .delegates-label {
+      text-align: center;
+      font-size: 0.8em;
+      color: #999;
+      margin: 8px 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .delegates-label::before,
+    .delegates-label::after {
+      content: "";
+      flex: 1;
+      max-width: 80px;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, #ccc, transparent);
     }
 
     .status-steps {
@@ -220,6 +503,75 @@
       color: #666;
     }
 
+    .single-agent-header {
+      font-size: 0.9em;
+      color: #764ba2;
+      font-weight: 600;
+      margin-bottom: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .single-agent-card {
+      background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+      color: white;
+      padding: 16px 20px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+      box-shadow: 0 4px 12px rgba(118, 75, 162, 0.3);
+    }
+
+    .single-agent-card.running {
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+
+    .tool-timeline {
+      margin-top: 16px;
+      border-left: 3px solid #764ba2;
+      padding-left: 16px;
+    }
+
+    .tool-timeline-item {
+      background: #f8f9fa;
+      border-radius: 6px;
+      padding: 12px;
+      margin-bottom: 10px;
+      border: 1px solid #e9ecef;
+    }
+
+    .tool-timeline-item.running {
+      border-color: #764ba2;
+      background: #f3e8ff;
+    }
+
+    .tool-timeline-item.error {
+      border-color: #dc3545;
+      background: #f8d7da;
+    }
+
+    .tool-timeline-item .tool-name {
+      font-weight: 600;
+      color: #764ba2;
+      margin-bottom: 6px;
+    }
+
+    .tool-timeline-item .tool-args {
+      font-size: 0.85em;
+      color: #666;
+      margin-bottom: 4px;
+    }
+
+    .tool-timeline-item .tool-result {
+      font-size: 0.9em;
+      color: #333;
+    }
+
+    .tool-timeline-item .tool-timing {
+      font-size: 0.8em;
+      color: #999;
+      margin-top: 4px;
+    }
+
     .sql-display {
       margin-top: 20px;
       background: #282c34;
@@ -266,6 +618,60 @@
       border-radius: 6px;
       margin-top: 15px;
       border: 1px solid #f5c6cb;
+    }
+
+    .feedback-section {
+      margin-top: 16px;
+      padding: 14px;
+      border: 1px solid #d9def7;
+      border-radius: 8px;
+      background: #f8f9ff;
+    }
+
+    .feedback-actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+
+    .feedback-btn {
+      padding: 8px 14px;
+      border: 1px solid #667eea;
+      border-radius: 6px;
+      background: white;
+      color: #667eea;
+      cursor: pointer;
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+
+    .feedback-btn:hover,
+    .feedback-btn.is-active {
+      background: #667eea;
+      color: white;
+    }
+
+    .feedback-btn:disabled {
+      cursor: not-allowed;
+      opacity: 0.6;
+    }
+
+    .feedback-btn:disabled:hover {
+      background: white;
+      color: #667eea;
+    }
+
+    .feedback-btn.is-active:disabled {
+      background: #667eea;
+      color: white;
+      opacity: 0.85;
+    }
+
+    .feedback-status {
+      color: #4f5f7a;
+      font-size: 0.9em;
     }
 
     .hidden {
@@ -653,23 +1059,127 @@
       padding: 0 15px;
       opacity: 0;
     }
+
+    .versus-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 16px;
+      margin-top: 16px;
+    }
+
+    .versus-panel {
+      background: white;
+      border: 2px solid #ddd;
+      border-radius: 10px;
+      padding: 16px;
+    }
+
+    .versus-panel.pipeline {
+      border-color: #667eea;
+    }
+
+    .versus-panel.single {
+      border-color: #764ba2;
+    }
+
+    .versus-panel h4 {
+      margin-bottom: 12px;
+      color: #333;
+    }
+
+    .telemetry-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+      gap: 10px;
+      margin: 12px 0 16px;
+    }
+
+    .telemetry-card {
+      background: #f8f9fa;
+      border-radius: 8px;
+      padding: 10px;
+      border: 1px solid #e9ecef;
+    }
+
+    .telemetry-card .label {
+      font-size: 0.78em;
+      color: #666;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .telemetry-card .value {
+      font-size: 1.05em;
+      font-weight: 600;
+      color: #333;
+    }
+
+    .comparison-summary {
+      margin-top: 12px;
+      padding: 12px 14px;
+      border-radius: 8px;
+      background: #eef3ff;
+      color: #334;
+    }
   </style>
 </head>
 
-<body>
+<body data-feedback-enabled="{{ 'true' if feedback_enabled else 'false' }}">
   <div class="container">
     <div class="header-bar">
       <h1 data-i18n="header.title">🔍 Agente SQL - Interface de Consulta em Linguagem Natural</h1>
-      <button class="lang-toggle" type="button" onclick="toggleLanguage()" id="lang-toggle-btn"
-        aria-label="Toggle UI language">
-        <span id="lang-toggle-text">PT (BR) → EN</span>
-      </button>
+      <div class="header-actions">
+        <button class="prompts-btn lang-toggle" type="button" onclick="openPromptsModal()" id="prompts-btn"
+          data-i18n="prompts.customize_button">Customize Prompts</button>
+        <button class="lang-toggle" type="button" onclick="toggleLanguage()" id="lang-toggle-btn"
+          aria-label="Toggle UI language">
+          <span id="lang-toggle-text">PT (BR) → EN</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Prompts Customization Modal -->
+    <div id="prompts-modal" class="prompts-modal hidden">
+      <div class="prompts-modal-backdrop" onclick="closePromptsModal()"></div>
+      <div class="prompts-modal-content">
+        <div class="prompts-modal-header">
+          <h2 data-i18n="prompts.modal_title">Customize Agent Prompts</h2>
+          <button type="button" class="prompts-modal-close" onclick="closePromptsModal()"
+            aria-label="Close">&times;</button>
+        </div>
+        <div class="prompts-modal-tabs">
+          <button type="button" class="prompts-tab active" data-agent="interpreter"
+            data-i18n="prompts.tab_interpreter">Interpreter</button>
+          <button type="button" class="prompts-tab" data-agent="mapper" data-i18n="prompts.tab_mapper">Mapper</button>
+          <button type="button" class="prompts-tab" data-agent="generator"
+            data-i18n="prompts.tab_generator">Generator</button>
+          <button type="button" class="prompts-tab" data-agent="validator"
+            data-i18n="prompts.tab_validator">Validator</button>
+        </div>
+        <div class="prompts-modal-body">
+          <div class="prompts-placeholder-info" data-i18n="prompts.placeholder_info">
+            Use {{placeholder}} syntax for dynamic values. Placeholders are replaced at runtime.
+          </div>
+          <textarea id="prompts-textarea" class="prompts-textarea" rows="20" spellcheck="false"
+            placeholder="Prompt template..."></textarea>
+          <div class="prompts-modal-actions">
+            <button type="button" class="prompts-btn-save" onclick="savePrompt()" data-i18n="prompts.save">Save</button>
+            <button type="button" class="prompts-btn-reset" onclick="resetPrompt()" data-i18n="prompts.reset">Reset to
+              Default</button>
+            <button type="button" class="prompts-btn-cancel" onclick="closePromptsModal()"
+              data-i18n="prompts.cancel">Cancel</button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Tab Navigation -->
     <div class="tabs">
       <button class="tab active" onclick="switchTab('query')" data-i18n="tabs.query">Consulta</button>
+      {% if benchmarks_enabled %}
       <button class="tab" onclick="switchTab('benchmarks')" data-i18n="tabs.benchmarks">Benchmarks</button>
+      {% endif %}
     </div>
 
     <!-- Query Tab Content -->
@@ -700,6 +1210,11 @@
               <div class="connection-name">{{ conn.connection_string }}</div>
               <div class="connection-db"><span data-i18n="connection.database_label">Banco de Dados</span>: {{
                 conn.database_name }}</div>
+            </div>
+            <div class="connection-actions">
+              <button type="button" class="test-btn" onclick="testConnection('{{ conn.id }}')"
+                id="test-btn-{{ conn.id }}" data-i18n="connection.test_button">Testar Conexão</button>
+              <span id="test-status-{{ conn.id }}" class="connection-status" style="display: none;"></span>
             </div>
           </div>
           {% endfor %}
@@ -746,6 +1261,14 @@
             </select>
           </div>
           <div class="form-group">
+            <label for="pipeline_mode" data-i18n="query.pipeline_mode_label">Modo de Pipeline:</label>
+            <select id="pipeline_mode" name="pipeline_mode">
+              <option value="pipeline" data-i18n="query.pipeline_mode_pipeline">Pipeline (multi-agente)</option>
+              <option value="single" data-i18n="query.pipeline_mode_single">Agente Único</option>
+              <option value="versus" data-i18n="query.pipeline_mode_versus">Versus (Pipeline vs Agente Único)</option>
+            </select>
+          </div>
+          <div class="form-group">
             <label for="user_query" data-i18n="query.user_query_label">Consulta em Linguagem Natural:</label>
             <textarea id="user_query" name="user_query"
               placeholder="ex: Quanto o cliente 6 consumiu no total entre agosto e novembro de 2013?"
@@ -771,6 +1294,7 @@
     </div>
 
     <!-- Benchmarks Tab Content -->
+    {% if benchmarks_enabled %}
     <div id="benchmarks-tab" class="tab-content">
       <!-- Dataset Selection -->
       <div class="section">
@@ -822,6 +1346,8 @@
                 se ambos EM e RM forem False.</span>
             </small>
           </div>
+          <button type="button" onclick="runSelectedBenchmarkQuestionInVersus()" style="margin-right: 10px"
+            data-i18n="benchmarks.run_selected_versus">Executar questão selecionada em modo versus</button>
           <button type="submit" id="run-benchmark-btn" data-i18n="benchmarks.run_button">Executar Benchmark</button>
         </form>
         <div id="benchmark-progress" style="display: none; margin-top: 15px">
@@ -846,12 +1372,14 @@
         <div id="results-history"></div>
       </div>
     </div>
+    {% endif %}
   </div>
 
   <script>
     // -----------------------
     // UI language (PT-BR / EN)
     // -----------------------
+    const FEEDBACK_ENABLED = document.body.dataset.feedbackEnabled === "true";
     const UI_LANG_STORAGE_KEY = "uiLang";
     const SUPPORTED_UI_LANGS = ["pt-BR", "en-US"];
 
@@ -869,6 +1397,9 @@
         "connections.add_button": "Adicionar Conexão",
         "connection.database_label": "Banco de Dados",
         "connection.test_button": "Testar Conexão",
+        "connection.testing": "Testando...",
+        "connection.test_success": "Conexão OK",
+        "connection.test_failed": "Falha na conexão",
         "sessions.title": "Sessões",
         "sessions.new_button": "+ Nova Sessão",
         "sessions.unnamed": "Sessão Sem Nome",
@@ -883,18 +1414,54 @@
         "query.title": "Executar Consulta em Linguagem Natural",
         "query.select_connection_label": "Selecionar Conexão:",
         "query.select_connection_placeholder": "-- Selecione uma conexão --",
-        "query.user_query_label": "Consulta em Linguagem Natural:",
-        "query.user_query_placeholder": "ex: Quanto o cliente 6 consumiu no total entre agosto e novembro de 2013?",
+        "query.pipeline_mode_label": "Modo de Pipeline:",
+        "query.pipeline_mode_pipeline": "Pipeline (multi-agente)",
+        "query.pipeline_mode_single": "Agente Único",
+        "query.pipeline_mode_versus": "Versus (Pipeline vs Agente Único)",
+        "query.user_query_label": "Consulta em linguagem natural:",
+        "query.user_query_placeholder": "ex.: Quanto o cliente 6 consumiu no total entre agosto e novembro de 2013?",
         "query.run_analyzer_label": "Executar analisador após a execução da consulta",
         "query.run_button": "Executar Consulta",
         "query.status_title": "Status de Execução da Consulta",
         "query.initializing": "Inicializando...",
         "status.status": "Status",
         "status.current_step": "Etapa Atual",
+        "steps.supervisor": "Supervisor",
         "steps.interpreter": "Interpretador",
         "steps.mapper": "Mapeador",
         "steps.generator": "Gerador",
         "steps.validator": "Validador",
+        "architecture.pipeline": "Pipeline (Interpreter → Mapper → Generator → Validator)",
+        "architecture.supervisor_worker": "Arquitetura Supervisor-Worker",
+        "architecture.supervisor_orchestrating": "Orquestrando workers...",
+        "architecture.supervisor_starting": "Iniciando...",
+        "architecture.supervisor_done": "Concluído",
+        "architecture.supervisor_error": "Erro",
+        "architecture.supervisor_waiting": "Aguardando",
+        "architecture.delegates_to": "delega para",
+        "single_agent.title": "Agente Único - Linha do Tempo de Ferramentas",
+        "single_agent.agent_label": "Agente",
+        "single_agent.thinking": "Pensando e usando ferramentas...",
+        "single_agent.using_tool": "Usando: {tool}",
+        "single_agent.error_after_tool": "Erro (última ferramenta: {tool})",
+        "single_agent.starting": "Iniciando...",
+        "single_agent.done": "Concluído",
+        "single_agent.error": "Erro",
+        "single_agent.waiting": "Aguardando",
+        "versus.title": "Comparação em Tempo Real",
+        "versus.summary": "Os dois sistemas estão executando a mesma pergunta em paralelo.",
+        "versus.panel_pipeline": "Pipeline Multi-agente",
+        "versus.panel_single": "Agente Único",
+        "versus.metric_tokens_in": "Tokens In",
+        "versus.metric_tokens_out": "Tokens Out",
+        "versus.metric_total": "Tokens Totais",
+        "versus.metric_requests": "Requisições",
+        "versus.metric_tools": "Ferramentas",
+        "versus.metric_latency": "Latência",
+        "versus.metric_model": "Modelo",
+        "versus.metric_activity": "Atividade",
+        "versus.branch_results": "Resultados desta abordagem",
+        "versus.run_selected_error": "Selecione exatamente uma questão para executar em modo versus.",
         "output.interpreter.title": "Saída do Interpretador",
         "output.interpreter.clarified": "Questão Esclarecida",
         "output.interpreter.intent": "Intenção Explícita",
@@ -925,6 +1492,14 @@
         "error.label": "Erro",
         "results.query_title": "Resultados da Consulta",
         "results.none": "Nenhum resultado retornado.",
+        "feedback.prompt": "O resultado e a consulta foram úteis?",
+        "feedback.versus_prompt": "Which answer do you prefer?",
+        "feedback.pipeline": "pipeline",
+        "feedback.single_agent": "single-agent",
+        "feedback.positive": "Positivo",
+        "feedback.negative": "Negativo",
+        "feedback.thanks": "Feedback salvo. Obrigado.",
+        "feedback.error": "Não foi possível salvar o feedback.",
         "benchmarks.datasets_title": "Datasets de Benchmark",
         "benchmarks.select_dataset_label": "Selecionar Dataset:",
         "benchmarks.select_dataset_placeholder": "-- Selecione um dataset --",
@@ -936,10 +1511,12 @@
         "benchmarks.run_analyzer_label": "Executar Analisador (AM - Analyzer Match)",
         "benchmarks.run_analyzer_help":
           "EM e RM são sempre calculados. O analisador executa apenas se ambos EM e RM forem False.",
+        "benchmarks.run_selected_versus": "Executar questão selecionada em modo versus",
         "benchmarks.run_button": "Executar Benchmark",
         "benchmarks.running_message": "Executando benchmark... Isso pode levar um tempo.",
         "benchmarks.results_title": "Resultados do Benchmark",
         "benchmarks.history_title": "Resultados Anteriores",
+        "benchmarks.agent_outputs": "Saídas dos agentes",
         "common.refresh": "Atualizar",
         "benchmarks.validation.select_dataset_first": "Por favor, selecione um dataset primeiro",
         "benchmarks.validation.select_at_least_one": "Por favor, selecione pelo menos uma questão",
@@ -958,6 +1535,7 @@
         "benchmarks.execution_results.predicted": "Resultados Previstos",
         "benchmarks.error.system": "Erro do Sistema",
         "benchmarks.error.execution": "Erro de Execução",
+        "benchmarks.warning.pipeline": "Aviso do Pipeline",
         "benchmarks.analyzer_match": "Analyzer Match (AM)",
         "benchmarks.passed": "✓ Passou",
         "benchmarks.failed": "✗ Falhou",
@@ -984,6 +1562,21 @@
         "executions.load_error": "Erro ao carregar execuções:",
         "status.check_error": "Erro ao verificar status:",
         "dataset.load_error": "Erro ao carregar dataset: {msg}",
+        "prompts.customize_button": "Personalizar Prompts",
+        "prompts.modal_title": "Personalizar Prompts dos Agentes",
+        "prompts.tab_supervisor": "Supervisor",
+        "prompts.tab_interpreter": "Interpreter",
+        "prompts.tab_mapper": "Mapper",
+        "prompts.tab_generator": "Generator",
+        "prompts.tab_validator": "Validator",
+        "prompts.placeholder_info": "Use a sintaxe {{placeholder}} para valores dinâmicos. Os placeholders são substituídos em tempo de execução.",
+        "prompts.save": "Salvar",
+        "prompts.reset": "Restaurar Padrão",
+        "prompts.cancel": "Cancelar",
+        "prompts.save_success": "Prompt salvo com sucesso.",
+        "prompts.reset_success": "Prompt restaurado ao padrão.",
+        "prompts.reset_confirm": "Restaurar este prompt ao padrão? Esta alteração será aplicada imediatamente.",
+        "prompts.load_error": "Erro ao carregar prompts:",
         "benchmarks.run_error": "Erro ao executar benchmark: {msg}",
         "benchmarks.check_results_error": "Erro ao verificar resultados:",
         "benchmarks.load_history_error": "Erro ao carregar histórico de resultados:",
@@ -1002,6 +1595,9 @@
         "connections.add_button": "Add connection",
         "connection.database_label": "Database",
         "connection.test_button": "Test connection",
+        "connection.testing": "Testing...",
+        "connection.test_success": "Connection OK",
+        "connection.test_failed": "Connection failed",
         "sessions.title": "Sessions",
         "sessions.new_button": "+ New session",
         "sessions.unnamed": "Unnamed session",
@@ -1016,6 +1612,10 @@
         "query.title": "Run a natural language query",
         "query.select_connection_label": "Select connection:",
         "query.select_connection_placeholder": "-- Select a connection --",
+        "query.pipeline_mode_label": "Pipeline mode:",
+        "query.pipeline_mode_pipeline": "Pipeline (multi-agent)",
+        "query.pipeline_mode_single": "Single agent",
+        "query.pipeline_mode_versus": "Versus (Pipeline vs Single Agent)",
         "query.user_query_label": "Natural language query:",
         "query.user_query_placeholder": "e.g., How much did customer 6 spend in total between Aug and Nov 2013?",
         "query.run_analyzer_label": "Run analyzer after executing the query",
@@ -1024,10 +1624,42 @@
         "query.initializing": "Initializing...",
         "status.status": "Status",
         "status.current_step": "Current step",
+        "steps.supervisor": "Supervisor",
         "steps.interpreter": "Interpreter",
         "steps.mapper": "Mapper",
         "steps.generator": "Generator",
         "steps.validator": "Validator",
+        "architecture.pipeline": "Pipeline (Interpreter → Mapper → Generator → Validator)",
+        "architecture.supervisor_worker": "Supervisor-Worker Architecture",
+        "architecture.supervisor_orchestrating": "Orchestrating workers...",
+        "architecture.supervisor_starting": "Starting...",
+        "architecture.supervisor_done": "Done",
+        "architecture.supervisor_error": "Error",
+        "architecture.supervisor_waiting": "Waiting",
+        "architecture.delegates_to": "delegates to",
+        "single_agent.title": "Single Agent - Tool Execution Timeline",
+        "single_agent.agent_label": "Agent",
+        "single_agent.thinking": "Thinking and using tools...",
+        "single_agent.using_tool": "Using: {tool}",
+        "single_agent.error_after_tool": "Error (last tool: {tool})",
+        "single_agent.starting": "Starting...",
+        "single_agent.done": "Done",
+        "single_agent.error": "Error",
+        "single_agent.waiting": "Waiting",
+        "versus.title": "Real-time comparison",
+        "versus.summary": "Both systems are running the same question in parallel.",
+        "versus.panel_pipeline": "Multi-agent pipeline",
+        "versus.panel_single": "Single agent",
+        "versus.metric_tokens_in": "Input tokens",
+        "versus.metric_tokens_out": "Output tokens",
+        "versus.metric_total": "Total tokens",
+        "versus.metric_requests": "Requests",
+        "versus.metric_tools": "Tools",
+        "versus.metric_latency": "Latency",
+        "versus.metric_model": "Model",
+        "versus.metric_activity": "Activity",
+        "versus.branch_results": "Branch results",
+        "versus.run_selected_error": "Select exactly one question to run in versus mode.",
         "output.interpreter.title": "Interpreter output",
         "output.interpreter.clarified": "Clarified question",
         "output.interpreter.intent": "Explicit intent",
@@ -1058,6 +1690,14 @@
         "error.label": "Error",
         "results.query_title": "Query results",
         "results.none": "No results returned.",
+        "feedback.prompt": "Were the result and query useful?",
+        "feedback.versus_prompt": "Which answer do you prefer?",
+        "feedback.pipeline": "pipeline",
+        "feedback.single_agent": "single-agent",
+        "feedback.positive": "Positive",
+        "feedback.negative": "Negative",
+        "feedback.thanks": "Feedback saved. Thank you.",
+        "feedback.error": "Could not save feedback.",
         "benchmarks.datasets_title": "Benchmark datasets",
         "benchmarks.select_dataset_label": "Select dataset:",
         "benchmarks.select_dataset_placeholder": "-- Select a dataset --",
@@ -1069,10 +1709,12 @@
         "benchmarks.run_analyzer_label": "Run analyzer (AM — Analyzer Match)",
         "benchmarks.run_analyzer_help":
           "EM and RM are always computed. The analyzer runs only if both EM and RM are False.",
+        "benchmarks.run_selected_versus": "Run selected question in versus mode",
         "benchmarks.run_button": "Run benchmark",
         "benchmarks.running_message": "Running benchmark… this may take a while.",
         "benchmarks.results_title": "Benchmark results",
         "benchmarks.history_title": "Previous results",
+        "benchmarks.agent_outputs": "Agent outputs",
         "common.refresh": "Refresh",
         "benchmarks.validation.select_dataset_first": "Please select a dataset first",
         "benchmarks.validation.select_at_least_one": "Please select at least one question",
@@ -1092,6 +1734,7 @@
         "benchmarks.execution_results.predicted": "Predicted results",
         "benchmarks.error.system": "System error",
         "benchmarks.error.execution": "Execution error",
+        "benchmarks.warning.pipeline": "Pipeline warning",
         "benchmarks.analyzer_match": "Analyzer Match (AM)",
         "benchmarks.passed": "✓ Passed",
         "benchmarks.failed": "✗ Failed",
@@ -1118,6 +1761,21 @@
         "executions.load_error": "Error loading executions:",
         "status.check_error": "Error checking status:",
         "dataset.load_error": "Error loading dataset: {msg}",
+        "prompts.customize_button": "Customize Prompts",
+        "prompts.modal_title": "Customize Agent Prompts",
+        "prompts.tab_supervisor": "Supervisor",
+        "prompts.tab_interpreter": "Interpreter",
+        "prompts.tab_mapper": "Mapper",
+        "prompts.tab_generator": "Generator",
+        "prompts.tab_validator": "Validator",
+        "prompts.placeholder_info": "Use {{placeholder}} syntax for dynamic values. Placeholders are replaced at runtime.",
+        "prompts.save": "Save",
+        "prompts.reset": "Reset to Default",
+        "prompts.cancel": "Cancel",
+        "prompts.save_success": "Prompt saved successfully.",
+        "prompts.reset_success": "Prompt reset to default.",
+        "prompts.reset_confirm": "Reset this prompt to the default? This will take effect immediately.",
+        "prompts.load_error": "Error loading prompts:",
         "benchmarks.run_error": "Error running benchmark: {msg}",
         "benchmarks.check_results_error": "Error checking results:",
         "benchmarks.load_history_error": "Error loading results history:",
@@ -1148,6 +1806,85 @@
       loadResultsHistory();
       updateSelectionCount();
     }
+
+    // Prompts modal state
+    let promptsData = { prompts: [] };
+    let currentPromptAgent = "interpreter";
+
+    async function loadPrompts() {
+      try {
+        const resp = await fetch("/api/prompts");
+        if (!resp.ok) throw new Error(resp.statusText);
+        promptsData = await resp.json();
+        return promptsData;
+      } catch (e) {
+        console.error(t("prompts.load_error"), e);
+        return { prompts: [] };
+      }
+    }
+
+    function openPromptsModal() {
+      document.getElementById("prompts-modal").classList.remove("hidden");
+      loadPrompts().then(() => {
+        switchPromptTab("interpreter");
+        document.querySelectorAll(".prompts-tab").forEach((tab) => {
+          const agent = tab.dataset.agent;
+          const p = promptsData.prompts.find((x) => x.agent_id === agent);
+          tab.classList.toggle("customized", p && p.is_customized);
+        });
+      });
+    }
+
+    function closePromptsModal() {
+      document.getElementById("prompts-modal").classList.add("hidden");
+    }
+
+    function switchPromptTab(agentId) {
+      currentPromptAgent = agentId;
+      document.querySelectorAll(".prompts-tab").forEach((t) => t.classList.remove("active"));
+      const tab = document.querySelector(`.prompts-tab[data-agent="${agentId}"]`);
+      if (tab) tab.classList.add("active");
+      const p = promptsData.prompts.find((x) => x.agent_id === agentId);
+      document.getElementById("prompts-textarea").value = p ? p.prompt : "";
+    }
+
+    async function savePrompt() {
+      const prompt = document.getElementById("prompts-textarea").value.trim();
+      try {
+        const resp = await fetch("/api/prompts", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ agent_id: currentPromptAgent, prompt }),
+        });
+        if (!resp.ok) throw new Error((await resp.json()).detail || resp.statusText);
+        alert(t("prompts.save_success"));
+        document.querySelector(`.prompts-tab[data-agent="${currentPromptAgent}"]`).classList.add("customized");
+      } catch (e) {
+        alert(e.message || "Error saving prompt");
+      }
+    }
+
+    async function resetPrompt() {
+      if (!confirm(t("prompts.reset_confirm"))) return;
+      try {
+        const resp = await fetch(`/api/prompts/${currentPromptAgent}`, { method: "DELETE" });
+        if (!resp.ok) throw new Error((await resp.json()).detail || resp.statusText);
+        const defResp = await fetch(`/api/prompts/default?agent_id=${currentPromptAgent}`);
+        const defData = await defResp.json();
+        document.getElementById("prompts-textarea").value = defData.prompt || "";
+        document.querySelector(`.prompts-tab[data-agent="${currentPromptAgent}"]`).classList.remove("customized");
+        await loadPrompts();
+        alert(t("prompts.reset_success"));
+      } catch (e) {
+        alert(e.message || "Error resetting prompt");
+      }
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+      document.querySelectorAll(".prompts-tab").forEach((tab) => {
+        tab.addEventListener("click", () => switchPromptTab(tab.dataset.agent));
+      });
+    });
 
     function updateLanguageToggleLabel() {
       const btn = document.getElementById("lang-toggle-btn");
@@ -1384,6 +2121,17 @@
         generator_output: execution.generator_output,
         validator_output: execution.validator_output,
         analyzer_output: execution.analyzer_output,
+        single_agent_tool_calls: execution.single_agent_tool_calls || [],
+        pipeline_tool_calls: execution.pipeline_tool_calls || [],
+        pipeline_mode: execution.pipeline_mode || "pipeline",
+        usage: execution.usage || null,
+        model_name: execution.model_name || null,
+        current_activity: execution.current_activity || null,
+        latency_ms: execution.latency_ms || null,
+        versus_state: execution.versus_state || null,
+        comparison_execution_ids: execution.comparison_execution_ids || null,
+        feedback_enabled: execution.feedback_enabled || false,
+        user_feedback: execution.user_feedback || null,
       };
 
       updateStatusDisplay(statusData);
@@ -1419,6 +2167,44 @@
           });
         })
         .catch((error) => console.error(t("connections.refresh_error"), error));
+    }
+
+    async function testConnection(connectionId) {
+      const btn = document.getElementById(`test-btn-${connectionId}`);
+      const status = document.getElementById(`test-status-${connectionId}`);
+      if (!btn || !status) {
+        console.error("Connection test UI elements not found for", connectionId);
+        return;
+      }
+
+      btn.disabled = true;
+      status.style.display = "inline";
+      status.className = "connection-status testing";
+      status.textContent = t("connection.testing");
+      status.removeAttribute("title");
+
+      try {
+        const response = await fetch(`/api/connections/${connectionId}/test`, { method: "POST" });
+        const data = await response.json().catch(() => ({}));
+
+        if (response.ok && data.success) {
+          status.className = "connection-status success";
+          status.textContent = t("connection.test_success");
+          const details = [data.dialect, data.database_version].filter(Boolean).join(" — ");
+          if (details) {
+            status.title = details;
+          }
+        } else {
+          status.className = "connection-status error";
+          status.textContent = data.message || t("connection.test_failed");
+        }
+      } catch (error) {
+        status.className = "connection-status error";
+        status.textContent = t("connection.test_failed");
+        console.error("Connection test error:", error);
+      } finally {
+        btn.disabled = false;
+      }
     }
 
     // Handle query form submission response
@@ -1485,10 +2271,11 @@
 
           // Continue polling if not completed or error
           if (data.status === "pending" || data.status === "running") {
+            const interval = data.pipeline_mode === "single" ? 600 : data.pipeline_mode === "versus" ? 800 : 3000;
             setTimeout(() => {
               activePolling.delete(executionId);
               pollStatus(executionId);
-            }, 3000); // Poll every 3 seconds instead of 1
+            }, interval);
           } else {
             // Stop polling when completed or error
             activePolling.delete(executionId);
@@ -1536,9 +2323,137 @@
       }
     }
 
-    function updateStatusDisplay(data) {
-      const statusContent = document.getElementById("status-content");
+    function formatNumber(value) {
+      if (value === null || value === undefined || value === "") return "0";
+      return Number(value).toLocaleString(currentUiLang);
+    }
 
+    function formatLatency(latencyMs) {
+      if (!latencyMs && latencyMs !== 0) return "-";
+      if (latencyMs < 1000) return `${latencyMs} ms`;
+      return `${(latencyMs / 1000).toFixed(2)} s`;
+    }
+
+    function renderTelemetryGrid(data) {
+      const usage = data.usage || {};
+      const cards = [
+        [t("versus.metric_tokens_in"), formatNumber(usage.input_tokens || 0)],
+        [t("versus.metric_tokens_out"), formatNumber(usage.output_tokens || 0)],
+        [t("versus.metric_total"), formatNumber(usage.total_tokens || 0)],
+        [t("versus.metric_requests"), formatNumber(usage.requests || 0)],
+        [t("versus.metric_tools"), formatNumber(usage.tool_calls || 0)],
+        [t("versus.metric_latency"), formatLatency(data.latency_ms)],
+        [t("versus.metric_model"), escapeHtml(data.model_name || "-")],
+        [t("versus.metric_activity"), escapeHtml(data.current_activity || "-")],
+      ];
+
+      return `
+        <div class="telemetry-grid">
+          ${cards
+            .map(
+              ([label, value]) => `
+                <div class="telemetry-card">
+                  <div class="label">${label}</div>
+                  <div class="value">${value}</div>
+                </div>
+              `
+            )
+            .join("")}
+        </div>
+      `;
+    }
+
+    function renderQueryResultsTable(queryResult) {
+      if (!queryResult || queryResult.length === 0) {
+        return `<div class="no-results-message"><p>${t("results.none")}</p></div>`;
+      }
+
+      const columns = Object.keys(queryResult[0]);
+      let tableHtml = `<table class="results-table"><thead><tr>`;
+      columns.forEach((col) => {
+        tableHtml += `<th>${escapeHtml(col)}</th>`;
+      });
+      tableHtml += "</tr></thead><tbody>";
+
+      queryResult.forEach((row) => {
+        tableHtml += "<tr>";
+        columns.forEach((col) => {
+          const value = row[col];
+          tableHtml += `<td>${value !== null && value !== undefined ? escapeHtml(String(value)) : "<em>null</em>"}</td>`;
+        });
+        tableHtml += "</tr>";
+      });
+
+      tableHtml += "</tbody></table>";
+      return tableHtml;
+    }
+
+    function renderPipelineToolTimeline(toolCalls) {
+      if (!toolCalls || toolCalls.length === 0) return "";
+
+      return `
+        <div class="tool-timeline">
+          ${toolCalls
+            .map((tc) => `
+              <div class="tool-timeline-item ${tc.error ? "error" : ""}">
+                <div class="tool-name">${escapeHtml(tc.agent || "pipeline")} :: ${escapeHtml(tc.tool || "?")}</div>
+                <div class="tool-result">${escapeHtml((tc.result_preview || tc.error || "-").slice(0, 180))}</div>
+              </div>
+            `)
+            .join("")}
+        </div>
+      `;
+    }
+
+    function renderSingleAgentView(data) {
+      const toolCalls = data.single_agent_tool_calls || [];
+      const lastTool = toolCalls.length > 0 ? toolCalls[toolCalls.length - 1].tool : null;
+      let singleStatusText = data.status === "running"
+        ? (lastTool ? t("single_agent.using_tool", { tool: lastTool }) : t("single_agent.thinking"))
+        : data.status === "pending"
+          ? t("single_agent.starting")
+          : data.status === "completed"
+            ? t("single_agent.done")
+            : data.status === "error"
+              ? (lastTool ? t("single_agent.error_after_tool", { tool: lastTool }) : t("single_agent.error"))
+              : t("single_agent.waiting");
+
+      let html = '<div><p><strong>' + t("status.status") + ':</strong> <span style="text-transform: capitalize;">' + data.status + '</span></p>';
+      html += renderTelemetryGrid(data);
+      html += '<div class="single-agent-header">' + t("single_agent.title") + '</div>';
+      html += '<div class="single-agent-card ' + (data.status === "running" || data.status === "pending" ? "running" : "") + '">';
+      html += '<div class="supervisor-label">' + t("single_agent.agent_label") + '</div>';
+      html += '<div class="supervisor-status">' + singleStatusText + '</div>';
+      html += '</div>';
+      html += '<div class="tool-timeline">';
+      toolCalls.forEach((tc, idx) => {
+        const isLast = idx === toolCalls.length - 1;
+        const itemClass = tc.error ? "error" : (isLast && (data.status === "running" || data.status === "pending") ? "running" : "");
+        const argsStr = tc.args && Object.keys(tc.args).length > 0
+          ? JSON.stringify(tc.args).slice(0, 80) + (JSON.stringify(tc.args).length > 80 ? "..." : "")
+          : "";
+        html += '<div class="tool-timeline-item ' + itemClass + '">';
+        html += '<div class="tool-name">' + escapeHtml(tc.tool || "?") + '</div>';
+        if (argsStr) html += '<div class="tool-args">' + escapeHtml(argsStr) + '</div>';
+        html += '<div class="tool-result">' + escapeHtml((tc.result_preview || tc.error || "-").slice(0, 150)) + '</div>';
+        html += '<div class="tool-timing">' + (tc.timing_ms || 0) + ' ms</div>';
+        html += '</div>';
+      });
+      html += '</div>';
+      if (data.sql_query) {
+        html += '<div class="sql-display" style="margin-top: 16px;"><strong>' + t("sql.generated") + ':</strong><pre>' + escapeHtml(data.sql_query) + '</pre></div>';
+      }
+      if (data.error) {
+        html += '<div class="error-message"><strong>' + t("error.label") + ':</strong> ' + escapeHtml(data.error) + '</div>';
+      }
+      if (Array.isArray(data.query_result)) {
+        html += '<div class="results-section"><h3>' + t("results.query_title") + '</h3>' + renderQueryResultsTable(data.query_result) + '</div>';
+      }
+      html += '</div>';
+      return html;
+    }
+
+    function renderPipelineView(data, includeResults = true) {
       const steps = ["interpreter", "mapper", "generator", "validator"];
       const stepNames = {
         interpreter: t("steps.interpreter"),
@@ -1547,36 +2462,162 @@
         validator: t("steps.validator"),
       };
 
-      let stepsHtml = '<div class="status-steps">';
+      let stepsHtml = `<div class="architecture-header">${t("architecture.pipeline")}</div><div class="status-steps">`;
       steps.forEach((step) => {
-        const status = data.step_status[step] || "waiting";
+        const status = (data.step_status || {})[step] || "waiting";
         const isCurrent = data.current_step === step && data.status === "running";
         const stepClass = isCurrent ? "running" : status;
-
         stepsHtml += `
-                    <div class="step-card ${stepClass}">
-                        <div class="step-name">${stepNames[step]}</div>
-                        <div class="step-status">${status}</div>
-                    </div>
-                `;
+          <div class="step-card ${stepClass}">
+            <div class="step-name">${stepNames[step]}</div>
+            <div class="step-status">${status}</div>
+          </div>
+        `;
       });
       stepsHtml += "</div>";
 
       let html = `
-                <div>
-                    <p><strong>${t("status.status")}:</strong> <span style="text-transform: capitalize;">${data.status}</span></p>
-                    ${data.current_step
-          ? `<p><strong>${t("status.current_step")}:</strong> ${stepNames[data.current_step] || data.current_step}</p>`
-          : ""
-        }
-                    ${stepsHtml}
-                </div>
-            `;
+        <div>
+          <p><strong>${t("status.status")}:</strong> <span style="text-transform: capitalize;">${data.status}</span></p>
+          ${data.current_step ? `<p><strong>${t("status.current_step")}:</strong> ${stepNames[data.current_step] || data.current_step}</p>` : ""}
+          ${renderTelemetryGrid(data)}
+          ${stepsHtml}
+          ${renderPipelineToolTimeline(data.pipeline_tool_calls || [])}
+        </div>
+      `;
 
-      // Display Interpreter Output
-      if (data.interpreter_output) {
-        const interp = data.interpreter_output;
-        const outputId = "interpreter-output";
+      if (data.sql_query) {
+        html += `<div class="sql-display" style="margin-top: 20px;"><strong>${t("sql.generated")}:</strong><pre>${escapeHtml(data.sql_query)}</pre></div>`;
+      }
+      if (data.error) {
+        html += `<div class="error-message"><strong>${t("error.label")}:</strong> ${escapeHtml(data.error)}</div>`;
+      }
+      if (includeResults && Array.isArray(data.query_result)) {
+        html += `<div class="results-section"><h3>${t("results.query_title")}</h3>${renderQueryResultsTable(data.query_result)}</div>`;
+      }
+      return html;
+    }
+
+    function renderVersusView(data) {
+      const pipeline = (data.versus_state || {}).pipeline;
+      const single = (data.versus_state || {}).single;
+      return `
+        <div>
+          <div class="comparison-summary">
+            <strong>${t("versus.title")}</strong><br />
+            ${t("versus.summary")}
+          </div>
+          <div class="versus-grid">
+            <div class="versus-panel pipeline">
+              <h4>${t("versus.panel_pipeline")}</h4>
+              ${pipeline ? renderPipelineView(pipeline) : `<p>${t("query.initializing")}</p>`}
+            </div>
+            <div class="versus-panel single">
+              <h4>${t("versus.panel_single")}</h4>
+              ${single ? renderSingleAgentView(single) : `<p>${t("query.initializing")}</p>`}
+            </div>
+          </div>
+          ${renderVersusFeedbackForExecution(data)}
+        </div>
+      `;
+    }
+
+    function renderStringList(items) {
+      if (!Array.isArray(items) || items.length === 0) return "";
+      return `<ul style="margin: 5px 0; padding-left: 20px;">${items.map((item) => `<li>${escapeHtml(String(item))}</li>`).join("")}</ul>`;
+    }
+
+    function renderMapperOutput(mapperOutput) {
+      if (mapperOutput === null || mapperOutput === undefined) return "";
+      if (typeof mapperOutput === "string") return escapeHtml(mapperOutput);
+      if (typeof mapperOutput !== "object") return escapeHtml(String(mapperOutput));
+
+      const sections = [];
+      const selectedTables = mapperOutput.selected_tables || [];
+      const columns = mapperOutput.columns || [];
+      const joins = mapperOutput.joins || [];
+
+      if (selectedTables.length > 0) {
+        sections.push(`
+          <div style="margin-bottom: 12px;">
+            <strong>Selected tables</strong>
+            <ul style="margin: 5px 0; padding-left: 20px;">
+              ${selectedTables
+            .map((table) => {
+              const relevantColumns = Array.isArray(table.relevant_columns) && table.relevant_columns.length > 0
+                ? ` Columns: ${table.relevant_columns.map((column) => escapeHtml(String(column))).join(", ")}.`
+                : "";
+              return `<li><strong>${escapeHtml(table.table_name || "?")}</strong> (${escapeHtml(table.priority || "primary")}): ${escapeHtml(table.reason || "")}${relevantColumns}</li>`;
+            })
+            .join("")}
+            </ul>
+          </div>
+        `);
+      }
+
+      if (columns.length > 0) {
+        sections.push(`
+          <div style="margin-bottom: 12px;">
+            <strong>Columns</strong>
+            <ul style="margin: 5px 0; padding-left: 20px;">
+              ${columns
+            .map((column) => {
+              const values = Array.isArray(column.sample_values) && column.sample_values.length > 0
+                ? ` Values: ${column.sample_values.map((value) => escapeHtml(String(value))).join(", ")}.`
+                : "";
+              return `<li><strong>${escapeHtml(column.role || "context")}</strong>: ${escapeHtml(column.table_name || "?")}.${escapeHtml(column.column_name || "?")} - ${escapeHtml(column.reason || "")}${values}</li>`;
+            })
+            .join("")}
+            </ul>
+          </div>
+        `);
+      }
+
+      if (joins.length > 0) {
+        sections.push(`
+          <div style="margin-bottom: 12px;">
+            <strong>Joins</strong>
+            <ul style="margin: 5px 0; padding-left: 20px;">
+              ${joins
+            .map((join) => `<li>${escapeHtml(join.join_type || "INNER")} JOIN ${escapeHtml(join.left_table || "?")}.${escapeHtml(join.left_column || "?")} = ${escapeHtml(join.right_table || "?")}.${escapeHtml(join.right_column || "?")} - ${escapeHtml(join.reason || "")}</li>`)
+            .join("")}
+            </ul>
+          </div>
+        `);
+      }
+
+      const listSections = [
+        ["Target columns", mapperOutput.target_columns],
+        ["Filters", mapperOutput.filters],
+        ["Required constraints", mapperOutput.required_constraints],
+        ["Value notes", mapperOutput.value_notes],
+        ["Cardinality notes", mapperOutput.cardinality_notes],
+        ["Validation notes", mapperOutput.validation_notes],
+      ];
+      listSections.forEach(([title, items]) => {
+        const rendered = renderStringList(items);
+        if (rendered) {
+          sections.push(`<div style="margin-bottom: 12px;"><strong>${title}</strong>${rendered}</div>`);
+        }
+      });
+
+      if (mapperOutput.confidence !== undefined) {
+        sections.push(`<div><strong>Confidence:</strong> ${(Number(mapperOutput.confidence) * 100).toFixed(1)}%</div>`);
+      }
+
+      if (sections.length === 0) {
+        return `<pre style="white-space: pre-wrap;">${escapeHtml(JSON.stringify(mapperOutput, null, 2))}</pre>`;
+      }
+      return sections.join("");
+    }
+
+    function renderAgentOutputBlocks(source, idPrefix = "main") {
+      if (!source) return "";
+      let html = "";
+
+      if (source.interpreter_output) {
+        const interp = source.interpreter_output;
+        const outputId = `${idPrefix}-interpreter-output`;
         html += `
                     <div class="agent-output" style="background: #f8f9fa; border-left: 4px solid #667eea;">
                         <div class="agent-output-header" onclick="toggleAgentOutput('${outputId}')">
@@ -1617,9 +2658,8 @@
                 `;
       }
 
-      // Display Mapper Output
-      if (data.mapper_output) {
-        const outputId = "mapper-output";
+      if (source.mapper_output) {
+        const outputId = `${idPrefix}-mapper-output`;
         html += `
                     <div class="agent-output" style="background: #f8f9fa; border-left: 4px solid #28a745;">
                         <div class="agent-output-header" onclick="toggleAgentOutput('${outputId}')">
@@ -1627,18 +2667,17 @@
                             <span class="collapse-icon collapsed" id="${outputId}-icon">▼</span>
                         </div>
                         <div class="agent-output-content collapsed" id="${outputId}">
-                            <div style="margin-top: 10px; padding: 8px; background: white; border-radius: 4px; white-space: pre-wrap; max-height: 300px; overflow-y: auto;">${escapeHtml(
-          data.mapper_output
+                            <div style="margin-top: 10px; padding: 8px; background: white; border-radius: 4px; max-height: 300px; overflow-y: auto;">${renderMapperOutput(
+          source.mapper_output
         )}</div>
                         </div>
                     </div>
                 `;
       }
 
-      // Display Generator Output
-      if (data.generator_output) {
-        const gen = data.generator_output;
-        const outputId = "generator-output";
+      if (source.generator_output) {
+        const gen = source.generator_output;
+        const outputId = `${idPrefix}-generator-output`;
         html += `
                     <div class="agent-output" style="background: #f8f9fa; border-left: 4px solid #ffc107;">
                         <div class="agent-output-header" onclick="toggleAgentOutput('${outputId}')">
@@ -1652,7 +2691,7 @@
                                     <strong>${t("output.generator.reasoning")}:</strong>
                                     <ol style="margin: 5px 0; padding-left: 20px;">
                                         ${gen.reasoning_steps
-              .map((step, idx) => `<li style="margin-bottom: 5px;">${escapeHtml(step)}</li>`)
+              .map((step) => `<li style="margin-bottom: 5px;">${escapeHtml(step)}</li>`)
               .join("")}
                                     </ol>
                                 </div>
@@ -1672,10 +2711,9 @@
                 `;
       }
 
-      // Display Validator Output
-      if (data.validator_output) {
-        const val = data.validator_output;
-        const outputId = "validator-output";
+      if (source.validator_output) {
+        const val = source.validator_output;
+        const outputId = `${idPrefix}-validator-output`;
         html += `
                     <div class="agent-output" style="background: #f8f9fa; border-left: 4px solid #17a2b8;">
                         <div class="agent-output-header" onclick="toggleAgentOutput('${outputId}')">
@@ -1728,6 +2766,21 @@
                     </div>
                 `;
       }
+
+      return html;
+    }
+
+    function updateStatusDisplay(data) {
+      const statusContent = document.getElementById("status-content");
+      if (data.pipeline_mode === "versus" && data.versus_state) {
+        statusContent.innerHTML = renderVersusView(data);
+        return;
+      }
+
+      const isSingleAgent = data.pipeline_mode === "single";
+      let html = isSingleAgent ? renderSingleAgentView(data) : renderPipelineView(data, false);
+
+      html += renderAgentOutputBlocks(data, "main");
 
       // Display Analyzer Output
       if (data.analyzer_output) {
@@ -1810,33 +2863,118 @@
                 `;
       }
 
-      if (data.sql_query) {
-        html += `
-                    <div class="sql-display" style="margin-top: 20px;">
-                        <strong>${t("sql.generated")}:</strong>
-                        <pre>${escapeHtml(data.sql_query)}</pre>
-                    </div>
-                `;
-      }
-
-      if (data.error) {
-        html += `
-                    <div class="error-message">
-                        <strong>${t("error.label")}:</strong> ${escapeHtml(data.error)}
-                    </div>
-                `;
-      }
+      html += renderFeedbackForExecution(data);
 
       statusContent.innerHTML = html;
     }
 
+    function shouldRenderFeedback(data) {
+      if (!FEEDBACK_ENABLED || !data || data.feedback_enabled === false) return false;
+      if (!data.id || data.pipeline_mode === "versus") return false;
+      return data.status === "completed" || data.status === "error";
+    }
+
+    function renderFeedbackBar(execId, currentValue, message = "") {
+      const positiveClass = currentValue === "positive" ? " is-active" : "";
+      const negativeClass = currentValue === "negative" ? " is-active" : "";
+      const statusText = message || (currentValue ? t("feedback.thanks") : "");
+      const disabledAttr = currentValue ? " disabled" : "";
+      return `
+        <div class="feedback-section" id="feedback-section-${escapeHtml(execId)}">
+          <strong>${t("feedback.prompt")}</strong>
+          <div class="feedback-actions">
+            <button type="button" class="feedback-btn${positiveClass}" onclick='submitFeedback(${JSON.stringify(execId)}, "positive")'${disabledAttr}>${t("feedback.positive")}</button>
+            <button type="button" class="feedback-btn${negativeClass}" onclick='submitFeedback(${JSON.stringify(execId)}, "negative")'${disabledAttr}>${t("feedback.negative")}</button>
+            <span class="feedback-status">${escapeHtml(statusText)}</span>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderFeedbackForExecution(data) {
+      if (!shouldRenderFeedback(data)) return "";
+      return renderFeedbackBar(data.id, data.user_feedback || null);
+    }
+
+    function shouldRenderVersusFeedback(data) {
+      if (!FEEDBACK_ENABLED || !data || data.feedback_enabled === false) return false;
+      if (!data.id || data.pipeline_mode !== "versus") return false;
+      return data.status === "completed" || data.status === "error";
+    }
+
+    function renderVersusFeedbackBar(execId, currentValue, message = "") {
+      const pipelineClass = currentValue === "pipeline" ? " is-active" : "";
+      const singleClass = currentValue === "single" ? " is-active" : "";
+      const statusText = message || (currentValue ? t("feedback.thanks") : "");
+      const disabledAttr = currentValue ? " disabled" : "";
+      return `
+        <div class="feedback-section" id="feedback-section-${escapeHtml(execId)}" data-feedback-kind="versus">
+          <strong>${t("feedback.versus_prompt")}</strong>
+          <div class="feedback-actions">
+            <button type="button" class="feedback-btn${pipelineClass}" onclick='submitFeedback(${JSON.stringify(execId)}, "pipeline")'${disabledAttr}>${t("feedback.pipeline")}</button>
+            <button type="button" class="feedback-btn${singleClass}" onclick='submitFeedback(${JSON.stringify(execId)}, "single")'${disabledAttr}>${t("feedback.single_agent")}</button>
+            <span class="feedback-status">${escapeHtml(statusText)}</span>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderVersusFeedbackForExecution(data) {
+      if (!shouldRenderVersusFeedback(data)) return "";
+      return renderVersusFeedbackBar(data.id, data.versus_feedback || data.user_feedback || null);
+    }
+
+    async function submitFeedback(execId, value) {
+      const section = document.getElementById(`feedback-section-${execId}`);
+      const isVersusFeedback = section?.dataset.feedbackKind === "versus";
+      try {
+        section?.querySelectorAll("button").forEach((button) => {
+          button.disabled = true;
+        });
+        const response = await fetch(`/api/queries/${execId}/feedback`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ value }),
+        });
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || response.statusText);
+        }
+        const data = await response.json();
+        if (section) {
+          section.outerHTML = isVersusFeedback
+            ? renderVersusFeedbackBar(execId, data.user_feedback, t("feedback.thanks"))
+            : renderFeedbackBar(execId, data.user_feedback, t("feedback.thanks"));
+        }
+      } catch (error) {
+        if (section) {
+          section.querySelector(".feedback-status").textContent = t("feedback.error");
+          if (!section.querySelector(".feedback-btn.is-active")) {
+            section.querySelectorAll("button").forEach((button) => {
+              button.disabled = false;
+            });
+          }
+        }
+        console.error(t("feedback.error"), error);
+      }
+    }
+
     function displayResults(data) {
+      if (data.pipeline_mode === "versus") {
+        updateStatusDisplay(data);
+        return;
+      }
+
       const statusContent = document.getElementById("status-content");
 
       // Remove any existing results section to prevent duplicates
       const existingResults = statusContent.querySelector(".results-section");
       if (existingResults) {
         existingResults.remove();
+      }
+      const existingFeedback = statusContent.querySelector(".feedback-section");
+      if (existingFeedback) {
+        existingFeedback.remove();
       }
 
       // Update status display to include analyzer output if available
@@ -1872,6 +3010,7 @@
           statusContent.innerHTML += `<div class="no-results-message"><p>${t("results.none")}</p></div>`;
         }
       }
+      statusContent.innerHTML += renderFeedbackForExecution(data);
     }
 
     function escapeHtml(text) {
@@ -2032,6 +3171,65 @@
       document.getElementById("selection-count").textContent = t("selection.count", { count, question_word: questionWord, selected_word: selectedWord });
     }
 
+    function runSelectedBenchmarkQuestionInVersus() {
+      if (selectedIndices.size !== 1) {
+        alert(t("versus.run_selected_error"));
+        return;
+      }
+
+      const connectionId = document.getElementById("benchmark-connection").value;
+      if (!connectionId) {
+        alert(t("benchmarks.validation.select_connection"));
+        return;
+      }
+
+      const selectedIndex = Array.from(selectedIndices)[0];
+      const selectedQuestion = currentQuestions.find((q) => q.index === selectedIndex);
+      if (!selectedQuestion) {
+        alert(t("versus.run_selected_error"));
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append("connection_id", connectionId);
+      formData.append("user_query", selectedQuestion.question);
+      formData.append("pipeline_mode", "versus");
+      if (currentSessionId) {
+        formData.append("session_id", currentSessionId);
+      }
+
+      fetch("/api/queries", {
+        method: "POST",
+        body: formData,
+      })
+        .then((response) => response.json())
+        .then((data) => {
+          switchTab("query");
+          if (data.execution_id && data.session_id) {
+            if (data.session_id !== currentSessionId) {
+              loadSessions();
+              selectSession(data.session_id);
+            } else if (currentSessionId) {
+              loadSessionExecutions(currentSessionId);
+            }
+            if (!activePolling.has(data.execution_id)) {
+              const statusDiv = document.getElementById("query-status");
+              statusDiv.innerHTML = `
+                <div class="status-container" id="status-container">
+                  <h3>${t("query.status_title")}</h3>
+                  <div class="loading">${t("query.initializing")}</div>
+                  <div id="status-content" class="hidden"></div>
+                </div>
+              `;
+              pollStatus(data.execution_id);
+            }
+          }
+        })
+        .catch((error) => {
+          alert(error.message || "Error");
+        });
+    }
+
     function runBenchmark(event) {
       event.preventDefault();
 
@@ -2171,7 +3369,7 @@
             result.execution_match === true ? "pass" : result.execution_match === false ? "fail" : "partial";
           const amStatus =
             result.analyzer_match === true ? "pass" : result.analyzer_match === false ? "fail" : "partial";
-          const hasError = result.error || result.execution_error;
+          const hasBlockingError = isBenchmarkBlockingError(result);
 
           return `
                     <div class="result-item" id="result-${idx}">
@@ -2195,7 +3393,7 @@
               }</span>`
               : ""
             }
-                                ${hasError ? `<span class="status-badge fail">${t("error.label")}</span>` : ""}
+                                ${hasBlockingError ? `<span class="status-badge fail">${t("error.label")}</span>` : ""}
                             </div>
                         </div>
                         <div class="result-details" id="result-details-${idx}" style="display: none;">
@@ -2208,6 +3406,24 @@
 
       document.getElementById("results-list").innerHTML = resultsHtml;
       document.getElementById("results-section").style.display = "block";
+    }
+
+    function isBenchmarkBlockingError(result) {
+      const predictedSql = (result.predicted_sql || "").trim();
+      const executionSucceeded =
+        Array.isArray(result.predicted_execution_results) && !result.execution_error;
+
+      // Ignore pipeline/validator messages when predicted SQL actually ran (incl. older result files).
+      if (result.error && !executionSucceeded) {
+        return true;
+      }
+      if (!predictedSql && result.execution_error) {
+        return true;
+      }
+      if (result.execution_error) {
+        return true;
+      }
+      return false;
     }
 
     function renderResultDetails(result) {
@@ -2243,18 +3459,24 @@
         html += "</div>";
       }
 
-      // Errors
-      if (result.error) {
+      // System / execution errors (not validator or metric mismatches)
+      if (result.error && isBenchmarkBlockingError(result)) {
         html +=
           `<div class="error-message" style="margin-top: 15px;"><strong>${t("benchmarks.error.system")}:</strong> ` +
           escapeHtml(result.error) +
           "</div>";
       }
-      if (result.execution_error) {
+      if (result.execution_error && isBenchmarkBlockingError(result)) {
         html +=
           `<div class="error-message" style="margin-top: 15px;"><strong>${t("benchmarks.error.execution")}:</strong> ` +
           escapeHtml(result.execution_error) +
           "</div>";
+      }
+
+      const trace = result.agent_trace || {};
+      const agentBlocks = renderAgentOutputBlocks(trace, `bench-${result.index}`);
+      if (agentBlocks) {
+        html += `<h4 style="margin-top: 16px;">${t("benchmarks.agent_outputs")}</h4>` + agentBlocks;
       }
 
       // Analyzer Output
