@@ -335,6 +335,57 @@
       margin-top: 4px;
     }
 
+    .connection-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+      margin-left: 12px;
+    }
+
+    .test-btn {
+      background: #667eea;
+      color: white;
+      border: none;
+      padding: 8px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.9em;
+      white-space: nowrap;
+    }
+
+    .test-btn:hover:not(:disabled) {
+      background: #5568d3;
+    }
+
+    .test-btn:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+
+    .connection-status {
+      font-size: 0.85em;
+      padding: 4px 8px;
+      border-radius: 4px;
+      max-width: 280px;
+      word-break: break-word;
+    }
+
+    .connection-status.success {
+      color: #155724;
+      background: #d4edda;
+    }
+
+    .connection-status.error {
+      color: #721c24;
+      background: #f8d7da;
+    }
+
+    .connection-status.testing {
+      color: #856404;
+      background: #fff3cd;
+    }
+
     .status-container {
       margin-top: 20px;
     }
@@ -1160,6 +1211,11 @@
               <div class="connection-db"><span data-i18n="connection.database_label">Banco de Dados</span>: {{
                 conn.database_name }}</div>
             </div>
+            <div class="connection-actions">
+              <button type="button" class="test-btn" onclick="testConnection('{{ conn.id }}')"
+                id="test-btn-{{ conn.id }}" data-i18n="connection.test_button">Testar Conexão</button>
+              <span id="test-status-{{ conn.id }}" class="connection-status" style="display: none;"></span>
+            </div>
           </div>
           {% endfor %}
         </div>
@@ -1341,6 +1397,9 @@
         "connections.add_button": "Adicionar Conexão",
         "connection.database_label": "Banco de Dados",
         "connection.test_button": "Testar Conexão",
+        "connection.testing": "Testando...",
+        "connection.test_success": "Conexão OK",
+        "connection.test_failed": "Falha na conexão",
         "sessions.title": "Sessões",
         "sessions.new_button": "+ Nova Sessão",
         "sessions.unnamed": "Sessão Sem Nome",
@@ -1536,6 +1595,9 @@
         "connections.add_button": "Add connection",
         "connection.database_label": "Database",
         "connection.test_button": "Test connection",
+        "connection.testing": "Testing...",
+        "connection.test_success": "Connection OK",
+        "connection.test_failed": "Connection failed",
         "sessions.title": "Sessions",
         "sessions.new_button": "+ New session",
         "sessions.unnamed": "Unnamed session",
@@ -2105,6 +2167,44 @@
           });
         })
         .catch((error) => console.error(t("connections.refresh_error"), error));
+    }
+
+    async function testConnection(connectionId) {
+      const btn = document.getElementById(`test-btn-${connectionId}`);
+      const status = document.getElementById(`test-status-${connectionId}`);
+      if (!btn || !status) {
+        console.error("Connection test UI elements not found for", connectionId);
+        return;
+      }
+
+      btn.disabled = true;
+      status.style.display = "inline";
+      status.className = "connection-status testing";
+      status.textContent = t("connection.testing");
+      status.removeAttribute("title");
+
+      try {
+        const response = await fetch(`/api/connections/${connectionId}/test`, { method: "POST" });
+        const data = await response.json().catch(() => ({}));
+
+        if (response.ok && data.success) {
+          status.className = "connection-status success";
+          status.textContent = t("connection.test_success");
+          const details = [data.dialect, data.database_version].filter(Boolean).join(" — ");
+          if (details) {
+            status.title = details;
+          }
+        } else {
+          status.className = "connection-status error";
+          status.textContent = data.message || t("connection.test_failed");
+        }
+      } catch (error) {
+        status.className = "connection-status error";
+        status.textContent = t("connection.test_failed");
+        console.error("Connection test error:", error);
+      } finally {
+        btn.disabled = false;
+      }
     }
 
     // Handle query form submission response
@@ -3269,9 +3369,7 @@
             result.execution_match === true ? "pass" : result.execution_match === false ? "fail" : "partial";
           const amStatus =
             result.analyzer_match === true ? "pass" : result.analyzer_match === false ? "fail" : "partial";
-          const approvedByMetric =
-            result.exact_match === true || result.execution_match === true || result.analyzer_match === true;
-          const hasBlockingError = !approvedByMetric && (result.error || result.execution_error);
+          const hasBlockingError = isBenchmarkBlockingError(result);
 
           return `
                     <div class="result-item" id="result-${idx}">
@@ -3310,10 +3408,26 @@
       document.getElementById("results-section").style.display = "block";
     }
 
+    function isBenchmarkBlockingError(result) {
+      const predictedSql = (result.predicted_sql || "").trim();
+      const executionSucceeded =
+        Array.isArray(result.predicted_execution_results) && !result.execution_error;
+
+      // Ignore pipeline/validator messages when predicted SQL actually ran (incl. older result files).
+      if (result.error && !executionSucceeded) {
+        return true;
+      }
+      if (!predictedSql && result.execution_error) {
+        return true;
+      }
+      if (result.execution_error) {
+        return true;
+      }
+      return false;
+    }
+
     function renderResultDetails(result) {
       let html = "";
-      const approvedByMetric =
-        result.exact_match === true || result.execution_match === true || result.analyzer_match === true;
 
       // SQL Comparison
       html += '<div class="sql-comparison">';
@@ -3345,18 +3459,14 @@
         html += "</div>";
       }
 
-      // Errors
-      if (result.error) {
-        const errorLabel = approvedByMetric ? t("benchmarks.warning.pipeline") : t("benchmarks.error.system");
-        const errorStyle = approvedByMetric
-          ? "margin-top: 15px; background: #fff3cd; color: #856404; border-left: 4px solid #ffc107;"
-          : "margin-top: 15px;";
+      // System / execution errors (not validator or metric mismatches)
+      if (result.error && isBenchmarkBlockingError(result)) {
         html +=
-          `<div class="error-message" style="${errorStyle}"><strong>${errorLabel}:</strong> ` +
+          `<div class="error-message" style="margin-top: 15px;"><strong>${t("benchmarks.error.system")}:</strong> ` +
           escapeHtml(result.error) +
           "</div>";
       }
-      if (result.execution_error) {
+      if (result.execution_error && isBenchmarkBlockingError(result)) {
         html +=
           `<div class="error-message" style="margin-top: 15px;"><strong>${t("benchmarks.error.execution")}:</strong> ` +
           escapeHtml(result.execution_error) +

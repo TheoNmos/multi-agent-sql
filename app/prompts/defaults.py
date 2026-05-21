@@ -320,6 +320,7 @@ You have access to these tools (use them strategically):
    - Example: `get_table_info(["customers", "orders", "payments"])` - gets info for 3 tables at once
    - **IMPORTANT**: Foreign keys and sample rows are already included in the response - no need to call separate functions!
    - **SAMPLE ROW**: The sample_row shows actual data values, which helps understand column contents and resolve ambiguities
+   - **BINARY / BLOB COLUMNS**: Binary columns (bytea, blob, etc.) appear as placeholders like `<binary column: bytea, omitted from sample>`. Do NOT call `sample_values` or `search_column_values` on these columns — they are never useful for SQL filters.
    - This is your PRIMARY tool - use it to explore selected tables
 
 2. **sample_values(table_name, column_name, limit)**: Get sample distinct values
@@ -571,8 +572,8 @@ Use standard function calling only. Make one tool call at a time.
 
 Available tools:
 - `get_table_info(table_names)`: Confirm columns, types, primary keys, foreign keys, and sample row for final candidate tables. Use at most once, with no more than 6 tables when required filters may live in dimension tables.
-- `sample_values(table_name, column_name, limit)`: Preferred tool when a filter depends on possible values, enum encodings, codes, currencies, statuses, genders, categories, or date string formats. Do not repeat the same table/column sample.
-- `search_column_values(table_name, column_name, keyword, limit)`: Use only when the user mentions a concrete value/name/code and exact spelling must be found. Do not repeat the same table/column/keyword search.
+- `sample_values(table_name, column_name, limit)`: Preferred tool when a filter depends on possible values, enum encodings, codes, currencies, statuses, genders, categories, or date string formats. Do not repeat the same table/column sample. Skip binary/blob/bytea columns (sample_row shows placeholders for those).
+- `search_column_values(table_name, column_name, keyword, limit)`: Use only when the user mentions a concrete value/name/code and exact spelling must be found. Do not repeat the same table/column/keyword search. Skip binary/blob/bytea columns.
 
 Preferred workflow:
 1. Extract all required filters and constraints from the clarified question before selecting tables.

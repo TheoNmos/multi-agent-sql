@@ -22,6 +22,7 @@ from app.agents.tools import (
     validate_sql_syntax,
 )
 from app.db.adapter import DatabaseAdapter
+from app.db.value_sanitize import prefetch_sample_rows
 from app.llm_models import gpt_5_mini_minimal
 from app.toon_utils import to_toon_block
 
@@ -156,33 +157,7 @@ async def tool_get_schema_preview(ctx: RunContext[SingleAgentState]) -> str:
     try:
         conn = state.database_connection
         all_tables = await conn.list_tables()
-        sample_rows_dict: dict[str, dict[str, Any] | None] = {}
-        for table_name in all_tables:
-            try:
-                column_names = await conn.list_column_names(table_name)
-                if column_names:
-                    quoted = ", ".join(conn.quote_identifier(c) for c in column_names)
-                    rows = await conn.fetch(f"SELECT {quoted} FROM {conn.quote_identifier(table_name)} LIMIT 1")
-                    if rows:
-                        row = dict(rows[0])
-                        truncated = {}
-                        for k, v in row.items():
-                            if v is None:
-                                truncated[k] = None
-                            elif isinstance(v, str):
-                                truncated[k] = v[:50] if len(v) > 50 else v
-                            elif isinstance(v, (int, float, bool)):
-                                truncated[k] = v
-                            else:
-                                s = str(v)
-                                truncated[k] = s[:100] if len(s) > 100 else s
-                        sample_rows_dict[table_name] = truncated
-                    else:
-                        sample_rows_dict[table_name] = None
-                else:
-                    sample_rows_dict[table_name] = None
-            except Exception:
-                sample_rows_dict[table_name] = None
+        sample_rows_dict = await prefetch_sample_rows(conn, all_tables)
         result = {
             "all_tables": all_tables,
             "table_count": len(all_tables),

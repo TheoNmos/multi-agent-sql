@@ -297,7 +297,7 @@ async def create_connection(
                     </div>
                 </div>
                 <div class="connection-actions">
-                    <button class="test-btn" onclick="testConnection('{conn_id}')" id="test-btn-{conn_id}" data-i18n="connection.test_button">Test Connection</button>
+                    <button type="button" class="test-btn" onclick="testConnection('{conn_id}')" id="test-btn-{conn_id}" data-i18n="connection.test_button">Test Connection</button>
                     <span id="test-status-{conn_id}" class="connection-status" style="display: none;"></span>
                 </div>
             </div>
@@ -876,28 +876,38 @@ async def run_pipeline_with_updates(exec_id: str, user_message: str, server_dsn:
                     exec_id, current_activity="Pipeline completed", latency_ms=result.trace.latency_ms
                 )
             else:
-                # Query was rejected/invalid, but we executed it anyway to show the error
-                # Check if execution failed (error in result)
+                # Validator rejected, but SQL exists — only report error if execution fails.
                 execution_error = None
                 if query_result and len(query_result) == 1 and "error" in query_result[0]:
                     execution_error = query_result[0]["error"]
 
-                # Combine validator feedback with execution error if available
-                error_message = result.error or "Query was rejected by validator"
                 if execution_error:
-                    error_message = f"{error_message}\n\nSQL Execution Error: {execution_error}"
-
-                await update_execution_status(
-                    exec_id,
-                    "error",
-                    sql_query=sql_query,
-                    query_result=query_result,
-                    error=error_message,
-                    latency_ms=result.trace.latency_ms,
-                )
-                await update_execution_metrics(
-                    exec_id, current_activity="Pipeline finished with errors", latency_ms=result.trace.latency_ms
-                )
+                    await update_execution_status(
+                        exec_id,
+                        "error",
+                        sql_query=sql_query,
+                        query_result=query_result,
+                        error=execution_error,
+                        latency_ms=result.trace.latency_ms,
+                    )
+                    await update_execution_metrics(
+                        exec_id,
+                        current_activity="SQL execution failed",
+                        latency_ms=result.trace.latency_ms,
+                    )
+                else:
+                    await update_execution_status(
+                        exec_id,
+                        "completed",
+                        sql_query=sql_query,
+                        query_result=query_result,
+                        latency_ms=result.trace.latency_ms,
+                    )
+                    await update_execution_metrics(
+                        exec_id,
+                        current_activity="Pipeline completed (validator had warnings)",
+                        latency_ms=result.trace.latency_ms,
+                    )
         elif result.status == "ERROR":
             await update_execution_status(
                 exec_id, "error", error=result.error or "Unknown error", latency_ms=result.trace.latency_ms
@@ -1239,7 +1249,17 @@ async def get_benchmark_result(filename: str):
         am_total = len(am_results)
         am_rate = (am_correct / am_total * 100) if am_total > 0 else 0.0
 
-        errors = sum(1 for r in results if r.get("error") is not None)
+        from app.benchmarks.errors import is_blocking_benchmark_error
+
+        errors = sum(
+            1
+            for r in results
+            if is_blocking_benchmark_error(
+                error=r.get("error"),
+                execution_error=r.get("execution_error"),
+                predicted_sql=r.get("predicted_sql") or "",
+            )
+        )
 
         return {
             "filename": filename,

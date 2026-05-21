@@ -3,6 +3,7 @@
 import time
 
 from app.agents.llm_timeout import format_model_error
+from app.benchmarks.errors import pipeline_result_error
 from app.config import db_settings
 
 from .types import RunQuestionResult
@@ -32,12 +33,12 @@ async def run_question(question: str, db_name: str) -> RunQuestionResult:
         # Extract SQL from result
         predicted_sql = result.sql or ""
 
-        # Extract error if any
-        error = None
-        if result.status == "ERROR":
-            error = result.error or "Unknown error"
-        elif result.status == "REJECTED":
-            error = result.error or result.feedback or "Query rejected"
+        error = pipeline_result_error(
+            status=result.status,
+            predicted_sql=predicted_sql,
+            error=result.error,
+            feedback=result.feedback,
+        )
 
         # Convert PipelineResult to dict for trace (includes all outputs)
         trace = result.model_dump()

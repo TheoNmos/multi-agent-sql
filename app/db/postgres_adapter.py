@@ -15,6 +15,11 @@ from app.db.adapter import (
     strip_explain_prefix,
     strip_named_placeholders,
 )
+from app.db.value_sanitize import (
+    fetch_table_sample_row,
+    get_column_type,
+    sanitize_value_list,
+)
 
 
 class PostgresAdapter(DatabaseAdapter):
@@ -201,25 +206,11 @@ class PostgresAdapter(DatabaseAdapter):
         for table_name in table_names:
             if table_name in result:
                 try:
-                    column_names = [col["name"] for col in result[table_name]["columns"]]
-                    if column_names:
-                        quoted_columns = ", ".join(self.quote_identifier(col) for col in column_names)
-                        sample_query = (
-                            f"SELECT {quoted_columns} FROM {self.quote_identifier(table_name)} LIMIT 1"
-                        )
-                        sample_rows = await self._conn.fetch(sample_query)
-                        if sample_rows:
-                            sample_row = dict(sample_rows[0])
-                            for key, value in sample_row.items():
-                                if value is not None and not isinstance(
-                                    value, (str, int, float, bool, type(None))
-                                ):
-                                    sample_row[key] = str(value)
-                            result[table_name]["sample_row"] = sample_row
-                        else:
-                            result[table_name]["sample_row"] = None
-                    else:
-                        result[table_name]["sample_row"] = None
+                    result[table_name]["sample_row"] = await fetch_table_sample_row(
+                        self,
+                        table_name,
+                        result[table_name]["columns"],
+                    )
                 except Exception as e:
                     logfire.warning("Error fetching sample row", table=table_name, error=str(e))
                     result[table_name]["sample_row"] = None
@@ -229,13 +220,15 @@ class PostgresAdapter(DatabaseAdapter):
     @override
     async def sample_values(self, table: str, column: str, limit: int = 10) -> list[Any]:
         try:
+            col_type = await get_column_type(self, table, column)
             query = (
                 f"SELECT DISTINCT {self.quote_identifier(column)} "
                 f"FROM {self.quote_identifier(table)} "
                 f"WHERE {self.quote_identifier(column)} IS NOT NULL LIMIT $1"
             )
             rows = await self._conn.fetch(query, limit)
-            return [row[column] for row in rows]
+            raw_values = [row[column] for row in rows]
+            return sanitize_value_list(raw_values, column_name=column, data_type=col_type)
         except Exception as e:
             logfire.warning("Error sampling values", table=table, column=column, error=str(e))
             return []
@@ -245,6 +238,7 @@ class PostgresAdapter(DatabaseAdapter):
         self, table: str, column: str, keyword: str, limit: int = 10
     ) -> list[Any]:
         try:
+            col_type = await get_column_type(self, table, column)
             query = (
                 f"SELECT DISTINCT {self.quote_identifier(column)} "
                 f"FROM {self.quote_identifier(table)} "
@@ -252,7 +246,8 @@ class PostgresAdapter(DatabaseAdapter):
             )
             pattern = f"%{keyword}%"
             rows = await self._conn.fetch(query, pattern, limit)
-            return [row[column] for row in rows]
+            raw_values = [row[column] for row in rows]
+            return sanitize_value_list(raw_values, column_name=column, data_type=col_type)
         except Exception as e:
             logfire.warning(
                 "Error searching column values",

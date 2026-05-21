@@ -5,7 +5,6 @@ from __future__ import annotations
 import re
 import time
 from datetime import UTC, datetime
-from typing import Any
 
 import logfire
 
@@ -18,6 +17,7 @@ from app.agents.telemetry import empty_usage_dict, merge_usage_dicts
 from app.agents.tools import clean_sql, execute_sql_safe, validate_sql_syntax
 from app.agents.validator import run_validator
 from app.db.connection import database_connect
+from app.db.value_sanitize import prefetch_sample_rows
 from app.llm_models import interpreter_model
 
 _PG_MISSING_COLUMN_RE = re.compile(
@@ -245,41 +245,7 @@ async def run_new_pipeline(
 
         # Step 2.5: Get sample rows for all tables
         logfire.info("Step 2.5: Fetching sample rows for all tables")
-        sample_rows_dict: dict[str, dict[str, Any] | None] = {}
-
-        for table_name in all_tables:
-            try:
-                column_names = await conn.list_column_names(table_name)
-
-                if column_names:
-                    quoted_columns = ", ".join(conn.quote_identifier(col) for col in column_names)
-                    sample_query = (
-                        f"SELECT {quoted_columns} FROM {conn.quote_identifier(table_name)} LIMIT 1"
-                    )
-                    sample_rows = await conn.fetch(sample_query)
-
-                    if sample_rows:
-                        sample_row = dict(sample_rows[0])
-                        truncated_row = {}
-                        for key, value in sample_row.items():
-                            if value is None:
-                                truncated_row[key] = None
-                            elif isinstance(value, str):
-                                truncated_row[key] = value[:50] if len(value) > 50 else value
-                            elif isinstance(value, (int, float, bool)):
-                                truncated_row[key] = value
-                            else:
-                                str_value = str(value)
-                                truncated_row[key] = str_value[:100] if len(str_value) > 100 else str_value
-
-                        sample_rows_dict[table_name] = truncated_row
-                    else:
-                        sample_rows_dict[table_name] = None
-                else:
-                    sample_rows_dict[table_name] = None
-            except Exception as e:
-                logfire.warning("Error fetching sample row", table=table_name, error=str(e))
-                sample_rows_dict[table_name] = None
+        sample_rows_dict = await prefetch_sample_rows(conn, all_tables)
 
         state.scratch["sample_rows"] = sample_rows_dict
         logfire.info(

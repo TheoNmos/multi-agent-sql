@@ -43,5 +43,5 @@ gpt_5 = gpt_5_mini  # backward-compat alias
 
 interpreter_model = gpt_5_mini_minimal
 mapper_model = gpt_5_mini_minimal
-generator_model = gpt_5_mini
+generator_model = gemini_2_5_flash
 validator_model = gpt_5_mini_minimal

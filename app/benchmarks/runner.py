@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from app.agents.llm_timeout import format_model_error
+from app.benchmarks.errors import is_blocking_benchmark_error
 from app.config import db_settings
 
 from .analyzer import analyze_benchmark_result
@@ -482,6 +483,14 @@ def print_summary(results: list[EvalCaseResult], metrics: list[str]) -> None:
         print(f"Analyzer Match (AM): {am_correct}/{am_total} ({am_rate:.1f}%)")
         print(f"  (AM checks business impact equivalence)")
 
-    errors = sum(1 for r in results if r.error is not None)
+    errors = sum(
+        1
+        for r in results
+        if is_blocking_benchmark_error(
+            error=r.error,
+            execution_error=r.execution_error,
+            predicted_sql=r.predicted_sql,
+        )
+    )
     if errors > 0:
         print(f"\nSystem errors: {errors}/{total}")
