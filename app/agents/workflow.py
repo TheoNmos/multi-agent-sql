@@ -8,7 +8,15 @@ from datetime import UTC, datetime
 
 import logfire
 
-from app.agents.context import AgentState, GeneratorTrace, PipelineResult, StepInfo, Trace, mapperTrace
+from app.agents.context import (
+    AgentState,
+    GeneratorTrace,
+    PipelineResult,
+    StepInfo,
+    Trace,
+    ValidatorOutput,
+    mapperTrace,
+)
 from app.agents.generator import run_generator
 from app.agents.interpreter import run_interpreter
 from app.agents.llm_timeout import format_model_error
@@ -17,6 +25,7 @@ from app.agents.telemetry import empty_usage_dict, merge_usage_dicts
 from app.agents.tools import clean_sql, execute_sql_safe, validate_sql_syntax
 from app.agents.validator import run_validator
 from app.db.connection import database_connect
+from app.db.schema_prefetch import select_tables_for_sample_prefetch
 from app.db.value_sanitize import prefetch_sample_rows
 from app.llm_models import interpreter_model
 
@@ -243,14 +252,23 @@ async def run_new_pipeline(
         state.trace.mapper.all_tables_count = len(all_tables)
         logfire.info("Retrieved all tables", table_count=len(all_tables))
 
-        # Step 2.5: Get sample rows for all tables
-        logfire.info("Step 2.5: Fetching sample rows for all tables")
-        sample_rows_dict = await prefetch_sample_rows(conn, all_tables)
+        # Step 2.5: Prefetch sample rows for question-relevant tables (bounded on large schemas)
+        prefetch_targets = select_tables_for_sample_prefetch(
+            state.clarified_question or user_message,
+            all_tables,
+        )
+        state.scratch["prefetch_table_names"] = prefetch_targets
+        logfire.info(
+            "Step 2.5: Fetching sample rows for selected tables",
+            prefetch_count=len(prefetch_targets),
+            total_tables=len(all_tables),
+        )
+        sample_rows_dict = await prefetch_sample_rows(conn, all_tables, only_tables=prefetch_targets)
 
         state.scratch["sample_rows"] = sample_rows_dict
         logfire.info(
             "Sample rows fetched",
-            tables_sampled=len(all_tables),
+            tables_sampled=len(prefetch_targets),
             rows_with_data=sum(1 for v in sample_rows_dict.values() if v is not None),
         )
 
@@ -395,12 +413,57 @@ async def run_new_pipeline(
                     syntax_valid, syntax_error = await validate_sql_syntax(conn, cleaned_sql)
                     state.syntax_valid = syntax_valid
                     state.syntax_error = syntax_error
+                    state.scratch.pop("execution_probe", None)
                     logfire.info(
                         "SQL syntax validation",
                         attempt=generator_attempt + 1,
                         syntax_valid=syntax_valid,
                         syntax_error=syntax_error,
                     )
+
+                    if not syntax_valid:
+                        syntax_feedback = (
+                            f"Syntax error: {syntax_error or 'Unknown error'}. "
+                            "Fix SQL syntax before resubmitting."
+                        )
+                        state.validator_output = ValidatorOutput(
+                            is_valid=False,
+                            is_optimal=False,
+                            syntax_errors=[syntax_error] if syntax_error else ["Invalid SQL syntax"],
+                            refinement_feedback=syntax_feedback,
+                        )
+                        last_error_message = syntax_feedback
+                        logfire.info(
+                            "Skipping validator LLM after syntax failure",
+                            attempt=generator_attempt + 1,
+                        )
+                        if generator_attempt < max_generator_attempts - 1:
+                            continue
+                        state.trace.end_ts = datetime.now(UTC).isoformat()
+                        state.trace.latency_ms = int((time.time() - pipeline_start_time) * 1000)
+                        await emit_usage_snapshot("Generator produced syntactically invalid SQL")
+                        if update_metrics and execution_id:
+                            await update_metrics(execution_id, latency_ms=state.trace.latency_ms)
+                        return PipelineResult(
+                            status="REJECTED",
+                            sql=cleaned_sql,
+                            error=last_error_message,
+                            attempts=generator_attempt + 1,
+                            all_queries=state.sql_history,
+                            interpreter_output=state.interpreter_output,
+                            mapper_output=state.mapper_output,
+                            generator_output=state.generator_output,
+                            validator_output=state.validator_output,
+                            trace=state.trace,
+                        )
+
+                    probe_success, probe_results, probe_error = await execute_sql_safe(conn, cleaned_sql, 5)
+                    state.scratch["execution_probe"] = {
+                        "sql": cleaned_sql,
+                        "success": probe_success,
+                        "results": probe_results,
+                        "error": probe_error,
+                    }
 
                     logfire.info("Step 4: Running SQL Validator", attempt=generator_attempt + 1)
                     if update_step and execution_id:
@@ -476,7 +539,10 @@ async def run_new_pipeline(
                                 trace=state.trace,
                             )
 
-                        execution_success, execution_results, execution_error = await execute_sql_safe(conn, cleaned_sql, 5)
+                        probe = state.scratch.get("execution_probe") or {}
+                        execution_success = bool(probe.get("success"))
+                        execution_results = probe.get("results")
+                        execution_error = probe.get("error")
                         if execution_success:
                             state.best_sql = cleaned_sql
                             state.best_validator_output = validator_output

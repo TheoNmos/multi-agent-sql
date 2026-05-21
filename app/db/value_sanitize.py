@@ -188,10 +188,20 @@ async def list_table_columns_with_types(
 async def prefetch_sample_rows(
     adapter: DatabaseAdapter,
     table_names: list[str],
+    *,
+    only_tables: list[str] | None = None,
 ) -> dict[str, dict[str, Any] | None]:
-    """Fetch one sanitized sample row per table (binary payloads omitted)."""
+    """Fetch one sanitized sample row per table (binary payloads omitted).
+
+    When ``only_tables`` is set, only those tables are queried; other names in
+    ``table_names`` are stored as ``None`` so callers can distinguish "not prefetched".
+    """
+    targets = set(only_tables) if only_tables is not None else set(table_names)
     samples: dict[str, dict[str, Any] | None] = {}
     for table_name in table_names:
+        if table_name not in targets:
+            samples[table_name] = None
+            continue
         try:
             columns = await list_table_columns_with_types(adapter, table_name)
             samples[table_name] = await fetch_table_sample_row(adapter, table_name, columns)

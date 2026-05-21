@@ -62,16 +62,34 @@ class DatabaseAdapter(ABC):
         """Return column names for ``table`` in declaration order."""
 
     @abstractmethod
-    async def get_table_info(self, table_names: list[str] | str) -> dict[str, dict[str, Any]]:
+    async def get_table_info(
+        self,
+        table_names: list[str] | str,
+        *,
+        preloaded_sample_rows: dict[str, dict[str, Any] | None] | None = None,
+    ) -> dict[str, dict[str, Any]]:
         """Return columns, primary keys, foreign keys, and a sample row per table."""
 
     @abstractmethod
-    async def sample_values(self, table: str, column: str, limit: int = 10) -> list[Any]:
+    async def sample_values(
+        self,
+        table: str,
+        column: str,
+        limit: int = 10,
+        *,
+        column_type_cache: dict[tuple[str, str], str | None] | None = None,
+    ) -> list[Any]:
         """Return distinct sample values for ``column`` of ``table`` (max ``limit``)."""
 
     @abstractmethod
     async def search_column_values(
-        self, table: str, column: str, keyword: str, limit: int = 10
+        self,
+        table: str,
+        column: str,
+        keyword: str,
+        limit: int = 10,
+        *,
+        column_type_cache: dict[tuple[str, str], str | None] | None = None,
     ) -> list[Any]:
         """Return values from ``column`` of ``table`` that match ``keyword`` (LIKE)."""
 

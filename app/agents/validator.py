@@ -145,6 +145,36 @@ async def tool_execute_sql_safe(ctx: RunContext[AgentState], sql: str, limit: in
         return {"success": False, "error": "No database connection", "results": None}
 
     sql_clean = clean_sql(sql)
+    current_sql = clean_sql(ctx.deps.current_sql or "")
+    probe = ctx.deps.scratch.get("execution_probe")
+    if (
+        probe
+        and clean_sql(str(probe.get("sql", ""))) == sql_clean
+        and sql_clean == current_sql
+    ):
+        success = bool(probe.get("success"))
+        results = probe.get("results")
+        error = probe.get("error")
+        ctx.deps.trace.tools.append(
+            ToolCall(
+                agent="validator",
+                tool="execute_sql_safe",
+                args_redacted={"sql_length": len(sql_clean), "limit": limit, "cached": True},
+                result_preview=f"{len(results) if results else 0} rows (pipeline probe)"
+                if success
+                else (str(error) or "Execution failed")[:120],
+                timing_ms=0,
+                error=str(error) if error else None,
+            )
+        )
+        return {
+            "success": success,
+            "results": results,
+            "error": error,
+            "row_count": len(results) if results else 0,
+            "note": "Reused pipeline execution probe; do not re-run identical SQL.",
+        }
+
     try:
         success, results, error = await execute_sql_safe(ctx.deps.database_connection, sql_clean, limit)
         ctx.deps.trace.tools.append(

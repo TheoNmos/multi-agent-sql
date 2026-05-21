@@ -134,9 +134,14 @@ def _build_mapper_template_vars(ctx: RunContext[AgentState]) -> dict[str, str]:
             tables_display = ", ".join(tables_to_show)
             tables_display += f"\n\n... and {len(all_tables) - 150} more tables (total: {len(all_tables)} tables)"
 
+        prefetch_tables = ctx.deps.scratch.get("prefetch_table_names", [])
         sample_rows_section = ""
         if sample_rows:
-            tables_with_samples = [t for t in all_tables if t in sample_rows and sample_rows[t] is not None]
+            tables_with_samples = [
+                t
+                for t in (prefetch_tables or all_tables)
+                if t in sample_rows and sample_rows[t] is not None
+            ]
             if tables_with_samples:
                 sample_rows_text = []
                 for table_name in tables_with_samples:
@@ -148,15 +153,20 @@ def _build_mapper_template_vars(ctx: RunContext[AgentState]) -> dict[str, str]:
                         sample_rows_text.append(f"- **{table_name}**: {{ {row_str} }}")
 
                 if sample_rows_text:
+                    prefetch_note = (
+                        f" for {len(tables_with_samples)} question-relevant table(s)"
+                        if prefetch_tables and len(prefetch_tables) < len(all_tables)
+                        else ""
+                    )
                     sample_rows_section = f"""
 ## 📊 PRE-FETCHED SAMPLE ROWS
 
-**IMPORTANT**: Sample rows have already been fetched for all tables in the database. These show actual data values to help you understand column contents and formats. Text values are truncated to 100 characters for efficiency.
+**IMPORTANT**: Sample rows were prefetched{prefetch_note}. Use them to infer column formats before calling tools. Text values are truncated for efficiency.
 
 **Sample Rows Available:**
 {chr(10).join(sample_rows_text)}
 
-**Note**: These sample rows are already available in the context. When you call `get_table_info` for these tables, the sample_row will be included automatically. However, you can reference these pre-fetched samples to quickly understand data formats without needing to call tools.
+**Note**: `get_table_info` reuses these samples when available. Call value tools only when you need distinct values beyond the sample row.
 
 """
 
@@ -231,8 +241,16 @@ async def tool_get_table_info(ctx: RunContext[AgentState], table_names: list[str
     # Record tool call start
     tool_start_time = time.time()
 
+    column_type_cache = ctx.deps.scratch.setdefault("column_type_cache", {})
+    preloaded_samples = ctx.deps.scratch.get("sample_rows")
+
     try:
-        result = await get_table_info(ctx.deps.database_connection, table_names)
+        result = await get_table_info(
+            ctx.deps.database_connection,
+            table_names,
+            preloaded_sample_rows=preloaded_samples,
+            column_type_cache=column_type_cache,
+        )
         tool_timing_ms = int((time.time() - tool_start_time) * 1000)
 
         # Record selected tables
@@ -290,7 +308,14 @@ async def tool_sample_values(ctx: RunContext[AgentState], table_name: str, colum
 
     tool_start_time = time.time()
     try:
-        result = await sample_values(ctx.deps.database_connection, table_name, column_name, capped_limit)
+        column_type_cache = ctx.deps.scratch.setdefault("column_type_cache", {})
+        result = await sample_values(
+            ctx.deps.database_connection,
+            table_name,
+            column_name,
+            capped_limit,
+            column_type_cache=column_type_cache,
+        )
         tool_timing_ms = int((time.time() - tool_start_time) * 1000)
 
         # Record tool call in trace (keep trace logging with raw result for accuracy)
@@ -346,8 +371,14 @@ async def tool_search_column_values(
 
     tool_start_time = time.time()
     try:
+        column_type_cache = ctx.deps.scratch.setdefault("column_type_cache", {})
         result = await search_column_values(
-            ctx.deps.database_connection, table_name, column_name, keyword, capped_limit
+            ctx.deps.database_connection,
+            table_name,
+            column_name,
+            keyword,
+            capped_limit,
+            column_type_cache=column_type_cache,
         )
         result = _filter_identifier_search_results(column_name, keyword, result)
         tool_timing_ms = int((time.time() - tool_start_time) * 1000)

@@ -205,15 +205,9 @@ async def run_generator(state: AgentState) -> tuple[GeneratorOutput, dict[str, A
         has_feedback=bool(state.validator_output),
     )
 
-    # Build prompt with context
-    prompt = clarified_question
-    if state.validator_output and state.validator_output.refinement_feedback:
-        prompt += f"\n\nPrevious validation feedback:\n{state.validator_output.refinement_feedback}"
-    if state.scratch.get("execution_feedback"):
-        prompt += f"\n\nPrevious execution feedback:\n{state.scratch['execution_feedback']}"
-
+    # Retry feedback lives in the system prompt iteration_context to avoid duplicating tokens.
     result = await run_with_llm_timeout(
-        generator.run(prompt, deps=state, usage_limits=GENERATOR_USAGE_LIMITS),
+        generator.run(clarified_question, deps=state, usage_limits=GENERATOR_USAGE_LIMITS),
         context="sql generator",
     )
     output = result.output

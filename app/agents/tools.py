@@ -13,6 +13,7 @@ import logfire
 from rapidfuzz import fuzz
 
 from app.db.adapter import DatabaseAdapter
+from app.db.schema_prefetch import seed_column_types_from_table_info
 
 
 def clean_sql(sql: str) -> str:
@@ -53,10 +54,19 @@ async def search_tables(adapter: DatabaseAdapter, keywords: list[str] | str) -> 
 
 
 async def get_table_info(
-    adapter: DatabaseAdapter, table_names: list[str] | str
+    adapter: DatabaseAdapter,
+    table_names: list[str] | str,
+    *,
+    preloaded_sample_rows: dict[str, dict[str, Any] | None] | None = None,
+    column_type_cache: dict[tuple[str, str], str | None] | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Get detailed information about one or more tables."""
-    result = await adapter.get_table_info(table_names)
+    result = await adapter.get_table_info(
+        table_names,
+        preloaded_sample_rows=preloaded_sample_rows,
+    )
+    if column_type_cache is not None:
+        seed_column_types_from_table_info(result, column_type_cache)
     logfire.debug(
         "Table info retrieved",
         table_count=len(result),
@@ -69,10 +79,20 @@ async def get_table_info(
 
 
 async def sample_values(
-    adapter: DatabaseAdapter, table_name: str, column_name: str, limit: int = 10
+    adapter: DatabaseAdapter,
+    table_name: str,
+    column_name: str,
+    limit: int = 10,
+    *,
+    column_type_cache: dict[tuple[str, str], str | None] | None = None,
 ) -> list[Any]:
     """Get sample distinct values from a column."""
-    values = await adapter.sample_values(table_name, column_name, limit)
+    values = await adapter.sample_values(
+        table_name,
+        column_name,
+        limit,
+        column_type_cache=column_type_cache,
+    )
     logfire.debug(
         "Sample values retrieved", table=table_name, column=column_name, count=len(values)
     )
@@ -85,9 +105,17 @@ async def search_column_values(
     column_name: str,
     keyword: str,
     limit: int = 10,
+    *,
+    column_type_cache: dict[tuple[str, str], str | None] | None = None,
 ) -> list[Any]:
     """Search for specific values in a column using LIKE pattern matching."""
-    values = await adapter.search_column_values(table_name, column_name, keyword, limit)
+    values = await adapter.search_column_values(
+        table_name,
+        column_name,
+        keyword,
+        limit,
+        column_type_cache=column_type_cache,
+    )
     logfire.debug(
         "Column values searched",
         table=table_name,
