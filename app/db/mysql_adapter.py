@@ -149,7 +149,12 @@ class MySQLAdapter(DatabaseAdapter):
         return names
 
     @override
-    async def get_table_info(self, table_names: list[str] | str) -> dict[str, dict[str, Any]]:
+    async def get_table_info(
+        self,
+        table_names: list[str] | str,
+        *,
+        preloaded_sample_rows: dict[str, dict[str, Any] | None] | None = None,
+    ) -> dict[str, dict[str, Any]]:
         if isinstance(table_names, str):
             table_names = [table_names]
 
@@ -270,6 +275,10 @@ class MySQLAdapter(DatabaseAdapter):
         for table_name in table_names:
             if table_name not in result:
                 continue
+            cached_row = (preloaded_sample_rows or {}).get(table_name)
+            if cached_row is not None:
+                result[table_name]["sample_row"] = cached_row
+                continue
             try:
                 result[table_name]["sample_row"] = await fetch_table_sample_row(
                     self,
@@ -283,9 +292,21 @@ class MySQLAdapter(DatabaseAdapter):
         return result
 
     @override
-    async def sample_values(self, table: str, column: str, limit: int = 10) -> list[Any]:
+    async def sample_values(
+        self,
+        table: str,
+        column: str,
+        limit: int = 10,
+        *,
+        column_type_cache: dict[tuple[str, str], str | None] | None = None,
+    ) -> list[Any]:
         try:
-            col_type = await get_column_type(self, table, column)
+            if column_type_cache is not None:
+                from app.db.schema_prefetch import get_column_type_cached
+
+                col_type = await get_column_type_cached(self, table, column, column_type_cache)
+            else:
+                col_type = await get_column_type(self, table, column)
             query = (
                 f"SELECT DISTINCT {self.quote_identifier(column)} "
                 f"FROM {self.quote_identifier(table)} "
@@ -300,10 +321,21 @@ class MySQLAdapter(DatabaseAdapter):
 
     @override
     async def search_column_values(
-        self, table: str, column: str, keyword: str, limit: int = 10
+        self,
+        table: str,
+        column: str,
+        keyword: str,
+        limit: int = 10,
+        *,
+        column_type_cache: dict[tuple[str, str], str | None] | None = None,
     ) -> list[Any]:
         try:
-            col_type = await get_column_type(self, table, column)
+            if column_type_cache is not None:
+                from app.db.schema_prefetch import get_column_type_cached
+
+                col_type = await get_column_type_cached(self, table, column, column_type_cache)
+            else:
+                col_type = await get_column_type(self, table, column)
             query = (
                 f"SELECT DISTINCT {self.quote_identifier(column)} "
                 f"FROM {self.quote_identifier(table)} "
