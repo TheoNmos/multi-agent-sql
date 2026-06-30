@@ -1,20 +1,67 @@
-"""Compositor (Supervisor) - Orchestrates the multi-agent text-to-SQL pipeline."""
+"""Pipeline - Orchestrates the multi-agent text-to-SQL pipeline (interpreter → mapper → generator → validator)."""
 
 from __future__ import annotations
 
+import re
 import time
 from datetime import UTC, datetime
-from typing import Any
 
 import logfire
 
-from app.agents.context import AgentState, GeneratorTrace, PipelineResult, StepInfo, Trace, mapperTrace
+from app.agents.context import (
+    AgentState,
+    GeneratorTrace,
+    PipelineResult,
+    StepInfo,
+    Trace,
+    ValidatorOutput,
+    mapperTrace,
+)
 from app.agents.generator import run_generator
 from app.agents.interpreter import run_interpreter
+from app.agents.llm_timeout import format_model_error
 from app.agents.mapper import run_mapper
-from app.agents.tools import clean_sql, validate_sql_syntax
+from app.agents.telemetry import empty_usage_dict, merge_usage_dicts
+from app.agents.tools import clean_sql, execute_sql_safe, validate_sql_syntax
 from app.agents.validator import run_validator
 from app.db.connection import database_connect
+from app.db.schema_prefetch import select_tables_for_sample_prefetch
+from app.db.value_sanitize import prefetch_sample_rows
+from app.llm_models import interpreter_model
+
+_PG_MISSING_COLUMN_RE = re.compile(
+    r'column\s+(?:"?(?P<qual>[\w.]+)"?)\s+does\s+not\s+exist',
+    re.IGNORECASE,
+)
+_MYSQL_UNKNOWN_COLUMN_RE = re.compile(r"Unknown\s+column\s+'(?P<qual>[^']+)'", re.IGNORECASE)
+
+
+def _base_column_name(qualified: str) -> str:
+    cleaned = qualified.strip().strip('"').strip("'")
+    return cleaned.rsplit(".", 1)[-1] if "." in cleaned else cleaned
+
+
+def _enrich_column_not_exist_feedback(execution_error: str | None, state: AgentState) -> str:
+    """Append mapper-aware hint when execution fails on a missing column reference."""
+    if not execution_error or not state.mapper_output:
+        return ""
+    match = _PG_MISSING_COLUMN_RE.search(execution_error) or _MYSQL_UNKNOWN_COLUMN_RE.search(execution_error)
+    if not match:
+        return ""
+    qual = match.group("qual")
+    base = _base_column_name(qual)
+    if not base:
+        return ""
+    tables: list[str] = []
+    for col in state.mapper_output.columns:
+        if col.column_name.lower() == base.lower() and col.table_name not in tables:
+            tables.append(col.table_name)
+    if not tables:
+        return ""
+    return (
+        f"Diagnostic: `{qual}` is invalid. Column `{base}` is listed on mapper-selected table(s): "
+        f"{', '.join(tables)}. Use the join/alias for the table that actually defines `{base}`."
+    )
 
 
 @logfire.instrument("new_pipeline")
@@ -26,7 +73,7 @@ async def run_new_pipeline(
     session_id: str | None = None,
 ) -> PipelineResult:
     """
-    Run the new multi-agent text-to-SQL pipeline.
+    Run the multi-agent text-to-SQL pipeline.
 
     Args:
         user_message: Natural language question from the user
@@ -48,11 +95,20 @@ async def run_new_pipeline(
     # Import Redis update functions if execution_id is provided
     update_step = None
     update_status = None
+    update_metrics = None
+    append_tool_call = None
     if execution_id:
-        from app.redis_orm import update_execution_status, update_execution_step
+        from app.redis_orm import (
+            append_pipeline_tool_call,
+            update_execution_metrics,
+            update_execution_status,
+            update_execution_step,
+        )
 
         update_step = update_execution_step
         update_status = update_execution_status
+        update_metrics = update_execution_metrics
+        append_tool_call = append_pipeline_tool_call
     logfire.info(
         "Starting new multi-agent pipeline",
         user_message=user_message,
@@ -64,6 +120,11 @@ async def run_new_pipeline(
     # Initialize state with session_id
     state = AgentState(raw_question=user_message, session_id=session_id)
 
+    # Load custom prompts from Redis
+    from app.redis_orm import get_prompt_config
+
+    state.custom_prompts = await get_prompt_config()
+
     # Use provided DSN/DB or fallback to config
     from app.config import db_settings
 
@@ -72,6 +133,8 @@ async def run_new_pipeline(
 
     # Initialize trace structure
     pipeline_start_time = time.time()
+    accumulated_usage = empty_usage_dict()
+    emitted_tool_calls = 0
     state.trace = Trace(
         pipeline="new",
         db_name=final_database,
@@ -81,18 +144,46 @@ async def run_new_pipeline(
 
     logfire.debug("Database configuration", final_server_dsn=final_server_dsn, final_database=final_database)
 
-    # Establish database connection
+    # Establish database connection (returns a dialect-aware adapter)
     async with database_connect(server_dsn=final_server_dsn, database=final_database) as conn:
         state.database_connection = conn
-        logfire.debug("Database connection established")
+        state.sql_dialect = conn.dialect
+        logfire.debug("Database connection established", dialect=conn.dialect)
+        if update_metrics and execution_id:
+            await update_metrics(
+                execution_id,
+                model_name=interpreter_model.model_name,
+                usage=accumulated_usage,
+                current_activity="Starting multi-agent pipeline",
+            )
+
+        async def emit_usage_snapshot(current_activity: str | None = None) -> None:
+            if update_metrics and execution_id:
+                await update_metrics(
+                    execution_id,
+                    usage=accumulated_usage,
+                    current_activity=current_activity,
+                )
+
+        async def flush_new_tool_calls() -> None:
+            nonlocal emitted_tool_calls
+            if not append_tool_call or not execution_id:
+                return
+
+            new_tool_calls = state.trace.tools[emitted_tool_calls:]
+            for tool_call in new_tool_calls:
+                await append_tool_call(execution_id, tool_call.model_dump())
+            emitted_tool_calls = len(state.trace.tools)
 
         # Step 1: Run Agent 1 - Query Interpreter
         logfire.info("Step 1: Running Query Interpreter")
         if update_step and execution_id:
             await update_step(execution_id, "interpreter", "running")
+        await emit_usage_snapshot("Interpreter is analyzing the question")
         step_start_time = time.time()
         try:
-            interpreter_output = await run_interpreter(state)
+            interpreter_output, interpreter_usage = await run_interpreter(state)
+            accumulated_usage = merge_usage_dicts(accumulated_usage, interpreter_usage)
             state.interpreter_output = interpreter_output
             state.clarified_question = interpreter_output.clarified_question
             step_timing_ms = int((time.time() - step_start_time) * 1000)
@@ -103,6 +194,7 @@ async def run_new_pipeline(
                     "done",
                     output=interpreter_output.model_dump() if interpreter_output else None,
                 )
+            await emit_usage_snapshot("Interpreter completed")
 
             # Record step in trace
             state.trace.steps.append(
@@ -139,87 +231,44 @@ async def run_new_pipeline(
             state.trace.latency_ms = int((time.time() - pipeline_start_time) * 1000)
             if update_step and execution_id:
                 await update_step(execution_id, "interpreter", "error")
+            interpreter_error = format_model_error(e, step="Query Interpreter")
             if update_status and execution_id:
-                await update_status(execution_id, "error", error=f"Query Interpreter failed: {str(e)}")
+                await update_status(execution_id, "error", error=interpreter_error)
+            await emit_usage_snapshot("Interpreter failed")
+            if update_metrics and execution_id:
+                await update_metrics(execution_id, latency_ms=state.trace.latency_ms)
             logfire.error("Query Interpreter failed", error=str(e), error_type=type(e).__name__)
             return PipelineResult(
                 status="ERROR",
-                error=f"Query Interpreter failed: {str(e)}",
+                error=interpreter_error,
                 sql=None,
                 trace=state.trace,
             )
 
         # Step 2: Get all table names upfront and pass to mapper
         logfire.info("Step 2: Getting all table names")
-        # Get all tables directly from information_schema
-        table_rows = await conn.fetch(
-            """
-            SELECT table_name
-            FROM information_schema.tables
-            WHERE table_schema = 'public'
-            ORDER BY table_name
-            """
-        )
-        all_tables = [row["table_name"] for row in table_rows]
+        all_tables = await conn.list_tables()
         state.scratch["all_tables"] = all_tables
         state.trace.mapper.all_tables_count = len(all_tables)
         logfire.info("Retrieved all tables", table_count=len(all_tables))
 
-        # Step 2.5: Get sample rows for first 20 tables (with text truncation)
-        logfire.info("Step 2.5: Fetching sample rows for all tables")
-        sample_rows_dict: dict[str, dict[str, Any] | None] = {}
-
-        for table_name in all_tables:
-            try:
-                # Get column names for this table
-                column_rows = await conn.fetch(
-                    """
-                    SELECT column_name
-                    FROM information_schema.columns
-                    WHERE table_schema = 'public' AND table_name = $1
-                    ORDER BY ordinal_position
-                    """,
-                    table_name,
-                )
-                column_names = [row["column_name"] for row in column_rows]
-
-                if column_names:
-                    # Build SELECT query with proper quoting
-                    quoted_columns = ", ".join(f'"{col}"' for col in column_names)
-                    sample_query = f'SELECT {quoted_columns} FROM "{table_name}" LIMIT 1'
-                    sample_rows = await conn.fetch(sample_query)
-
-                    if sample_rows:
-                        # Convert row to dict and truncate text columns
-                        sample_row = dict(sample_rows[0])
-                        truncated_row = {}
-
-                        for key, value in sample_row.items():
-                            if value is None:
-                                truncated_row[key] = None
-                            elif isinstance(value, str):
-                                # Truncate text to max 100 characters
-                                truncated_row[key] = value[:50] if len(value) > 50 else value
-                            elif isinstance(value, (int, float, bool)):
-                                truncated_row[key] = value
-                            else:
-                                # Convert other types to string and truncate
-                                str_value = str(value)
-                                truncated_row[key] = str_value[:100] if len(str_value) > 100 else str_value
-
-                        sample_rows_dict[table_name] = truncated_row
-                    else:
-                        sample_rows_dict[table_name] = None
-                else:
-                    sample_rows_dict[table_name] = None
-            except Exception as e:
-                logfire.warning("Error fetching sample row", table=table_name, error=str(e))
-                sample_rows_dict[table_name] = None
+        # Step 2.5: Prefetch sample rows for question-relevant tables (bounded on large schemas)
+        prefetch_targets = select_tables_for_sample_prefetch(
+            state.clarified_question or user_message,
+            all_tables,
+        )
+        state.scratch["prefetch_table_names"] = prefetch_targets
+        logfire.info(
+            "Step 2.5: Fetching sample rows for selected tables",
+            prefetch_count=len(prefetch_targets),
+            total_tables=len(all_tables),
+        )
+        sample_rows_dict = await prefetch_sample_rows(conn, all_tables, only_tables=prefetch_targets)
 
         state.scratch["sample_rows"] = sample_rows_dict
         logfire.info(
             "Sample rows fetched",
-            tables_sampled=len(all_tables),
+            tables_sampled=len(prefetch_targets),
             rows_with_data=sum(1 for v in sample_rows_dict.values() if v is not None),
         )
 
@@ -227,15 +276,19 @@ async def run_new_pipeline(
         logfire.info("Step 2: Running Schema mapper")
         if update_step and execution_id:
             await update_step(execution_id, "mapper", "running")
+        await emit_usage_snapshot("Mapper is exploring the schema")
         step_start_time = time.time()
         try:
-            mapper_output = await run_mapper(state)
+            mapper_output, mapper_usage = await run_mapper(state)
+            accumulated_usage = merge_usage_dicts(accumulated_usage, mapper_usage)
             state.mapper_output = mapper_output
+            mapper_output_payload = mapper_output.model_dump()
             step_timing_ms = int((time.time() - step_start_time) * 1000)
             if update_step and execution_id:
-                await update_step(execution_id, "mapper", "done", output=mapper_output)
+                await update_step(execution_id, "mapper", "done", output=mapper_output_payload)
+            await flush_new_tool_calls()
+            await emit_usage_snapshot("Mapper completed")
 
-            # Record step in trace
             state.trace.steps.append(
                 StepInfo(
                     name="mapper",
@@ -245,16 +298,20 @@ async def run_new_pipeline(
                         "all_tables_count": len(all_tables),
                     },
                     output_summary={
-                        "output_length": len(mapper_output),
-                        "output_preview": mapper_output[:300] if len(mapper_output) > 300 else mapper_output,
+                        "selected_tables": [table.table_name for table in mapper_output.selected_tables],
+                        "column_count": len(mapper_output.columns),
+                        "join_count": len(mapper_output.joins),
+                        "confidence": mapper_output.confidence,
                     },
                 )
             )
 
             logfire.info(
                 "Schema mapper completed",
-                output_length=len(mapper_output),
-                output_preview=mapper_output[:300] if len(mapper_output) > 300 else mapper_output,
+                selected_table_count=len(mapper_output.selected_tables),
+                column_count=len(mapper_output.columns),
+                join_count=len(mapper_output.joins),
+                confidence=mapper_output.confidence,
             )
         except Exception as e:
             step_timing_ms = int((time.time() - step_start_time) * 1000)
@@ -274,41 +331,44 @@ async def run_new_pipeline(
             if update_step and execution_id:
                 await update_step(execution_id, "mapper", "error")
             if update_status and execution_id:
-                await update_status(execution_id, "error", error=f"Schema mapper failed: {str(e)}")
+                mapper_error = format_model_error(e, step="Schema mapper")
+                await update_status(execution_id, "error", error=mapper_error)
+            await flush_new_tool_calls()
+            await emit_usage_snapshot("Mapper failed")
+            if update_metrics and execution_id:
+                await update_metrics(execution_id, latency_ms=state.trace.latency_ms)
             logfire.error("Schema mapper failed", error=str(e), error_type=type(e).__name__)
             return PipelineResult(
                 status="ERROR",
-                error=f"Schema mapper failed: {str(e)}",
+                error=format_model_error(e, step="Schema mapper"),
                 sql=None,
                 interpreter_output=state.interpreter_output,
                 trace=state.trace,
             )
 
-        # Step 3-4: Generator (up to 2 attempts) + Validator (once after first attempt)
-        logfire.info("Step 3-4: Starting generator-validator flow")
-        best_valid_query: PipelineResult | None = None
-        validator_has_run = False
+        # Step 3-4: Iterative generator -> validator -> execution-feedback loop
+        logfire.info("Step 3-4: Starting iterative generation flow")
+        max_generator_attempts = max(3, state.max_attempts)
+        last_error_message: str | None = None
 
-        # Generator can run up to 2 times: first attempt, then if validator rejects, one more attempt
-        max_generator_attempts = 2
         for generator_attempt in range(max_generator_attempts):
             state.attempt_count = generator_attempt
             logfire.info("Generator attempt", attempt=generator_attempt + 1, max_attempts=max_generator_attempts)
 
-            # Step 3: Run Agent 3 - SQL Generator
             logfire.info("Step 3: Running SQL Generator", attempt=generator_attempt + 1)
             if update_step and execution_id:
                 await update_step(execution_id, "generator", "running")
+            await emit_usage_snapshot(f"Generator is drafting SQL (attempt {generator_attempt + 1})")
             step_start_time = time.time()
             try:
-                generator_output = await run_generator(state)
+                generator_output, generator_usage = await run_generator(state)
+                accumulated_usage = merge_usage_dicts(accumulated_usage, generator_usage)
+                state.scratch.pop("execution_feedback", None)
                 state.generator_output = generator_output
-                # Clean SQL before storing
                 cleaned_sql = clean_sql(generator_output.sql_query)
                 state.current_sql = cleaned_sql
                 state.sql_history.append(cleaned_sql)
                 step_timing_ms = int((time.time() - step_start_time) * 1000)
-                # Update Redis with SQL query as soon as it's generated
                 if update_status and execution_id and cleaned_sql:
                     await update_status(execution_id, "running", sql_query=cleaned_sql)
                 if update_step and execution_id:
@@ -318,8 +378,8 @@ async def run_new_pipeline(
                         "done",
                         output=generator_output.model_dump() if generator_output else None,
                     )
+                await emit_usage_snapshot(f"Generator completed attempt {generator_attempt + 1}")
 
-                # Record step in trace
                 state.trace.steps.append(
                     StepInfo(
                         name="generator",
@@ -336,7 +396,6 @@ async def run_new_pipeline(
                     )
                 )
 
-                # Record generator output in trace
                 state.trace.generator = GeneratorTrace(
                     sql_query=cleaned_sql,
                     reasoning_steps=generator_output.reasoning_steps,
@@ -350,11 +409,11 @@ async def run_new_pipeline(
                     confidence=generator_output.confidence,
                 )
 
-                # Pre-validate syntax before calling validator
                 if cleaned_sql:
                     syntax_valid, syntax_error = await validate_sql_syntax(conn, cleaned_sql)
                     state.syntax_valid = syntax_valid
                     state.syntax_error = syntax_error
+                    state.scratch.pop("execution_probe", None)
                     logfire.info(
                         "SQL syntax validation",
                         attempt=generator_attempt + 1,
@@ -362,220 +421,267 @@ async def run_new_pipeline(
                         syntax_error=syntax_error,
                     )
 
-                    # Step 4: Run Agent 4 - Validator (ONLY ONCE, after first generator attempt)
-                    if not validator_has_run:
-                        logfire.info("Step 4: Running SQL Validator (first and only time)")
-                        if update_step and execution_id:
-                            await update_step(execution_id, "validator", "running")
-                        validator_step_start_time = time.time()
-                        try:
-                            validator_output = await run_validator(state)
-                            state.validator_output = validator_output
-                            validator_has_run = True
-                            validator_step_timing_ms = int((time.time() - validator_step_start_time) * 1000)
-                            # Update Redis with validator output
-                            if update_step and execution_id:
-                                await update_step(
-                                    execution_id,
-                                    "validator",
-                                    "done",
-                                    output=validator_output.model_dump() if validator_output else None,
-                                )
-
-                            # Record step in trace
-                            state.trace.steps.append(
-                                StepInfo(
-                                    name="validator",
-                                    timing_ms=validator_step_timing_ms,
-                                    input_summary={
-                                        "sql_length": len(cleaned_sql) if cleaned_sql else 0,
-                                        "attempt": generator_attempt + 1,
-                                    },
-                                    output_summary={
-                                        "is_valid": validator_output.is_valid,
-                                        "is_optimal": validator_output.is_optimal,
-                                        "efficiency_score": validator_output.efficiency_score,
-                                        "syntax_error_count": len(validator_output.syntax_errors),
-                                        "semantic_issue_count": len(validator_output.semantic_issues),
-                                    },
-                                )
-                            )
-
-                            logfire.info(
-                                "SQL Validator completed",
-                                is_valid=validator_output.is_valid,
-                                is_optimal=validator_output.is_optimal,
-                                efficiency_score=validator_output.efficiency_score,
-                            )
-
-                            # Track best valid query
-                            if validator_output.is_valid:
-                                best_valid_query = PipelineResult(
-                                    status="GENERATED",
-                                    sql=cleaned_sql,
-                                    plan=interpreter_output.explicit_intent if interpreter_output else None,
-                                    feedback=validator_output.refinement_feedback,
-                                    attempts=generator_attempt + 1,
-                                    all_queries=state.sql_history.copy(),
-                                    interpreter_output=state.interpreter_output,
-                                    mapper_output=state.mapper_output,
-                                    generator_output=state.generator_output,
-                                    validator_output=validator_output,
-                                    trace=state.trace,
-                                )
-                                state.best_sql = cleaned_sql
-                                state.best_validator_output = validator_output
-
-                            # If query is valid, return immediately
-                            if validator_output.is_valid:
-                                state.trace.end_ts = datetime.now(UTC).isoformat()
-                                state.trace.latency_ms = int((time.time() - pipeline_start_time) * 1000)
-                                logfire.info(
-                                    "Query is valid, returning",
-                                    is_optimal=validator_output.is_optimal,
-                                    efficiency_score=validator_output.efficiency_score,
-                                )
-                                return PipelineResult(
-                                    status="GENERATED",
-                                    sql=cleaned_sql,
-                                    plan=interpreter_output.explicit_intent if interpreter_output else None,
-                                    feedback=validator_output.refinement_feedback,
-                                    attempts=generator_attempt + 1,
-                                    all_queries=state.sql_history,
-                                    interpreter_output=state.interpreter_output,
-                                    mapper_output=state.mapper_output,
-                                    generator_output=state.generator_output,
-                                    validator_output=validator_output,
-                                    trace=state.trace,
-                                )
-
-                            # If query is invalid and this is the first generator attempt, try generator again
-                            if not validator_output.is_valid and generator_attempt == 0:
-                                logfire.info(
-                                    "Query invalid on first attempt, will retry generator once",
-                                    feedback=validator_output.refinement_feedback[:200],
-                                )
-                                # Continue to next generator attempt (second attempt)
-                                continue
-                            elif not validator_output.is_valid:
-                                # Second generator attempt also invalid, return with error
-                                state.trace.end_ts = datetime.now(UTC).isoformat()
-                                state.trace.latency_ms = int((time.time() - pipeline_start_time) * 1000)
-                                logfire.warning(
-                                    "Query invalid after second generator attempt",
-                                    last_feedback=validator_output.refinement_feedback[:200],
-                                )
-                                return PipelineResult(
-                                    status="REJECTED",
-                                    sql=cleaned_sql,  # Always include SQL even if invalid, so it can be executed to show actual error
-                                    error=validator_output.refinement_feedback or "Failed to generate valid query",
-                                    attempts=generator_attempt + 1,
-                                    all_queries=state.sql_history,
-                                    interpreter_output=state.interpreter_output,
-                                    mapper_output=state.mapper_output,
-                                    generator_output=state.generator_output,
-                                    validator_output=validator_output,
-                                    trace=state.trace,
-                                )
-
-                        except Exception as e:
-                            validator_step_timing_ms = int((time.time() - validator_step_start_time) * 1000)
-                            validator_has_run = True  # Mark as run even if it failed
-                            if update_step and execution_id:
-                                await update_step(execution_id, "validator", "error")
-                            state.trace.steps.append(
-                                StepInfo(
-                                    name="validator",
-                                    timing_ms=validator_step_timing_ms,
-                                    input_summary={
-                                        "sql_length": len(cleaned_sql) if cleaned_sql else 0,
-                                        "attempt": generator_attempt + 1,
-                                    },
-                                    error=str(e),
-                                )
-                            )
-                            logfire.error(
-                                "SQL Validator failed",
-                                error=str(e),
-                                error_type=type(e).__name__,
-                                attempt=generator_attempt + 1,
-                            )
-                            # If validator fails, treat as invalid and try generator again if first attempt
-                            if generator_attempt == 0:
-                                logfire.info("Validator failed on first attempt, will retry generator once")
-                                continue
-                            else:
-                                # Second attempt and validator failed - return with error
-                                state.trace.end_ts = datetime.now(UTC).isoformat()
-                                state.trace.latency_ms = int((time.time() - pipeline_start_time) * 1000)
-                                logfire.warning("Validator failed on second attempt, returning error")
-                                return PipelineResult(
-                                    status="ERROR",
-                                    error=f"SQL Validator failed: {str(e)}",
-                                    sql=cleaned_sql if cleaned_sql else None,
-                                    attempts=generator_attempt + 1,
-                                    all_queries=state.sql_history,
-                                    interpreter_output=state.interpreter_output,
-                                    mapper_output=state.mapper_output,
-                                    generator_output=state.generator_output,
-                                    validator_output=None,
-                                    trace=state.trace,
-                                )
-                    else:
-                        # Validator has already run (on first attempt), this is second generator attempt
-                        # Return the second generator's output without re-validating
-                        logfire.info(
-                            "Second generator attempt completed, returning without re-validation",
-                            sql_length=len(cleaned_sql),
+                    if not syntax_valid:
+                        syntax_feedback = (
+                            f"Syntax error: {syntax_error or 'Unknown error'}. "
+                            "Fix SQL syntax before resubmitting."
                         )
+                        state.validator_output = ValidatorOutput(
+                            is_valid=False,
+                            is_optimal=False,
+                            syntax_errors=[syntax_error] if syntax_error else ["Invalid SQL syntax"],
+                            refinement_feedback=syntax_feedback,
+                        )
+                        last_error_message = syntax_feedback
+                        logfire.info(
+                            "Skipping validator LLM after syntax failure",
+                            attempt=generator_attempt + 1,
+                        )
+                        if generator_attempt < max_generator_attempts - 1:
+                            continue
                         state.trace.end_ts = datetime.now(UTC).isoformat()
                         state.trace.latency_ms = int((time.time() - pipeline_start_time) * 1000)
-                        # Use previous validator feedback for context
-                        feedback = (
-                            state.validator_output.refinement_feedback
-                            if state.validator_output
-                            else "Query generated on second attempt after first was rejected"
-                        )
+                        await emit_usage_snapshot("Generator produced syntactically invalid SQL")
+                        if update_metrics and execution_id:
+                            await update_metrics(execution_id, latency_ms=state.trace.latency_ms)
                         return PipelineResult(
-                            status="GENERATED",  # Return as GENERATED even though not re-validated
+                            status="REJECTED",
                             sql=cleaned_sql,
-                            plan=interpreter_output.explicit_intent if interpreter_output else None,
-                            feedback=feedback,
+                            error=last_error_message,
                             attempts=generator_attempt + 1,
                             all_queries=state.sql_history,
                             interpreter_output=state.interpreter_output,
                             mapper_output=state.mapper_output,
                             generator_output=state.generator_output,
-                            validator_output=state.validator_output,  # Include previous validator output
+                            validator_output=state.validator_output,
+                            trace=state.trace,
+                        )
+
+                    probe_success, probe_results, probe_error = await execute_sql_safe(conn, cleaned_sql, 5)
+                    state.scratch["execution_probe"] = {
+                        "sql": cleaned_sql,
+                        "success": probe_success,
+                        "results": probe_results,
+                        "error": probe_error,
+                    }
+
+                    logfire.info("Step 4: Running SQL Validator", attempt=generator_attempt + 1)
+                    if update_step and execution_id:
+                        await update_step(execution_id, "validator", "running")
+                    await emit_usage_snapshot(f"Validator is checking SQL (attempt {generator_attempt + 1})")
+                    validator_step_start_time = time.time()
+                    try:
+                        validator_output, validator_usage = await run_validator(state)
+                        accumulated_usage = merge_usage_dicts(accumulated_usage, validator_usage)
+                        state.validator_output = validator_output
+                        validator_step_timing_ms = int((time.time() - validator_step_start_time) * 1000)
+                        if update_step and execution_id:
+                            await update_step(
+                                execution_id,
+                                "validator",
+                                "done",
+                                output=validator_output.model_dump() if validator_output else None,
+                            )
+                        await flush_new_tool_calls()
+                        await emit_usage_snapshot(f"Validator completed attempt {generator_attempt + 1}")
+
+                        state.trace.steps.append(
+                            StepInfo(
+                                name="validator",
+                                timing_ms=validator_step_timing_ms,
+                                input_summary={
+                                    "sql_length": len(cleaned_sql) if cleaned_sql else 0,
+                                    "attempt": generator_attempt + 1,
+                                },
+                                output_summary={
+                                    "is_valid": validator_output.is_valid,
+                                    "is_optimal": validator_output.is_optimal,
+                                    "efficiency_score": validator_output.efficiency_score,
+                                    "syntax_error_count": len(validator_output.syntax_errors),
+                                    "semantic_issue_count": len(validator_output.semantic_issues),
+                                },
+                            )
+                        )
+
+                        logfire.info(
+                            "SQL Validator completed",
+                            is_valid=validator_output.is_valid,
+                            is_optimal=validator_output.is_optimal,
+                            efficiency_score=validator_output.efficiency_score,
+                            attempt=generator_attempt + 1,
+                        )
+
+                        if not validator_output.is_valid:
+                            last_error_message = validator_output.refinement_feedback or "Failed to generate valid query"
+                            logfire.info(
+                                "Query invalid, retrying generation",
+                                attempt=generator_attempt + 1,
+                                feedback=last_error_message[:200],
+                            )
+                            if generator_attempt < max_generator_attempts - 1:
+                                continue
+
+                            state.trace.end_ts = datetime.now(UTC).isoformat()
+                            state.trace.latency_ms = int((time.time() - pipeline_start_time) * 1000)
+                            await emit_usage_snapshot("Validator rejected the SQL")
+                            if update_metrics and execution_id:
+                                await update_metrics(execution_id, latency_ms=state.trace.latency_ms)
+                            return PipelineResult(
+                                status="REJECTED",
+                                sql=cleaned_sql,
+                                error=last_error_message,
+                                attempts=generator_attempt + 1,
+                                all_queries=state.sql_history,
+                                interpreter_output=state.interpreter_output,
+                                mapper_output=state.mapper_output,
+                                generator_output=state.generator_output,
+                                validator_output=validator_output,
+                                trace=state.trace,
+                            )
+
+                        probe = state.scratch.get("execution_probe") or {}
+                        execution_success = bool(probe.get("success"))
+                        execution_results = probe.get("results")
+                        execution_error = probe.get("error")
+                        if execution_success:
+                            state.best_sql = cleaned_sql
+                            state.best_validator_output = validator_output
+                            state.trace.end_ts = datetime.now(UTC).isoformat()
+                            state.trace.latency_ms = int((time.time() - pipeline_start_time) * 1000)
+                            await emit_usage_snapshot("Pipeline produced a valid SQL query")
+                            if update_metrics and execution_id:
+                                await update_metrics(execution_id, latency_ms=state.trace.latency_ms)
+                            logfire.info(
+                                "Query validated and executed successfully",
+                                attempt=generator_attempt + 1,
+                                preview_row_count=len(execution_results or []),
+                            )
+                            return PipelineResult(
+                                status="GENERATED",
+                                sql=cleaned_sql,
+                                plan=interpreter_output.explicit_intent if interpreter_output else None,
+                                feedback=validator_output.refinement_feedback,
+                                attempts=generator_attempt + 1,
+                                all_queries=state.sql_history,
+                                interpreter_output=state.interpreter_output,
+                                mapper_output=state.mapper_output,
+                                generator_output=state.generator_output,
+                                validator_output=validator_output,
+                                trace=state.trace,
+                            )
+
+                        last_error_message = (
+                            f"{validator_output.refinement_feedback}\n\nSQL execution error: {execution_error}"
+                            if validator_output.refinement_feedback
+                            else f"SQL execution error: {execution_error}"
+                        )
+                        exec_fb_lines = [
+                            f"The previous SQL passed high-level validation but failed when executed against {conn.dialect_label}.",
+                            f"Execution error: {execution_error}",
+                            "Generate a corrected SQL query that preserves the original intent.",
+                        ]
+                        col_hint = _enrich_column_not_exist_feedback(execution_error, state)
+                        if col_hint:
+                            exec_fb_lines.append(col_hint)
+                        state.scratch["execution_feedback"] = "\n".join(exec_fb_lines)
+                        logfire.warning(
+                            "Validated SQL failed execution, retrying generation",
+                            attempt=generator_attempt + 1,
+                            execution_error=execution_error,
+                        )
+
+                        if generator_attempt < max_generator_attempts - 1:
+                            continue
+
+                        state.trace.end_ts = datetime.now(UTC).isoformat()
+                        state.trace.latency_ms = int((time.time() - pipeline_start_time) * 1000)
+                        await emit_usage_snapshot("Validator could not produce an executable query")
+                        if update_metrics and execution_id:
+                            await update_metrics(execution_id, latency_ms=state.trace.latency_ms)
+                        return PipelineResult(
+                            status="REJECTED",
+                            sql=cleaned_sql,
+                            error=last_error_message,
+                            attempts=generator_attempt + 1,
+                            all_queries=state.sql_history,
+                            interpreter_output=state.interpreter_output,
+                            mapper_output=state.mapper_output,
+                            generator_output=state.generator_output,
+                            validator_output=validator_output,
+                            trace=state.trace,
+                        )
+
+                    except Exception as e:
+                        validator_step_timing_ms = int((time.time() - validator_step_start_time) * 1000)
+                        if update_step and execution_id:
+                            await update_step(execution_id, "validator", "error")
+                        state.trace.steps.append(
+                            StepInfo(
+                                name="validator",
+                                timing_ms=validator_step_timing_ms,
+                                input_summary={
+                                    "sql_length": len(cleaned_sql) if cleaned_sql else 0,
+                                    "attempt": generator_attempt + 1,
+                                },
+                                error=str(e),
+                            )
+                        )
+                        logfire.error(
+                            "SQL Validator failed",
+                            error=str(e),
+                            error_type=type(e).__name__,
+                            attempt=generator_attempt + 1,
+                        )
+                        if generator_attempt < max_generator_attempts - 1:
+                            continue
+
+                        state.trace.end_ts = datetime.now(UTC).isoformat()
+                        state.trace.latency_ms = int((time.time() - pipeline_start_time) * 1000)
+                        await flush_new_tool_calls()
+                        await emit_usage_snapshot("Validator failed")
+                        if update_metrics and execution_id:
+                            await update_metrics(execution_id, latency_ms=state.trace.latency_ms)
+                        return PipelineResult(
+                            status="ERROR",
+                            error=format_model_error(e, step="SQL Validator"),
+                            sql=cleaned_sql if cleaned_sql else None,
+                            attempts=generator_attempt + 1,
+                            all_queries=state.sql_history,
+                            interpreter_output=state.interpreter_output,
+                            mapper_output=state.mapper_output,
+                            generator_output=state.generator_output,
+                            validator_output=None,
                             trace=state.trace,
                         )
                 else:
-                    # No SQL generated - try generator again if first attempt
                     state.syntax_valid = False
                     state.syntax_error = "No SQL query generated"
                     logfire.warning("Generator produced empty SQL", attempt=generator_attempt + 1)
-                    if generator_attempt == 0:
-                        continue  # Try generator again
-                    else:
-                        # Second attempt also failed to generate SQL
-                        state.trace.end_ts = datetime.now(UTC).isoformat()
-                        state.trace.latency_ms = int((time.time() - pipeline_start_time) * 1000)
-                        if update_step and execution_id:
-                            await update_step(execution_id, "generator", "error")
-                        if update_status and execution_id:
-                            await update_status(execution_id, "error", error="Failed to generate SQL query")
-                        return PipelineResult(
-                            status="REJECTED",
-                            sql=None,
-                            error="Failed to generate SQL query",
-                            attempts=generator_attempt + 1,
-                            all_queries=state.sql_history,
-                            interpreter_output=state.interpreter_output,
-                            mapper_output=state.mapper_output,
-                            generator_output=state.generator_output,
-                            validator_output=state.validator_output if validator_has_run else None,
-                            trace=state.trace,
-                        )
+                    last_error_message = "Failed to generate SQL query"
+                    if generator_attempt < max_generator_attempts - 1:
+                        continue
+
+                    state.trace.end_ts = datetime.now(UTC).isoformat()
+                    state.trace.latency_ms = int((time.time() - pipeline_start_time) * 1000)
+                    if update_step and execution_id:
+                        await update_step(execution_id, "generator", "error")
+                    if update_status and execution_id:
+                        await update_status(execution_id, "error", error=last_error_message)
+                    await emit_usage_snapshot("Generator did not return SQL")
+                    if update_metrics and execution_id:
+                        await update_metrics(execution_id, latency_ms=state.trace.latency_ms)
+                    return PipelineResult(
+                        status="REJECTED",
+                        sql=None,
+                        error=last_error_message,
+                        attempts=generator_attempt + 1,
+                        all_queries=state.sql_history,
+                        interpreter_output=state.interpreter_output,
+                        mapper_output=state.mapper_output,
+                        generator_output=state.generator_output,
+                        validator_output=state.validator_output,
+                        trace=state.trace,
+                    )
             except Exception as e:
                 step_timing_ms = int((time.time() - step_start_time) * 1000)
                 state.trace.steps.append(
@@ -597,60 +703,47 @@ async def run_new_pipeline(
                 )
                 if update_step and execution_id:
                     await update_step(execution_id, "generator", "error")
-                # Try generator again if first attempt
-                if generator_attempt == 0:
-                    logfire.info("Generator failed on first attempt, will retry once")
+                if generator_attempt < max_generator_attempts - 1:
+                    logfire.info("Generator failed, retrying", next_attempt=generator_attempt + 2)
                     continue
-                else:
-                    # Second attempt also failed - return error
-                    state.trace.end_ts = datetime.now(UTC).isoformat()
-                    state.trace.latency_ms = int((time.time() - pipeline_start_time) * 1000)
-                    if update_status and execution_id:
-                        await update_status(execution_id, "error", error=f"SQL Generator failed: {str(e)}")
-                    return PipelineResult(
-                        status="ERROR",
-                        error=f"SQL Generator failed: {str(e)}",
-                        sql=state.current_sql,  # Return last generated SQL if available
-                        attempts=generator_attempt + 1,
-                        all_queries=state.sql_history,
-                        interpreter_output=state.interpreter_output,
-                        mapper_output=state.mapper_output,
-                        generator_output=state.generator_output,
-                        trace=state.trace,
-                    )
+                state.trace.end_ts = datetime.now(UTC).isoformat()
+                state.trace.latency_ms = int((time.time() - pipeline_start_time) * 1000)
+                generator_error = format_model_error(e, step="SQL Generator")
+                if update_status and execution_id:
+                    await update_status(execution_id, "error", error=generator_error)
+                await emit_usage_snapshot("Generator failed")
+                if update_metrics and execution_id:
+                    await update_metrics(execution_id, latency_ms=state.trace.latency_ms)
+                return PipelineResult(
+                    status="ERROR",
+                    error=generator_error,
+                    sql=state.current_sql,
+                    attempts=generator_attempt + 1,
+                    all_queries=state.sql_history,
+                    interpreter_output=state.interpreter_output,
+                    mapper_output=state.mapper_output,
+                    generator_output=state.generator_output,
+                    trace=state.trace,
+                )
 
-        # Loop finished - return best valid query or error
-        if best_valid_query:
-            logfire.info(
-                "Pipeline completed with best valid query",
-                status=best_valid_query.status,
-                attempts=best_valid_query.attempts,
-                total_queries_generated=len(state.sql_history),
-                efficiency_score=best_valid_query.validator_output.efficiency_score
-                if best_valid_query.validator_output
-                else 0.0,
-            )
-            best_valid_query.trace.end_ts = datetime.now(UTC).isoformat()
-            best_valid_query.trace.latency_ms = int((time.time() - pipeline_start_time) * 1000)
-            return best_valid_query
-
-        # No valid query found after both generator attempts
-        last_feedback = (
+        last_feedback = last_error_message or (
             state.validator_output.refinement_feedback if state.validator_output else "Failed to generate valid query"
         )
         state.trace.end_ts = datetime.now(UTC).isoformat()
         state.trace.latency_ms = int((time.time() - pipeline_start_time) * 1000)
+        await emit_usage_snapshot("Pipeline finished without a valid SQL")
+        if update_metrics and execution_id:
+            await update_metrics(execution_id, latency_ms=state.trace.latency_ms)
         logfire.warning(
-            "Pipeline failed - no valid query found after 2 generator attempts",
+            "Pipeline failed - no valid query found after all attempts",
             total_queries_generated=len(state.sql_history),
         )
-        # Include last generated SQL if available, even if invalid, so it can be executed to show error
         last_sql = state.current_sql if state.current_sql else (state.sql_history[-1] if state.sql_history else None)
         return PipelineResult(
             status="REJECTED",
             error=last_feedback,
             sql=last_sql,
-            attempts=2,
+            attempts=max_generator_attempts,
             all_queries=state.sql_history,
             interpreter_output=state.interpreter_output,
             mapper_output=state.mapper_output,

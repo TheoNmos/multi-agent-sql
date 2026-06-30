@@ -2,10 +2,21 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
-import asyncpg
 from pydantic import BaseModel, ConfigDict, Field
+
+from app.db.adapter import DatabaseAdapter
+
+
+class SupervisorOutput(BaseModel):
+    """Output from the Supervisor agent when the pipeline is complete."""
+
+    status: Literal["success", "reject", "error"] = Field(
+        description="Pipeline outcome: success (valid SQL), reject (invalid after retries), error (failure)"
+    )
+    message: str = Field(description="Summary message or feedback")
+    final_sql: str | None = Field(default=None, description="The final SQL query if status is success")
 
 
 class InterpreterOutput(BaseModel):
@@ -19,10 +30,109 @@ class InterpreterOutput(BaseModel):
     ambiguities_resolved: list[str] = Field(
         default_factory=list, description="List of ambiguities that were resolved during clarification"
     )
+    user_filter_literals: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Explicit filter values the user stated in the question (e.g. {'country': 'SVK', 'segment': 'Premium'}). "
+            "These override mapper sample_values when generating SQL."
+        ),
+    )
+    aggregation_granularity: Literal["row_level", "entity_level", "unspecified"] = Field(
+        default="unspecified",
+        description=(
+            "Whether percentages/counts are over individual rows (e.g. transactions) "
+            "or distinct entities (e.g. customers)."
+        ),
+    )
 
 
-# mapperOutput is now just a string - a natural language summary of relevant schema and context
-mapperOutput = str
+MapperColumnRole = Literal["select", "filter", "join", "aggregate", "order", "group", "context"]
+
+
+class MappedColumn(BaseModel):
+    """Column selected by the mapper and the role it should play in SQL generation."""
+
+    table_name: str = Field(description="Table that owns the column")
+    column_name: str = Field(description="Column name exactly as it appears in the database")
+    role: MapperColumnRole = Field(description="How this column should be used by the generator")
+    reason: str = Field(description="Why this column is relevant to the clarified question")
+    data_type: str | None = Field(default=None, description="Column type when known")
+    sample_values: list[str] = Field(
+        default_factory=list, description="Known or sampled values useful for semantic filtering"
+    )
+    value_format: str | None = Field(
+        default=None, description="Observed format, such as YYYYMM, DATE, enum code, or free text"
+    )
+
+
+class MappedTable(BaseModel):
+    """Table selected by the mapper with the evidence that supports using it."""
+
+    table_name: str = Field(description="Table name exactly as it appears in the database")
+    reason: str = Field(description="Why this table was selected over alternatives")
+    priority: Literal["primary", "secondary", "fallback"] = Field(
+        default="primary", description="How important this table is for answering the question"
+    )
+    relevant_columns: list[str] = Field(
+        default_factory=list, description="Column names from this table that matter for the query"
+    )
+    sample_row: dict[str, Any] | None = Field(
+        default=None, description="Small sample row or sample fragments already observed"
+    )
+
+
+class MappedJoin(BaseModel):
+    """Join relationship the generator is allowed to use."""
+
+    left_table: str = Field(description="Left/source table")
+    left_column: str = Field(description="Join column on the left/source table")
+    right_table: str = Field(description="Right/destination table")
+    right_column: str = Field(description="Join column on the right/destination table")
+    join_type: Literal["INNER", "LEFT", "RIGHT", "FULL"] = Field(
+        default="INNER", description="Suggested SQL join type"
+    )
+    reason: str = Field(description="Why this join is needed")
+    cardinality_warning: str | None = Field(
+        default=None, description="Warning when this join can change the base entity count"
+    )
+
+
+class MapperOutput(BaseModel):
+    """Structured schema mapping passed from the mapper to the SQL generator."""
+
+    selected_tables: list[MappedTable] = Field(
+        default_factory=list, description="Tables selected as relevant to the question"
+    )
+    columns: list[MappedColumn] = Field(
+        default_factory=list, description="Relevant columns and their intended SQL roles"
+    )
+    joins: list[MappedJoin] = Field(
+        default_factory=list, description="Join relationships that are required or allowed"
+    )
+    target_columns: list[str] = Field(
+        default_factory=list, description="Fully qualified columns or expressions expected in SELECT"
+    )
+    filters: list[str] = Field(
+        default_factory=list, description="Expected filters or predicates, including confirmed values"
+    )
+    required_constraints: list[str] = Field(
+        default_factory=list,
+        description="Intent-level constraints that must appear in the final SQL or be explicitly explained",
+    )
+    value_notes: list[str] = Field(
+        default_factory=list, description="Value encodings, exact matches, date formats, and semantic notes"
+    )
+    cardinality_notes: list[str] = Field(
+        default_factory=list, description="Warnings about joins, duplicate rows, or single-table alternatives"
+    )
+    validation_notes: list[str] = Field(
+        default_factory=list, description="Checks performed and remaining uncertainties"
+    )
+    confidence: float = Field(default=0.0, description="Mapper confidence from 0.0 to 1.0")
+
+
+# Backwards-compatible alias used by older imports.
+mapperOutput = MapperOutput
 
 
 class GeneratorOutput(BaseModel):
@@ -154,13 +264,22 @@ class AgentState(BaseModel):
     attempt_count: int = 0
     max_attempts: int = 3
 
-    # Database connection
-    database_connection: asyncpg.Connection | None = None
+    # Database connection (adapter)
+    database_connection: DatabaseAdapter | None = None
+
+    # SQL dialect for prompts and dialect-aware behavior
+    sql_dialect: Literal["postgres", "mysql"] = "postgres"
 
     # Scratchpad for coordination
     scratch: dict[str, Any] = Field(default_factory=dict)
 
-    # Pre-validated syntax results (set by compositor)
+    # Custom prompt overrides (agent_id -> prompt template), loaded from Redis
+    custom_prompts: dict[str, str] = Field(default_factory=dict)
+
+    # Supervisor tips per agent (agent_id -> tip text); set by supervisor before calling workers
+    supervisor_tips: dict[str, str] = Field(default_factory=dict)
+
+    # Pre-validated syntax results (set by supervisor)
     syntax_valid: bool | None = None
     syntax_error: str | None = None
 

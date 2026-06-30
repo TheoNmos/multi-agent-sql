@@ -1,17 +1,21 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 import logfire
 from pydantic import BaseModel, Field
 
+from app.prompts import AGENT_IDS
 from app.redis_client import get_redis_client
+
+PROMPTS_CONFIG_KEY = "prompts:config"
 
 
 class ConnectionString(BaseModel):
-    """PostgreSQL connection string model."""
+    """SQL database connection string model (PostgreSQL or MySQL)."""
 
     id: str = Field(default_factory=lambda: str(uuid4()))
     connection_string: str
@@ -44,12 +48,29 @@ class QueryExecution(BaseModel):
     error: str | None = None
     # Agent outputs
     interpreter_output: dict[str, Any] | None = None  # InterpreterOutput as dict
-    mapper_output: str | None = None  # mapperOutput is a string
+    mapper_output: dict[str, Any] | str | None = None  # MapperOutput as dict; legacy runs may be strings
     generator_output: dict[str, Any] | None = None  # GeneratorOutput as dict
     validator_output: dict[str, Any] | None = None  # ValidatorOutput as dict
     analyzer_output: dict[str, Any] | None = None  # AnalyzerOutput as dict
+    single_agent_tool_calls: list[dict[str, Any]] = Field(default_factory=list)  # Tool call timeline for single agent
+    pipeline_tool_calls: list[dict[str, Any]] = Field(default_factory=list)  # Tool call timeline for multi-agent pipeline
+    usage: dict[str, Any] | None = None
+    model_name: str | None = None
+    current_activity: str | None = None
+    latency_ms: int | None = None
+    pipeline_mode: str = "pipeline"  # "pipeline" | "single" | "versus"
+    parent_execution_id: str | None = None
+    comparison_execution_ids: dict[str, str] | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+def _execution_created_at(execution: QueryExecution) -> datetime:
+    return execution.created_at
+
+
+def _session_updated_at(session: Session) -> datetime:
+    return session.updated_at
 
 
 # Connection String Operations
@@ -69,7 +90,7 @@ async def save_connection_string(conn: ConnectionString) -> str:
         extra={"json_length": len(json_data), "key": key},
     )
     await redis_client.set(key, json_data)
-    _ = await redis_client.sadd("connections:list", conn.id)  # type: ignore
+    _ = await cast(Any, redis_client).sadd("connections:list", conn.id)
     logfire.info(f"Successfully saved connection to Redis", extra={"key": key})
     return conn.id
 
@@ -87,7 +108,7 @@ async def get_connection_string(conn_id: str) -> ConnectionString | None:
 async def list_connection_strings() -> list[ConnectionString]:
     """List all connection strings from Redis."""
     redis_client = await get_redis_client()
-    conn_ids_set: set[str] = await redis_client.smembers("connections:list")  # type: ignore
+    conn_ids_set = cast(set[str], await cast(Any, redis_client).smembers("connections:list"))
     conn_ids = list(conn_ids_set) if conn_ids_set else []
     connections = []
     for conn_id in conn_ids:
@@ -101,8 +122,8 @@ async def delete_connection_string(conn_id: str) -> bool:
     """Delete connection string from Redis."""
     redis_client = await get_redis_client()
     key = f"connection:{conn_id}"
-    deleted_count: int = await redis_client.delete(key)  # type: ignore
-    _ = await redis_client.srem("connections:list", conn_id)  # type: ignore
+    deleted_count = cast(int, await redis_client.delete(key))
+    _ = await cast(Any, redis_client).srem("connections:list", conn_id)
     return deleted_count > 0
 
 
@@ -115,7 +136,7 @@ async def save_execution(exec: QueryExecution) -> str:
     key = f"execution:{exec.id}"
     exec.updated_at = datetime.now(UTC)
     await redis_client.set(key, exec.model_dump_json(), ex=86400)  # 24 hour TTL
-    _ = await redis_client.sadd("executions:list", exec.id)  # type: ignore
+    _ = await cast(Any, redis_client).sadd("executions:list", exec.id)
     # Add execution to session
     await add_execution_to_session(exec.session_id, exec.id)
     logfire.info("Saved QueryExecution to Redis", extra={"exec_id": exec.id, "session_id": exec.session_id})
@@ -149,7 +170,7 @@ async def update_execution_step(
     if status == "done" and output is not None:
         if step == "interpreter" and isinstance(output, dict):
             exec.interpreter_output = output
-        elif step == "mapper" and isinstance(output, str):
+        elif step == "mapper":
             exec.mapper_output = output
         elif step == "generator" and isinstance(output, dict):
             exec.generator_output = output
@@ -171,6 +192,7 @@ async def update_execution_status(
     query_result: list[dict[str, Any]] | None = None,
     error: str | None = None,
     analyzer_output: dict[str, Any] | None = None,
+    latency_ms: int | None = None,
 ) -> None:
     """Update execution status and results."""
     exec = await get_execution(exec_id)
@@ -185,6 +207,8 @@ async def update_execution_status(
         exec.error = error
     if analyzer_output is not None:
         exec.analyzer_output = analyzer_output
+    if latency_ms is not None:
+        exec.latency_ms = latency_ms
     exec.updated_at = datetime.now(UTC)
     await save_execution(exec)
     logfire.info(
@@ -193,18 +217,65 @@ async def update_execution_status(
     )
 
 
+async def append_single_agent_tool_call(exec_id: str, tool_call: dict[str, Any]) -> None:
+    """Append a tool call to the single agent timeline (for real-time UI updates)."""
+    exec_obj = await get_execution(exec_id)
+    if exec_obj is None:
+        return
+    exec_obj.single_agent_tool_calls.append(tool_call)
+    exec_obj.updated_at = datetime.now(UTC)
+    await save_execution(exec_obj)
+
+
+async def append_pipeline_tool_call(exec_id: str, tool_call: dict[str, Any]) -> None:
+    """Append a tool call to the multi-agent pipeline timeline."""
+    exec_obj = await get_execution(exec_id)
+    if exec_obj is None:
+        return
+    exec_obj.pipeline_tool_calls.append(tool_call)
+    exec_obj.updated_at = datetime.now(UTC)
+    await save_execution(exec_obj)
+
+
+async def update_execution_metrics(
+    exec_id: str,
+    *,
+    usage: dict[str, Any] | None = None,
+    model_name: str | None = None,
+    current_activity: str | None = None,
+    latency_ms: int | None = None,
+    comparison_execution_ids: dict[str, str] | None = None,
+) -> None:
+    """Update execution telemetry fields without changing the main status."""
+    exec_obj = await get_execution(exec_id)
+    if exec_obj is None:
+        return
+    if usage is not None:
+        exec_obj.usage = usage
+    if model_name is not None:
+        exec_obj.model_name = model_name
+    if current_activity is not None:
+        exec_obj.current_activity = current_activity
+    if latency_ms is not None:
+        exec_obj.latency_ms = latency_ms
+    if comparison_execution_ids is not None:
+        exec_obj.comparison_execution_ids = comparison_execution_ids
+    exec_obj.updated_at = datetime.now(UTC)
+    await save_execution(exec_obj)
+
+
 async def list_executions(limit: int = 100) -> list[QueryExecution]:
     """List recent query executions from Redis."""
     redis_client = await get_redis_client()
-    exec_ids_set: set[str] = await redis_client.smembers("executions:list")
+    exec_ids_set = cast(set[str], await cast(Any, redis_client).smembers("executions:list"))
     exec_ids = list(exec_ids_set)[:limit] if exec_ids_set else []
     executions = []
     for exec_id in exec_ids:
         exec = await get_execution(exec_id)
-        if exec:
+        if exec and exec.parent_execution_id is None:
             executions.append(exec)
     # Sort by created_at descending
-    executions.sort(key=lambda x: x.created_at, reverse=True)
+    executions.sort(key=_execution_created_at, reverse=True)
     return executions
 
 
@@ -216,10 +287,10 @@ async def list_executions_by_session(session_id: str) -> list[QueryExecution]:
     executions = []
     for exec_id in session.execution_ids:
         exec = await get_execution(exec_id)
-        if exec:
+        if exec and exec.parent_execution_id is None:
             executions.append(exec)
     # Sort by created_at descending
-    executions.sort(key=lambda x: x.created_at, reverse=True)
+    executions.sort(key=_execution_created_at, reverse=True)
     return executions
 
 
@@ -232,7 +303,7 @@ async def save_session(session: Session) -> str:
     key = f"session:{session.id}"
     session.updated_at = datetime.now(UTC)
     await redis_client.set(key, session.model_dump_json(), ex=86400 * 7)  # 7 day TTL
-    _ = await redis_client.sadd("sessions:list", session.id)  # type: ignore
+    _ = await cast(Any, redis_client).sadd("sessions:list", session.id)
     logfire.info("Saved Session to Redis", extra={"session_id": session.id})
     return session.id
 
@@ -250,7 +321,7 @@ async def get_session(session_id: str) -> Session | None:
 async def list_sessions() -> list[Session]:
     """List all sessions from Redis."""
     redis_client = await get_redis_client()
-    session_ids_set: set[str] = await redis_client.smembers("sessions:list")  # type: ignore
+    session_ids_set = cast(set[str], await cast(Any, redis_client).smembers("sessions:list"))
     session_ids = list(session_ids_set) if session_ids_set else []
     sessions = []
     for session_id in session_ids:
@@ -258,7 +329,7 @@ async def list_sessions() -> list[Session]:
         if session:
             sessions.append(session)
     # Sort by updated_at descending (most recent first)
-    sessions.sort(key=lambda x: x.updated_at, reverse=True)
+    sessions.sort(key=_session_updated_at, reverse=True)
     return sessions
 
 
@@ -275,3 +346,67 @@ async def add_execution_to_session(session_id: str, execution_id: str) -> None:
             "Added execution to session",
             extra={"session_id": session_id, "execution_id": execution_id},
         )
+
+
+# Prompt Config Operations
+
+
+async def get_prompt_config() -> dict[str, str]:
+    """Get custom prompt overrides from Redis. Returns only non-empty custom prompts."""
+    redis_client = await get_redis_client()
+    data = await redis_client.get(PROMPTS_CONFIG_KEY)
+    if data is None:
+        return {}
+    try:
+        config = json.loads(data)
+        if not isinstance(config, dict):
+            return {}
+        # Return only non-empty prompts for valid agent IDs
+        return {
+            agent_id: prompt
+            for agent_id, prompt in config.items()
+            if agent_id in AGENT_IDS and prompt and isinstance(prompt, str)
+        }
+    except (json.JSONDecodeError, TypeError):
+        return {}
+
+
+async def save_prompt_config(agent_id: str, prompt: str) -> None:
+    """Save a custom prompt for an agent."""
+    if agent_id not in AGENT_IDS:
+        raise ValueError(f"Invalid agent_id: {agent_id}. Valid: {AGENT_IDS}")
+    redis_client = await get_redis_client()
+    config = {}
+    data = await redis_client.get(PROMPTS_CONFIG_KEY)
+    if data:
+        try:
+            config = json.loads(data)
+            if not isinstance(config, dict):
+                config = {}
+        except (json.JSONDecodeError, TypeError):
+            config = {}
+    config[agent_id] = prompt
+    await redis_client.set(PROMPTS_CONFIG_KEY, json.dumps(config), ex=86400 * 365)  # 1 year TTL
+    logfire.info("Saved prompt config", extra={"agent_id": agent_id})
+
+
+async def reset_prompt_config(agent_id: str) -> None:
+    """Reset an agent's prompt to default (remove custom override)."""
+    if agent_id not in AGENT_IDS:
+        raise ValueError(f"Invalid agent_id: {agent_id}. Valid: {AGENT_IDS}")
+    redis_client = await get_redis_client()
+    config = {}
+    data = await redis_client.get(PROMPTS_CONFIG_KEY)
+    if data:
+        try:
+            config = json.loads(data)
+            if not isinstance(config, dict):
+                config = {}
+        except (json.JSONDecodeError, TypeError):
+            config = {}
+    config.pop(agent_id, None)
+    if config:
+        await redis_client.set(PROMPTS_CONFIG_KEY, json.dumps(config), ex=86400 * 365)
+    else:
+        await redis_client.delete(PROMPTS_CONFIG_KEY)
+    logfire.info("Reset prompt config", extra={"agent_id": agent_id})

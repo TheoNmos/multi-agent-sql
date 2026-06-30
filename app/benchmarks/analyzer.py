@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any
 
@@ -10,7 +9,7 @@ import logfire
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext
 
-from app.llm_models import gpt_5_mini
+from app.llm_models import gpt_5_mini_minimal
 from app.toon_utils import to_toon_block
 
 logger = logging.getLogger(__name__)
@@ -49,7 +48,7 @@ class AnalyzerOutput(BaseModel):
 
 analyzer = Agent[dict[str, Any], AnalyzerOutput](
     name="benchmark_analyzer",
-    model=gpt_5_mini,
+    model=gpt_5_mini_minimal,
     deps_type=dict,
     output_type=AnalyzerOutput,
 )
@@ -96,6 +95,10 @@ def system_prompt(ctx: RunContext[dict[str, Any]]) -> str:
     # Extract agent outputs from trace
     interpreter_output = agent_trace.get("interpreter_output", {}) if agent_trace else {}
     mapper_output = agent_trace.get("mapper_output", "") if agent_trace else ""
+    if isinstance(mapper_output, dict):
+        mapper_output_text = to_toon_block(mapper_output, "mapper_output")
+    else:
+        mapper_output_text = str(mapper_output) if mapper_output else ""
     generator_output = agent_trace.get("generator_output", {}) if agent_trace else {}
     validator_output = agent_trace.get("validator_output") if agent_trace else None
 
@@ -140,7 +143,7 @@ You are a **Benchmark Result Analyzer**. Your job is to determine if the predict
 {to_toon_block(interpreter_output, "interpreter_output") if interpreter_output else "None"}
 
 **mapper Output:**
-{mapper_output[:2000] if mapper_output else "None"}
+{mapper_output_text[:2000] if mapper_output_text else "None"}
 
 **Generator Output (TOON):**
 {to_toon_block(generator_output, "generator_output") if generator_output else "None"}
@@ -270,9 +273,14 @@ async def analyze_benchmark_result(result: dict[str, Any]) -> AnalyzerOutput:
             )
 
         # Run the analyzer agent to check business impact (AM - Analyzer Match)
-        analyzer_result = await analyzer.run(
-            "Determine if the predicted SQL results deliver the same business impact and information as the gold SQL results, even if they differ in format, column names, order, or have extra fields.",
-            deps=result,
+        from app.agents.llm_timeout import run_with_llm_timeout
+
+        analyzer_result = await run_with_llm_timeout(
+            analyzer.run(
+                "Determine if the predicted SQL results deliver the same business impact and information as the gold SQL results, even if they differ in format, column names, order, or have extra fields.",
+                deps=result,
+            ),
+            context="benchmark analyzer",
         )
         output = analyzer_result.output
 

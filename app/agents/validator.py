@@ -2,220 +2,103 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import logfire
 from pydantic_ai import Agent, RunContext, UsageLimits
 
-from app.agents.context import AgentState, ValidatorOutput
+from app.agents.context import AgentState, ToolCall, ValidatorOutput
+from app.agents.telemetry import usage_to_dict
 from app.agents.tools import clean_sql, execute_sql_safe, get_query_plan
-from app.llm_models import gpt_5_mini
+from app.llm_models import validator_model
+from app.prompts import (
+    DEFAULT_VALIDATOR_PROMPT,
+    dialect_label,
+    dialect_notes,
+    format_supervisor_tips,
+    render_prompt,
+)
 
 validator = Agent[AgentState, ValidatorOutput](
     name="sql_validator",
-    model=gpt_5_mini,
+    model=validator_model,
     deps_type=AgentState,
     output_type=ValidatorOutput,
 )
 
 
-@validator.system_prompt
-def system_prompt(ctx: RunContext[AgentState]) -> str:
+def _build_validator_template_vars(ctx: RunContext[AgentState]) -> dict[str, str]:
+    """Build template variables for the validator prompt."""
     state = ctx.deps
     sql_query = state.current_sql or "No SQL query provided"
     original_question = state.raw_question
     clarified_question = state.clarified_question or state.raw_question
     db_name = state.trace.db_name if state.trace else None
 
-    # Pre-validated syntax results
-    syntax_status = ""
     if state.syntax_valid is not None:
         if state.syntax_valid:
-            syntax_status = "✅ Syntax is VALID (pre-validated by compositor)"
+            syntax_status = "✅ Syntax is VALID (pre-validated)"
         else:
             syntax_status = f"❌ Syntax is INVALID (pre-validated): {state.syntax_error or 'Unknown error'}"
     else:
         syntax_status = "⚠️ Syntax not yet validated"
 
-    # Dataset context (for reference only)
     dataset_context = ""
     if db_name:
         dataset_context = f"\n**Database**: {db_name}"
 
-    return f"""
-You are the **Validator & Refiner Agent** (Agent 4 of a multi-agent Text-to-SQL system).
+    mapper_contract = ""
+    mapper_output = state.mapper_output
+    if mapper_output:
+        required_constraints = "\n".join(f"- {item}" for item in mapper_output.required_constraints)
+        filters = "\n".join(f"- {item}" for item in mapper_output.filters)
+        joins = "\n".join(
+            f"- {join.left_table}.{join.left_column} = {join.right_table}.{join.right_column}"
+            for join in mapper_output.joins
+        )
+        mapper_contract = f"""
+### Mapper Contract
+Expected filters:
+{filters or "- None"}
 
-**IMPORTANT: ALL OUTPUTS MUST BE IN THE SAME LANGUAGE THE USER QUESTION IS WRITTEN IN.** All feedback, error messages, and conclusions must be written in the same language as the user question.
+Required constraints:
+{required_constraints or "- None"}
 
-Your role is to validate SQL queries for correctness, efficiency, and best practices, then provide actionable feedback for improvement.
+Required/allowed joins:
+{joins or "- None"}
+"""
 
-## Your Task
+    return {
+        "original_question": original_question,
+        "clarified_question": clarified_question,
+        "db_name": db_name or "Unknown",
+        "dataset_context": dataset_context,
+        "sql_query": sql_query,
+        "syntax_status": syntax_status,
+        "mapper_contract": mapper_contract,
+        "supervisor_tips": format_supervisor_tips(ctx.deps.supervisor_tips.get("validator")),
+        "sql_dialect_label": dialect_label(ctx.deps.sql_dialect),
+        "sql_dialect_notes": dialect_notes(ctx.deps.sql_dialect),
+    }
 
-Given a SQL query with pre-validated syntax, you must:
-1. **Check syntax status**: Review the pre-validated syntax result (already done by compositor)
-2. **Validate semantics**: Check if the query would answer the user's question (if syntax is valid)
-3. **Assess efficiency**: Analyze query plan for performance issues (if syntax is valid)
-4. **Provide feedback**: Give specific, actionable feedback for improvement
 
-## Context
-
-### ⚠️ PRIMARY FOCUS: Original Question
-**Original Question**: {original_question}
-
-**Your main task**: Verify the SQL query answers THIS original question correctly.
-
-### Database Context
-**Database Name**: {db_name or "Unknown"}
-{dataset_context}
-
-### Clarified Question (for reference)
-{clarified_question}
-
-### SQL Query to Validate
-```sql
-{sql_query}
-```
-
-### Syntax Validation Status
-{syntax_status}
-
-## Validation Process
-
-### Step 1: Review Syntax (Already Done)
-The compositor has already validated the syntax. Review the result above.
-- **If syntax is INVALID**: Return immediately with syntax error feedback. Do NOT call any tools.
-- **If syntax is VALID**: Proceed to Step 2 (semantic verification) and Step 3 (performance analysis).
-
-### Step 2: Semantic Verification (Only if syntax is valid) - PRIORITY
-**Check if query answers the ORIGINAL question**:
-- Does the SELECT clause return what the question asks for?
-- Are the filters/conditions correct for the question?
-- Does the aggregation match the question's intent?
-- Use `execute_sql_safe` tool (limit=5) ONLY to verify it runs - don't analyze results deeply
-
-### Step 3: Performance Analysis Using EXPLAIN (CRITICAL if syntax is valid)
-**MANDATORY**: If syntax is valid AND query seems semantically correct, you MUST use `get_query_plan` to analyze query performance:
-
-**Use `get_query_plan` to check:**
-- **Total Cost**: High cost indicates inefficient query plan
-- **Plan Rows vs Actual Rows**: Large discrepancy suggests poor estimates
-- **Missing JOIN conditions**: Look for cartesian products (very high row counts)
-- **Index usage**: Check if filters use indexes efficiently
-- **Sequential scans**: Large sequential scans indicate missing indexes or inefficient filters
-- **Nested loops**: Excessive nested loops can indicate missing JOIN conditions or inefficient plan
-
-**Performance Scoring Guidelines:**
-- **1.0 (Optimal)**: Low total cost, efficient plan, proper indexes used, no cartesian products
-- **0.7-0.9 (Good)**: Reasonable cost, minor inefficiencies, some optimizations possible
-- **0.4-0.6 (Acceptable)**: Higher cost, some sequential scans, but query will execute
-- **0.0-0.3 (Poor)**: Very high cost, cartesian products, missing JOINs, inefficient plan
-
-**IMPORTANT**:
-- Always call `get_query_plan` when syntax is valid to assess performance
-- Use the query plan to identify specific efficiency issues
-- Provide actionable feedback based on EXPLAIN results
-
-### Step 4: Targeted Semantic Checks (CRITICAL)
-
-**Check for these common issues and flag them in `semantic_issues`:**
-
-1. **LIMIT on pure aggregates**: If query has `LIMIT 1` but no `ORDER BY` and uses aggregates (COUNT, SUM, AVG), flag: "Remove LIMIT 1 - aggregates already return single rows. LIMIT should only be used with ORDER BY for top/least/most queries."
-
-2. **Unnecessary JOINs**: If query joins tables but selected columns/filters only reference one table, flag: "Unnecessary JOIN detected. Query can be answered using only [table_name] without joins. Remove the JOIN to avoid cardinality changes."
-
-3. **Regex/ILIKE for diagnosis acronyms**: If query uses `ILIKE '%RA%'` or `~* 'RA'` on diagnosis columns for uppercase acronyms (RA, APS, SLE), flag: "Use exact equality for diagnosis acronyms: `diagnosis = 'RA'` instead of regex/ILIKE. Medical diagnosis codes are typically exact values."
-
-4. **Placeholder NULL columns**: If query includes `CAST(NULL AS text)` or similar placeholder columns, flag: "Remove placeholder NULL columns. Return only columns that answer the question."
-
-5. **COUNT(DISTINCT) on single-table entity counts**: If query uses `COUNT(DISTINCT id)` on a single table where id is unique, flag: "Prefer `SUM(CASE WHEN ... THEN 1 ELSE 0 END)` or `COUNT(*) FILTER (WHERE ...)` for category counts on one-row-per-entity tables. COUNT(DISTINCT) is only needed when joins create duplicates."
-
-6. **Missing reference data**: If query hardcodes clinical thresholds (e.g., UA ranges, HCT thresholds) that should come from reference tables, flag: "Consider checking if reference ranges are stored in schema tables rather than hardcoding thresholds."
-
-7. **Parameterized placeholders**: If query uses `:parameter` syntax (e.g., `:ldh_lower`, `:HCT_UPPER`), flag: "PostgreSQL does not support :name parameter syntax. Replace :parameter placeholders with actual values (e.g., use hardcoded thresholds like `ldh < 6.5` or `hct >= 52`). For missing reference ranges, use dataset-specific thresholds documented in the schema context."
-
-### Step 5: Best Practices Check
-Evaluate against these criteria:
-
-**Performance & Efficiency**:
-- JOINs are properly optimized (no cartesian products)
-- Filters are applied early (in WHERE, not HAVING)
-- Appropriate use of indexes (filters on indexed columns)
-- Efficient aggregations (no unnecessary DISTINCT)
-
-**SQL Standards**:
-- Proper use of explicit JOINs (not implicit)
-- Column qualification (table.column when needed)
-- Consistent aliasing
-- Proper NULL handling
-
-**Query Structure**:
-- Logical flow: SELECT → FROM → JOIN → WHERE → GROUP BY → HAVING → ORDER BY
-- GROUP BY completeness (all non-aggregated columns included)
-- Single SELECT statement (BIRD queries don't use CTEs)
-
-**User Intent Alignment** (MOST IMPORTANT):
-- Query addresses the ORIGINAL question (not expanded/clarified version)
-- Correct aggregations (COUNT, SUM, AVG, etc.) match what question asks for
-- Correct filters applied - match what question specifies
-- Appropriate result granularity - returns what question asks for
-- **Does NOT add extra filters or conditions not in original question**
-
-## Output Format
-
-You must return:
-- `is_valid`: Boolean indicating if query is syntactically and semantically valid
-- `is_optimal`: Boolean indicating if query is optimal (efficient + best practices)
-- `syntax_errors`: List of syntax errors (empty if valid)
-- `semantic_issues`: List of semantic issues (empty if none)
-- `efficiency_score`: Float 0.0-1.0 based on query plan analysis
-- `efficiency_issues`: List of efficiency problems found
-- `refinement_feedback`: **ONE CONCISE PARAGRAPH** with direct conclusions only
-
-## Efficiency Scoring
-
-- 1.0: Optimal query (efficient plan, best practices)
-- 0.7-0.9: Good query (minor optimizations possible)
-- 0.4-0.6: Acceptable query (some efficiency issues)
-- 0.0-0.3: Poor query (major efficiency problems)
-
-## Feedback Guidelines - CRITICAL: BE CONCISE
-
-**Your `refinement_feedback` MUST be:**
-- **ONE PARAGRAPH ONLY** (2-4 sentences maximum)
-- **Direct conclusions**: State what's wrong or right, no explanations
-- **Actionable**: Mention the most critical fix needed (if any)
-- **No lists, no numbered items, no verbose descriptions**
-
-**Examples of good concise feedback:**
-
-Valid and optimal:
-"Query is syntactically valid, semantically correct, and efficiently executed. No issues found."
-
-Valid but has issues:
-"Query is valid but inefficient due to missing JOIN condition causing cartesian product. Add proper JOIN ON clause between tables X and Y."
-
-Invalid syntax:
-"Syntax error: missing comma after column 'name' in SELECT clause."
-
-Semantic issue:
-"Query is valid but doesn't answer the original question - missing filter for date range specified in question."
-
-**BAD examples (too verbose):**
-- "Query is syntactically valid but has efficiency issues: 1. Missing JOIN condition... 2. Filter can be moved... 3. Consider using index..." (too long, uses list)
-- "The query has several problems that need to be addressed. First, there's a syntax issue... Second, the semantics..." (too verbose)
-
-Remember: Keep it short and direct. One paragraph with conclusions only.
-""".strip()
+@validator.system_prompt
+def system_prompt(ctx: RunContext[AgentState]) -> str:
+    template_vars = _build_validator_template_vars(ctx)
+    custom = (ctx.deps.custom_prompts or {}).get("validator")
+    template = custom if custom else DEFAULT_VALIDATOR_PROMPT
+    return render_prompt(template, template_vars)
 
 
 @validator.tool
 async def tool_get_syntax_status(ctx: RunContext[AgentState]) -> dict[str, Any]:
-    """Get pre-validated SQL syntax status from the compositor."""
+    """Get pre-validated SQL syntax status from the pipeline."""
     state = ctx.deps
     return {
         "syntax_valid": state.syntax_valid,
         "syntax_error": state.syntax_error,
-        "note": "Syntax validation was performed by the compositor before calling this agent",
+        "note": "Syntax validation was performed by the pipeline before calling this agent",
     }
 
 
@@ -228,8 +111,31 @@ async def tool_get_query_plan(ctx: RunContext[AgentState], sql: str) -> dict[str
     """
     if not ctx.deps.database_connection:
         return None
+
     sql_clean = clean_sql(sql)
-    return await get_query_plan(ctx.deps.database_connection, sql_clean)
+    try:
+        result = await get_query_plan(ctx.deps.database_connection, sql_clean)
+        ctx.deps.trace.tools.append(
+            ToolCall(
+                agent="validator",
+                tool="get_query_plan",
+                args_redacted={"sql_length": len(sql_clean)},
+                result_preview=str(result)[:120] if result else "No plan available",
+                timing_ms=0,
+            )
+        )
+        return result
+    except Exception as e:
+        ctx.deps.trace.tools.append(
+            ToolCall(
+                agent="validator",
+                tool="get_query_plan",
+                args_redacted={"sql_length": len(sql_clean)},
+                timing_ms=0,
+                error=str(e),
+            )
+        )
+        raise
 
 
 @validator.tool
@@ -239,24 +145,363 @@ async def tool_execute_sql_safe(ctx: RunContext[AgentState], sql: str, limit: in
         return {"success": False, "error": "No database connection", "results": None}
 
     sql_clean = clean_sql(sql)
-    success, results, error = await execute_sql_safe(ctx.deps.database_connection, sql_clean, limit)
+    current_sql = clean_sql(ctx.deps.current_sql or "")
+    probe = ctx.deps.scratch.get("execution_probe")
+    if (
+        probe
+        and clean_sql(str(probe.get("sql", ""))) == sql_clean
+        and sql_clean == current_sql
+    ):
+        success = bool(probe.get("success"))
+        results = probe.get("results")
+        error = probe.get("error")
+        ctx.deps.trace.tools.append(
+            ToolCall(
+                agent="validator",
+                tool="execute_sql_safe",
+                args_redacted={"sql_length": len(sql_clean), "limit": limit, "cached": True},
+                result_preview=f"{len(results) if results else 0} rows (pipeline probe)"
+                if success
+                else (str(error) or "Execution failed")[:120],
+                timing_ms=0,
+                error=str(error) if error else None,
+            )
+        )
+        return {
+            "success": success,
+            "results": results,
+            "error": error,
+            "row_count": len(results) if results else 0,
+            "note": "Reused pipeline execution probe; do not re-run identical SQL.",
+        }
 
-    return {
-        "success": success,
-        "results": results,
-        "error": error,
-        "row_count": len(results) if results else 0,
-    }
+    try:
+        success, results, error = await execute_sql_safe(ctx.deps.database_connection, sql_clean, limit)
+        ctx.deps.trace.tools.append(
+            ToolCall(
+                agent="validator",
+                tool="execute_sql_safe",
+                args_redacted={"sql_length": len(sql_clean), "limit": limit},
+                result_preview=f"{len(results) if results else 0} rows"
+                if success
+                else (error or "Execution failed")[:120],
+                timing_ms=0,
+                error=error,
+            )
+        )
+        return {
+            "success": success,
+            "results": results,
+            "error": error,
+            "row_count": len(results) if results else 0,
+        }
+    except Exception as e:
+        ctx.deps.trace.tools.append(
+            ToolCall(
+                agent="validator",
+                tool="execute_sql_safe",
+                args_redacted={"sql_length": len(sql_clean), "limit": limit},
+                timing_ms=0,
+                error=str(e),
+            )
+        )
+        raise
 
 
 VALIDATOR_USAGE_LIMITS = UsageLimits(
     tool_calls_limit=3,  # execute_sql_safe (required) + get_query_plan (required for performance analysis)
-    input_tokens_limit=20000,  # Reduced for faster processing
+    input_tokens_limit=100000,
 )
 
 
+_PHYSICAL_TUNING_PATTERNS = [
+    re.compile(pattern, re.IGNORECASE)
+    for pattern in (
+        r"\badd(?:ing)? an? index\b",
+        r"\bcreate(?:ing)? an? index\b",
+        r"\bmissing index\b",
+        r"\bindex usage\b",
+        r"\buse(?:s|d)? indexes?\b",
+        r"\bindexed columns?\b",
+        r"\bsequential scan\b",
+        r"\bseq scan\b",
+        r"\bvacuum\b",
+        r"\banalyze\b",
+        r"\bupdate statistics\b",
+        r"\bpartition(?:ing)?\b",
+        r"\bmaterialized view\b",
+        r"\bschema change\b",
+    )
+]
+
+
+def _is_physical_tuning_feedback(text: str) -> bool:
+    return any(pattern.search(text) for pattern in _PHYSICAL_TUNING_PATTERNS)
+
+
+def _remove_physical_tuning_feedback(output: ValidatorOutput) -> None:
+    """Drop feedback the SQL generator cannot act on, such as adding indexes."""
+    original_semantic_count = len(output.semantic_issues)
+    original_efficiency_count = len(output.efficiency_issues)
+
+    output.semantic_issues = [issue for issue in output.semantic_issues if not _is_physical_tuning_feedback(issue)]
+    output.efficiency_issues = [issue for issue in output.efficiency_issues if not _is_physical_tuning_feedback(issue)]
+
+    removed_only_feedback = (
+        output.is_valid
+        and original_semantic_count + original_efficiency_count > 0
+        and not output.semantic_issues
+        and not output.efficiency_issues
+    )
+    if removed_only_feedback:
+        output.is_optimal = True
+        output.efficiency_score = max(output.efficiency_score, 0.95)
+
+    if _is_physical_tuning_feedback(output.refinement_feedback):
+        if output.semantic_issues or output.efficiency_issues:
+            output.refinement_feedback = (
+                "Query is syntactically valid, but it has SQL-level issues listed above that the generator should fix."
+            )
+        else:
+            output.refinement_feedback = (
+                "Query is syntactically valid and semantically correct. No SQL-level optimization issues found."
+            )
+
+
+_CONSTRAINT_LITERAL_RE = re.compile(r"'([^']+)'|\"([^\"]+)\"|\b[A-Z]{2,}\b")
+_CREATININE_THRESHOLD_RE = re.compile(
+    r"\b(?:cre|creatinine)\w*\b\s*(?:>=|>|<=|<|=)\s*([0-9]+(?:\.[0-9]+)?)"
+    r"|([0-9]+(?:\.[0-9]+)?)\s*(?:>=|>|<=|<|=)\s*\b(?:cre|creatinine)\w*\b",
+    re.IGNORECASE,
+)
+_CURRENT_AGE_PHRASE_RE = re.compile(
+    r"\b(?:under|younger than|below|less than|aren'?t|isn'?t|not yet)\s+\d+\b", re.IGNORECASE
+)
+_SQL_LITERAL_RE = re.compile(r"'([^']*)'|\"([^\"]*)\"")
+_CONSTRAINT_LITERAL_STOP_WORDS = {
+    "AND",
+    "AS",
+    "BETWEEN",
+    "CASE",
+    "COUNT",
+    "DATE",
+    "ELSE",
+    "END",
+    "FROM",
+    "GROUP",
+    "INNER",
+    "JOIN",
+    "LIKE",
+    "NULL",
+    "ON",
+    "OR",
+    "ORDER",
+    "SELECT",
+    "SQL",
+    "SUM",
+    "THEN",
+    "WHERE",
+}
+
+
+def _mapper_contract_text(state: AgentState) -> str:
+    mapper_output = state.mapper_output
+    if not mapper_output:
+        return ""
+    chunks = [
+        *mapper_output.filters,
+        *mapper_output.required_constraints,
+        *mapper_output.value_notes,
+        *mapper_output.validation_notes,
+    ]
+    for column in mapper_output.columns:
+        chunks.extend([column.table_name, column.column_name, column.reason, column.data_type or "", column.value_format or ""])
+        chunks.extend(column.sample_values)
+    return "\n".join(str(chunk) for chunk in chunks if chunk)
+
+
+def _extract_constraint_literals(text: str, *, include_unquoted_codes: bool = False) -> set[str]:
+    literals: set[str] = set()
+    for match in _CONSTRAINT_LITERAL_RE.finditer(text):
+        quoted_literal = match.group(1) or match.group(2)
+        if quoted_literal is None and not include_unquoted_codes:
+            continue
+        literal = quoted_literal or match.group(0)
+        if len(literal) >= 2 and literal.upper() not in _CONSTRAINT_LITERAL_STOP_WORDS:
+            literals.add(literal)
+    return literals
+
+
+def _is_code_like_value(value: str) -> bool:
+    stripped = value.strip()
+    return bool(stripped) and (len(stripped) <= 3 or not any(char.isalpha() for char in stripped))
+
+
+def _filter_values_are_constraining(column: Any, mapper_output: Any) -> bool:
+    """Decide whether sample_values are confirmed filter literals rather than broad examples."""
+    if not column.sample_values:
+        return False
+
+    evidence = "\n".join(
+        [
+            *mapper_output.filters,
+            *mapper_output.required_constraints,
+            *mapper_output.value_notes,
+            *mapper_output.validation_notes,
+            column.reason,
+            column.value_format or "",
+        ]
+    ).lower()
+    sample_values = [str(value).strip() for value in column.sample_values if str(value).strip()]
+
+    return (
+        bool(column.value_format)
+        or any(value.lower() in evidence for value in sample_values)
+        or all(_is_code_like_value(value) for value in sample_values)
+    )
+
+
+def _extract_column_filter_literals(sql_query: str, column_name: str) -> set[str]:
+    """Extract quoted literals compared against a column in WHERE-like predicates."""
+    escaped_column = re.escape(column_name)
+    column_ref = rf"(?:\b\w+\.)?{escaped_column}\b"
+    literals: set[str] = set()
+
+    rhs_pattern = re.compile(
+        rf"{column_ref}\s*(?:=|!=|<>|IN\s*\()\s*(?P<rhs>[^;\n)]*(?:\)[^;\n]*)?)",
+        re.IGNORECASE,
+    )
+    for match in rhs_pattern.finditer(sql_query):
+        rhs = re.split(r"\b(?:AND|OR|GROUP\s+BY|ORDER\s+BY|LIMIT|HAVING)\b", match.group("rhs"), maxsplit=1, flags=re.IGNORECASE)[
+            0
+        ]
+        literals.update(group for literal_match in _SQL_LITERAL_RE.finditer(rhs) for group in literal_match.groups() if group)
+
+    lhs_pattern = re.compile(rf"(?P<lhs>'[^']*'|\"[^\"]*\")\s*(?:=|!=|<>)\s*{column_ref}", re.IGNORECASE)
+    for match in lhs_pattern.finditer(sql_query):
+        literal_match = _SQL_LITERAL_RE.match(match.group("lhs"))
+        if literal_match:
+            literals.update(group for group in literal_match.groups() if group)
+
+    return literals
+
+
+def _append_semantic_issue(output: ValidatorOutput, issue: str) -> None:
+    if issue not in output.semantic_issues:
+        output.semantic_issues.append(issue)
+    output.is_valid = False
+    output.is_optimal = False
+    if output.efficiency_score > 0.6:
+        output.efficiency_score = 0.6
+    if issue not in output.refinement_feedback:
+        output.refinement_feedback = (
+            f"{output.refinement_feedback}\n{issue}".strip()
+            if output.refinement_feedback
+            else issue
+        )
+
+
+def _apply_intent_semantic_guards(state: AgentState, output: ValidatorOutput) -> None:
+    """Reject SQL that silently drops mapper constraints or invents risky clinical semantics."""
+    sql_query = state.current_sql or ""
+    sql_lower = sql_query.lower()
+    mapper_output = state.mapper_output
+
+    interp = state.interpreter_output
+    user_literal_values_lower: set[str] = set()
+    if interp and interp.user_filter_literals:
+        user_literal_values_lower = {
+            str(v).strip().lower() for v in interp.user_filter_literals.values() if str(v).strip()
+        }
+        for key, val in interp.user_filter_literals.items():
+            v = str(val).strip()
+            if not v:
+                continue
+            if not re.search(re.escape(v), sql_query, re.IGNORECASE):
+                _append_semantic_issue(
+                    output,
+                    f"Missing user-specified filter value `{v}` (interpreter key `{key}`). "
+                    "Include it in the appropriate WHERE/CASE/HAVING predicate; user literals override mapper samples.",
+                )
+
+    if mapper_output:
+        required_literals = set()
+        for text in mapper_output.filters:
+            required_literals.update(_extract_constraint_literals(text, include_unquoted_codes=True))
+        for text in mapper_output.required_constraints:
+            required_literals.update(_extract_constraint_literals(text))
+
+        for literal in sorted(required_literals, key=len, reverse=True):
+            if literal.lower() not in sql_lower:
+                _append_semantic_issue(
+                    output,
+                    f"Missing required mapper constraint value `{literal}` in the SQL. "
+                    "Do not drop required filters from the mapped intent.",
+                )
+
+        for column in mapper_output.columns:
+            if column.role != "filter":
+                continue
+            if column.column_name.lower() not in sql_lower:
+                _append_semantic_issue(
+                    output,
+                    f"Missing required filter column `{column.table_name}.{column.column_name}` from mapper output.",
+                )
+                continue
+
+            if _filter_values_are_constraining(column, mapper_output):
+                allowed_values = {str(value).strip() for value in column.sample_values if str(value).strip()}
+                allowed_lower = {value.lower() for value in allowed_values}
+                used_literals = _extract_column_filter_literals(sql_query, column.column_name)
+                unexpected_literals = sorted(
+                    literal
+                    for literal in used_literals
+                    if literal.strip().lower() not in allowed_lower
+                    and literal.strip().lower() not in user_literal_values_lower
+                )
+                if unexpected_literals:
+                    _append_semantic_issue(
+                        output,
+                        f"Filter on `{column.table_name}.{column.column_name}` uses literal(s) "
+                        f"{unexpected_literals}, but mapper confirmed stored value(s) {sorted(allowed_values)}. "
+                        "Use exact encoded/sample values from mapper instead of semantic labels.",
+                    )
+
+        for join in mapper_output.joins:
+            left_table = join.left_table.lower()
+            right_table = join.right_table.lower()
+            if left_table not in sql_lower or right_table not in sql_lower:
+                _append_semantic_issue(
+                    output,
+                    f"Missing mapper-required join between `{join.left_table}` and `{join.right_table}`.",
+                )
+
+    mapper_text = _mapper_contract_text(state).lower()
+    question_text = state.raw_question.lower()
+    question_and_mapper = f"{question_text}\n{mapper_text}"
+
+    if "abnormal" in question_text and re.search(r"\b(?:cre|creatinine)\b", question_text, re.IGNORECASE):
+        for match in _CREATININE_THRESHOLD_RE.finditer(sql_query):
+            threshold = match.group(1) or match.group(2)
+            if threshold and threshold.lower() not in question_and_mapper:
+                _append_semantic_issue(
+                    output,
+                    f"SQL hardcodes creatinine threshold `{threshold}` without mapper/question evidence. "
+                    "Use documented schema/reference thresholds or request another generation with mapper evidence.",
+                )
+
+    if _CURRENT_AGE_PHRASE_RE.search(state.raw_question) and "birthday" in sql_lower:
+        uses_current_date = any(token in sql_lower for token in ("current_date", "current_timestamp", "now()"))
+        if not uses_current_date:
+            _append_semantic_issue(
+                output,
+                "Age constraint appears to use a measurement date instead of current age. "
+                "Phrases like `aren't 70 yet` should use current date/current timestamp.",
+            )
+
+
 @logfire.instrument("validator_agent")
-async def run_validator(state: AgentState) -> ValidatorOutput:
+async def run_validator(state: AgentState) -> tuple[ValidatorOutput, dict[str, Any]]:
     """Run the Validator & Refiner agent."""
     sql_query = state.current_sql
     if not sql_query:
@@ -266,7 +511,7 @@ async def run_validator(state: AgentState) -> ValidatorOutput:
             is_optimal=False,
             syntax_errors=["Nenhuma consulta SQL fornecida"],
             refinement_feedback="Nenhuma consulta SQL fornecida para validação.",
-        )
+        ), usage_to_dict(None)
 
     # If syntax is invalid, return early without calling tools
     if state.syntax_valid is False:
@@ -276,16 +521,18 @@ async def run_validator(state: AgentState) -> ValidatorOutput:
             is_optimal=False,
             syntax_errors=[state.syntax_error] if state.syntax_error else ["Erro ao validar a sintaxe"],
             refinement_feedback=f"Erro de sintaxe: {state.syntax_error or 'Erro desconhecido'}.",
-        )
+        ), usage_to_dict(None)
 
     logfire.info("Running SQL Validator", sql_length=len(sql_query), attempt=state.attempt_count + 1)
 
     # Enforce sequential tool calls to prevent asyncpg connection errors
-    with validator.sequential_tool_calls():
+    with validator.sequential_tool_calls():  # pyright: ignore[reportDeprecated]
         result = await validator.run(
             f"Validate this SQL query:\n\n{sql_query}", deps=state, usage_limits=VALIDATOR_USAGE_LIMITS
         )
     output = result.output
+    _apply_intent_semantic_guards(state, output)
+    _remove_physical_tuning_feedback(output)
 
     # Include syntax errors from pre-validation if any
     if state.syntax_error:
@@ -300,4 +547,4 @@ async def run_validator(state: AgentState) -> ValidatorOutput:
         semantic_issue_count=len(output.semantic_issues),
     )
 
-    return output
+    return output, usage_to_dict(result.usage())
