@@ -127,6 +127,69 @@ async def delete_connection_string(conn_id: str) -> bool:
     return deleted_count > 0
 
 
+async def _delete_execution_record(exec_id: str) -> bool:
+    """Delete an execution record from Redis without touching child/parent relationships."""
+    redis_client = await get_redis_client()
+    key = f"execution:{exec_id}"
+    deleted_count = cast(int, await redis_client.delete(key))
+    _ = await cast(Any, redis_client).srem("executions:list", exec_id)
+    return deleted_count > 0
+
+
+async def _remove_execution_from_session(session_id: str, execution_id: str) -> None:
+    """Remove an execution ID from its session list."""
+    session = await get_session(session_id)
+    if session is None or execution_id not in session.execution_ids:
+        return
+    session.execution_ids.remove(execution_id)
+    session.updated_at = datetime.now(UTC)
+    await save_session(session)
+
+
+async def delete_execution(exec_id: str) -> bool:
+    """Delete a query execution and any versus child executions."""
+    execution = await get_execution(exec_id)
+    if execution is None:
+        return False
+
+    if execution.comparison_execution_ids:
+        for child_id in execution.comparison_execution_ids.values():
+            child = await get_execution(child_id)
+            if child is not None:
+                await _delete_execution_record(child_id)
+                await _remove_execution_from_session(child.session_id, child_id)
+
+    session_id = execution.session_id
+    deleted = await _delete_execution_record(exec_id)
+    await _remove_execution_from_session(session_id, exec_id)
+    return deleted
+
+
+async def delete_session(session_id: str) -> bool:
+    """Delete a session and all of its executions."""
+    session = await get_session(session_id)
+    if session is None:
+        return False
+
+    for exec_id in list(session.execution_ids):
+        execution = await get_execution(exec_id)
+        if execution is None:
+            continue
+        if execution.parent_execution_id is not None:
+            continue
+        await delete_execution(exec_id)
+
+    for exec_id in list(session.execution_ids):
+        if await get_execution(exec_id) is not None:
+            await _delete_execution_record(exec_id)
+
+    redis_client = await get_redis_client()
+    key = f"session:{session_id}"
+    deleted_count = cast(int, await redis_client.delete(key))
+    _ = await cast(Any, redis_client).srem("sessions:list", session_id)
+    return deleted_count > 0
+
+
 # Query Execution Operations
 
 
