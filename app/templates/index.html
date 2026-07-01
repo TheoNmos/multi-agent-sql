@@ -27,6 +27,8 @@
       border-radius: 12px;
       box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
       padding: 30px;
+      min-width: 0;
+      overflow-x: clip;
     }
 
     h1 {
@@ -363,6 +365,33 @@
       cursor: not-allowed;
     }
 
+    .delete-btn {
+      background: transparent;
+      color: #dc3545;
+      border: 1px solid #dc3545;
+      padding: 8px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.9em;
+      white-space: nowrap;
+    }
+
+    .delete-btn:hover:not(:disabled) {
+      background: #dc3545;
+      color: white;
+    }
+
+    .delete-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .delete-btn.icon-btn {
+      padding: 4px 10px;
+      font-size: 0.85em;
+      line-height: 1.2;
+    }
+
     .connection-status {
       font-size: 0.85em;
       padding: 4px 8px;
@@ -388,6 +417,13 @@
 
     .status-container {
       margin-top: 20px;
+      max-width: 100%;
+      min-width: 0;
+    }
+
+    #status-content {
+      max-width: 100%;
+      min-width: 0;
     }
 
     .architecture-header {
@@ -585,13 +621,36 @@
       word-wrap: break-word;
     }
 
-    .results-table {
+    .results-section {
       margin-top: 20px;
+      max-width: 100%;
+      min-width: 0;
+      overflow: hidden;
+    }
+
+    .results-section h3 {
+      margin-bottom: 8px;
+    }
+
+    .results-table-scroll {
+      display: block;
       width: 100%;
+      max-width: 100%;
+      min-width: 0;
+      overflow-x: auto;
+      overflow-y: visible;
+      -webkit-overflow-scrolling: touch;
+      border-radius: 6px;
+      border: 1px solid #e8e8e8;
+      background: white;
+    }
+
+    .results-table {
+      width: max-content;
+      min-width: 100%;
       border-collapse: collapse;
       background: white;
-      border-radius: 6px;
-      overflow: hidden;
+      table-layout: auto;
     }
 
     .results-table th {
@@ -600,11 +659,13 @@
       padding: 12px;
       text-align: left;
       font-weight: 500;
+      white-space: nowrap;
     }
 
     .results-table td {
       padding: 10px 12px;
       border-bottom: 1px solid #eee;
+      white-space: nowrap;
     }
 
     .results-table tr:hover {
@@ -692,6 +753,19 @@
       border: 2px solid #ddd;
       cursor: pointer;
       transition: all 0.2s;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 10px;
+    }
+
+    .session-item-content {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .session-item-actions {
+      flex-shrink: 0;
     }
 
     .session-item:hover {
@@ -721,6 +795,20 @@
       margin-bottom: 10px;
       border-radius: 6px;
       border: 1px solid #ddd;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+    }
+
+    .execution-item-content {
+      flex: 1;
+      min-width: 0;
+      cursor: pointer;
+    }
+
+    .execution-item-actions {
+      flex-shrink: 0;
     }
 
     .execution-query {
@@ -1062,9 +1150,17 @@
 
     .versus-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      grid-template-columns: minmax(0, 1fr);
       gap: 16px;
       margin-top: 16px;
+      width: 100%;
+      min-width: 0;
+    }
+
+    @media (min-width: 768px) {
+      .versus-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
     }
 
     .versus-panel {
@@ -1072,6 +1168,15 @@
       border: 2px solid #ddd;
       border-radius: 10px;
       padding: 16px;
+      min-width: 0;
+      max-width: 100%;
+      overflow: visible;
+    }
+
+    .versus-panel > div,
+    #status-content > div {
+      min-width: 0;
+      max-width: 100%;
     }
 
     .versus-panel.pipeline {
@@ -1186,13 +1291,13 @@
     <div id="query-tab" class="tab-content active">
       <!-- Connection String Section -->
       <div class="section">
-        <h2 data-i18n="connections.add_title">Adicionar Conexão PostgreSQL</h2>
+        <h2 data-i18n="connections.add_title">Adicionar Conexão de Banco de Dados</h2>
         <form hx-post="/api/connections" hx-target="#connections-list" hx-swap="beforeend"
           hx-on::after-request="this.reset(); refreshConnectionDropdown()">
           <div class="form-group">
             <label for="connection_string" data-i18n="connections.connection_string_label">String de Conexão:</label>
             <input type="text" id="connection_string" name="connection_string"
-              placeholder="postgresql://user:password@host:port/database"
+              placeholder="postgresql://user:password@host:5432/db or mysql://user:password@host:3306/db"
               data-i18n-placeholder="connections.connection_string_placeholder" required />
           </div>
           <div class="form-group">
@@ -1214,6 +1319,8 @@
             <div class="connection-actions">
               <button type="button" class="test-btn" onclick="testConnection('{{ conn.id }}')"
                 id="test-btn-{{ conn.id }}" data-i18n="connection.test_button">Testar Conexão</button>
+              <button type="button" class="delete-btn" onclick="deleteConnection('{{ conn.id }}')"
+                data-i18n="common.delete">Excluir</button>
               <span id="test-status-{{ conn.id }}" class="connection-status" style="display: none;"></span>
             </div>
           </div>
@@ -1229,18 +1336,24 @@
         <div id="sessions-list">
           {% for session in sessions %}
           <div class="session-item" data-session-id="{{ session.id }}" onclick="selectSession('{{ session.id }}')">
-            <div class="session-name" data-i18n-empty="sessions.unnamed">{{ session.name or '' }}</div>
-            <div class="session-uuid" style="font-family: monospace; font-size: 0.75em; color: #999; margin-top: 2px">
-              {{ session.id }}
+            <div class="session-item-content">
+              <div class="session-name" data-i18n-empty="sessions.unnamed">{{ session.name or '' }}</div>
+              <div class="session-uuid" style="font-family: monospace; font-size: 0.75em; color: #999; margin-top: 2px">
+                {{ session.id }}
+              </div>
+              <div class="session-meta">
+                {{ session.execution_ids|length }} <span data-i18n="sessions.queries_word">consultas</span> • <span
+                  data-i18n="sessions.updated_word">Atualizado</span>
+                {% if session.updated_at %}
+                {{ session.updated_at.strftime('%d/%m/%Y %H:%M') }}
+                {% else %}
+                <span data-i18n="sessions.never">Nunca</span>
+                {% endif %}
+              </div>
             </div>
-            <div class="session-meta">
-              {{ session.execution_ids|length }} <span data-i18n="sessions.queries_word">consultas</span> • <span
-                data-i18n="sessions.updated_word">Atualizado</span>
-              {% if session.updated_at %}
-              {{ session.updated_at.strftime('%d/%m/%Y %H:%M') }}
-              {% else %}
-              <span data-i18n="sessions.never">Nunca</span>
-              {% endif %}
+            <div class="session-item-actions">
+              <button type="button" class="delete-btn icon-btn"
+                onclick="deleteSession('{{ session.id }}', event)" data-i18n="common.delete">Excluir</button>
             </div>
           </div>
           {% endfor %}
@@ -1389,9 +1502,9 @@
         "header.title": "🔍 Agente SQL - Interface de Consulta em Linguagem Natural",
         "tabs.query": "Consulta",
         "tabs.benchmarks": "Benchmarks",
-        "connections.add_title": "Adicionar Conexão PostgreSQL",
+        "connections.add_title": "Adicionar Conexão de Banco de Dados",
         "connections.connection_string_label": "String de Conexão:",
-        "connections.connection_string_placeholder": "postgresql://user:password@host:port/database",
+        "connections.connection_string_placeholder": "postgresql://user:password@host:5432/db ou mysql://user:password@host:3306/db",
         "connections.database_name_label": "Nome do Banco de Dados:",
         "connections.database_name_placeholder": "nome_do_banco",
         "connections.add_button": "Adicionar Conexão",
@@ -1518,6 +1631,13 @@
         "benchmarks.history_title": "Resultados Anteriores",
         "benchmarks.agent_outputs": "Saídas dos agentes",
         "common.refresh": "Atualizar",
+        "common.delete": "Excluir",
+        "connection.delete_confirm": "Excluir esta conexão?",
+        "connection.delete_error": "Erro ao excluir conexão:",
+        "sessions.delete_confirm": "Excluir esta sessão e todas as consultas dela?",
+        "sessions.delete_error": "Erro ao excluir sessão:",
+        "executions.delete_confirm": "Excluir esta consulta?",
+        "executions.delete_error": "Erro ao excluir consulta:",
         "benchmarks.validation.select_dataset_first": "Por favor, selecione um dataset primeiro",
         "benchmarks.validation.select_at_least_one": "Por favor, selecione pelo menos uma questão",
         "benchmarks.validation.select_connection": "Por favor, selecione uma conexão",
@@ -1587,9 +1707,9 @@
         "header.title": "🔍 SQL Agent — Natural Language Query UI",
         "tabs.query": "Query",
         "tabs.benchmarks": "Benchmarks",
-        "connections.add_title": "Add PostgreSQL Connection",
+        "connections.add_title": "Add database connection",
         "connections.connection_string_label": "Connection string:",
-        "connections.connection_string_placeholder": "postgresql://user:password@host:port/database",
+        "connections.connection_string_placeholder": "postgresql://user:password@host:5432/db or mysql://user:password@host:3306/db",
         "connections.database_name_label": "Database name:",
         "connections.database_name_placeholder": "database_name",
         "connections.add_button": "Add connection",
@@ -1716,6 +1836,13 @@
         "benchmarks.history_title": "Previous results",
         "benchmarks.agent_outputs": "Agent outputs",
         "common.refresh": "Refresh",
+        "common.delete": "Delete",
+        "connection.delete_confirm": "Delete this connection?",
+        "connection.delete_error": "Error deleting connection:",
+        "sessions.delete_confirm": "Delete this session and all of its queries?",
+        "sessions.delete_error": "Error deleting session:",
+        "executions.delete_confirm": "Delete this query?",
+        "executions.delete_error": "Error deleting query:",
         "benchmarks.validation.select_dataset_first": "Please select a dataset first",
         "benchmarks.validation.select_at_least_one": "Please select at least one question",
         "benchmarks.validation.select_connection": "Please select a connection",
@@ -1978,18 +2105,80 @@
                         <div class="session-item ${s.id === currentSessionId ? "active" : ""}"
                              data-session-id="${s.id}"
                              onclick="selectSession('${s.id}')">
-                            <div class="session-name">${s.name || t("sessions.unnamed")}</div>
-                            <div class="session-uuid" style="font-family: monospace; font-size: 0.75em; color: #999; margin-top: 2px;">${s.id
+                            <div class="session-item-content">
+                              <div class="session-name">${s.name || t("sessions.unnamed")}</div>
+                              <div class="session-uuid" style="font-family: monospace; font-size: 0.75em; color: #999; margin-top: 2px;">${s.id
                 }</div>
-                            <div class="session-meta">${s.execution_count} ${t("sessions.queries_word")} • ${t("sessions.updated_word")} ${new Date(
+                              <div class="session-meta">${s.execution_count} ${t("sessions.queries_word")} • ${t("sessions.updated_word")} ${new Date(
                   s.updated_at
                 ).toLocaleString(currentUiLang)}</div>
+                            </div>
+                            <div class="session-item-actions">
+                              <button type="button" class="delete-btn icon-btn"
+                                onclick="deleteSession('${s.id}', event)">${t("common.delete")}</button>
+                            </div>
                         </div>
                     `
             )
             .join("");
         })
         .catch((error) => console.error(t("sessions.load_error"), error));
+    }
+
+    function deleteConnection(connectionId) {
+      if (!confirm(t("connection.delete_confirm"))) return;
+
+      fetch(`/api/connections/${connectionId}`, { method: "DELETE" })
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+          const item = document.getElementById(`conn-${connectionId}`);
+          if (item) item.remove();
+          refreshConnectionDropdown();
+        })
+        .catch((error) => console.error(t("connection.delete_error"), error));
+    }
+
+    function deleteSession(sessionId, event) {
+      if (event) {
+        event.stopPropagation();
+      }
+      if (!confirm(t("sessions.delete_confirm"))) return;
+
+      fetch(`/api/sessions/${sessionId}`, { method: "DELETE" })
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+          if (currentSessionId === sessionId) {
+            currentSessionId = null;
+            document.getElementById("session_id").value = "";
+            document.getElementById("query-status").innerHTML = "";
+            document.getElementById("executions-list").innerHTML = "";
+            updateSessionInfo(null);
+            activePolling.clear();
+          }
+          loadSessions();
+        })
+        .catch((error) => console.error(t("sessions.delete_error"), error));
+    }
+
+    function deleteExecution(executionId, sessionId, event) {
+      if (event) {
+        event.stopPropagation();
+      }
+      if (!confirm(t("executions.delete_confirm"))) return;
+
+      fetch(`/api/queries/${executionId}`, { method: "DELETE" })
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+          activePolling.delete(executionId);
+          loadSessionExecutions(sessionId);
+        })
+        .catch((error) => console.error(t("executions.delete_error"), error));
     }
 
     function selectSession(sessionId) {
@@ -2075,20 +2264,34 @@
           executions.forEach((exec) => {
             const execDiv = document.createElement("div");
             execDiv.className = "execution-item";
-            execDiv.style.cursor = "pointer";
-            execDiv.onclick = () => displayExecutionStatus(exec);
-            execDiv.innerHTML = `
-                            <div class="execution-query">${exec.user_query}</div>
+
+            const contentDiv = document.createElement("div");
+            contentDiv.className = "execution-item-content";
+            contentDiv.onclick = () => displayExecutionStatus(exec);
+            contentDiv.innerHTML = `
+                            <div class="execution-query">${escapeHtml(exec.user_query)}</div>
                             <div class="execution-status">${t("status.status")}: ${exec.status} ${exec.current_step ? `(${exec.current_step})` : ""
               }</div>
                             ${exec.sql_query
-                ? `<div style="margin-top: 8px; font-family: monospace; font-size: 0.85em; color: #666;">${exec.sql_query.substring(
+                ? `<div style="margin-top: 8px; font-family: monospace; font-size: 0.85em; color: #666;">${escapeHtml(exec.sql_query.substring(
                   0,
                   100
-                )}${exec.sql_query.length > 100 ? "..." : ""}</div>`
+                ))}${exec.sql_query.length > 100 ? "..." : ""}</div>`
                 : ""
               }
                         `;
+
+            const actionsDiv = document.createElement("div");
+            actionsDiv.className = "execution-item-actions";
+            const deleteBtn = document.createElement("button");
+            deleteBtn.type = "button";
+            deleteBtn.className = "delete-btn icon-btn";
+            deleteBtn.textContent = t("common.delete");
+            deleteBtn.onclick = (event) => deleteExecution(exec.id, sessionId, event);
+            actionsDiv.appendChild(deleteBtn);
+
+            execDiv.appendChild(contentDiv);
+            execDiv.appendChild(actionsDiv);
             container.appendChild(execDiv);
           });
         })
@@ -2385,7 +2588,7 @@
       });
 
       tableHtml += "</tbody></table>";
-      return tableHtml;
+      return `<div class="results-table-scroll">${tableHtml}</div>`;
     }
 
     function renderPipelineToolTimeline(toolCalls) {
@@ -2983,27 +3186,8 @@
       }
 
       if (data.query_result && data.query_result.length > 0) {
-        const columns = Object.keys(data.query_result[0]);
-        let tableHtml =
-          `<div class="results-section"><h3>${t("results.query_title")}</h3><table class="results-table"><thead><tr>`;
-
-        columns.forEach((col) => {
-          tableHtml += `<th>${escapeHtml(col)}</th>`;
-        });
-        tableHtml += "</tr></thead><tbody>";
-
-        data.query_result.forEach((row) => {
-          tableHtml += "<tr>";
-          columns.forEach((col) => {
-            const value = row[col];
-            tableHtml += `<td>${value !== null && value !== undefined ? escapeHtml(String(value)) : "<em>null</em>"
-              }</td>`;
-          });
-          tableHtml += "</tr>";
-        });
-
-        tableHtml += "</tbody></table></div>";
-        statusContent.innerHTML += tableHtml;
+        statusContent.innerHTML +=
+          `<div class="results-section"><h3>${t("results.query_title")}</h3>${renderQueryResultsTable(data.query_result)}</div>`;
       } else {
         const existingNoResults = statusContent.querySelector(".no-results-message");
         if (!existingNoResults) {
