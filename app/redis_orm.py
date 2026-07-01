@@ -12,6 +12,7 @@ from app.prompts import AGENT_IDS
 from app.redis_client import get_redis_client
 
 PROMPTS_CONFIG_KEY = "prompts:config"
+CONNECTION_TTL_SECONDS = 2 * 60 * 60  # 2 hours
 
 
 class ConnectionString(BaseModel):
@@ -89,7 +90,7 @@ async def save_connection_string(conn: ConnectionString) -> str:
         f"Saving JSON data to Redis",
         extra={"json_length": len(json_data), "key": key},
     )
-    await redis_client.set(key, json_data)
+    await redis_client.set(key, json_data, ex=CONNECTION_TTL_SECONDS)
     _ = await cast(Any, redis_client).sadd("connections:list", conn.id)
     logfire.info(f"Successfully saved connection to Redis", extra={"key": key})
     return conn.id
@@ -115,6 +116,8 @@ async def list_connection_strings() -> list[ConnectionString]:
         conn = await get_connection_string(conn_id)
         if conn:
             connections.append(conn)
+        else:
+            _ = await cast(Any, redis_client).srem("connections:list", conn_id)
     return connections
 
 
