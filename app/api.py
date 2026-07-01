@@ -30,6 +30,9 @@ from app.redis_orm import (
     ConnectionString,
     QueryExecution,
     Session,
+    delete_connection_string,
+    delete_execution,
+    delete_session,
     get_connection_string,
     get_execution,
     get_prompt_config,
@@ -49,8 +52,10 @@ from app.redis_orm import (
 
 
 async def _seed_default_connection():
-    """Seed a default connection from env vars when running in Docker and no connections exist."""
+    """Seed a default connection from env vars when enabled and no connections exist yet."""
     try:
+        if not db_settings.seed_default_connection:
+            return
         connections = await list_connection_strings()
         if connections:
             return
@@ -298,6 +303,7 @@ async def create_connection(
                 </div>
                 <div class="connection-actions">
                     <button type="button" class="test-btn" onclick="testConnection('{conn_id}')" id="test-btn-{conn_id}" data-i18n="connection.test_button">Test Connection</button>
+                    <button type="button" class="delete-btn" onclick="deleteConnection('{conn_id}')" data-i18n="common.delete">Delete</button>
                     <span id="test-status-{conn_id}" class="connection-status" style="display: none;"></span>
                 </div>
             </div>
@@ -375,6 +381,19 @@ async def test_connection(connection_id: str):
         }
 
 
+@app.delete("/api/connections/{connection_id}")
+async def delete_connection_endpoint(connection_id: str):
+    """Delete a saved database connection."""
+    conn = await get_connection_string(connection_id)
+    if conn is None:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    deleted = await delete_connection_string(connection_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    logfire.info("Deleted connection", connection_id=connection_id)
+    return {"success": True}
+
+
 @app.post("/api/sessions")
 async def create_session_endpoint(request: Request, name: Annotated[str | None, Form()] = None):
     """Create a new session."""
@@ -435,6 +454,19 @@ async def get_session_details_endpoint(session_id: str):
             for e in executions
         ],
     }
+
+
+@app.delete("/api/sessions/{session_id}")
+async def delete_session_endpoint(session_id: str):
+    """Delete a session and all of its query executions."""
+    session = await get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    deleted = await delete_session(session_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Session not found")
+    logfire.info("Deleted session", session_id=session_id)
+    return {"success": True}
 
 
 @app.get("/api/sessions/{session_id}/executions")
@@ -647,6 +679,21 @@ async def get_query(execution_id: str):
     if execution is None:
         raise HTTPException(status_code=404, detail="Execution not found")
     return await _serialize_execution_with_comparison(execution)
+
+
+@app.delete("/api/queries/{execution_id}")
+async def delete_query_endpoint(execution_id: str):
+    """Delete a query execution from its session."""
+    execution = await get_execution(execution_id)
+    if execution is None:
+        raise HTTPException(status_code=404, detail="Execution not found")
+    if execution.parent_execution_id is not None:
+        raise HTTPException(status_code=400, detail="Cannot delete child execution directly")
+    deleted = await delete_execution(execution_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Execution not found")
+    logfire.info("Deleted query execution", execution_id=execution_id)
+    return {"success": True, "session_id": execution.session_id}
 
 
 @app.get("/api/queries/{execution_id}/feedback")
