@@ -15,9 +15,11 @@ from app.db.adapter import (
     strip_explain_prefix,
     strip_named_placeholders,
 )
+from app.db.sql_guard import validate_select_only_sql
 from app.db.value_sanitize import (
     fetch_table_sample_row,
     get_column_type,
+    sanitize_result_rows,
     sanitize_value_list,
 )
 
@@ -293,6 +295,10 @@ class PostgresAdapter(DatabaseAdapter):
 
     @override
     async def validate_sql(self, sql: str) -> tuple[bool, str | None]:
+        is_allowed, guard_error = validate_select_only_sql(sql)
+        if not is_allowed:
+            return False, guard_error
+
         sql_for_validation = strip_named_placeholders(sql)
         try:
             await self._conn.execute(f"EXPLAIN {sql_for_validation}")
@@ -307,6 +313,11 @@ class PostgresAdapter(DatabaseAdapter):
     @override
     async def explain(self, sql: str) -> dict[str, Any] | None:
         sql_clean = strip_explain_prefix(sql)
+        is_allowed, guard_error = validate_select_only_sql(sql_clean)
+        if not is_allowed:
+            logfire.warning("Query plan rejected by read-only SQL guard", error=guard_error)
+            return None
+
         sql_for_plan = strip_named_placeholders(sql_clean)
         try:
             rows = await self._conn.fetch(f"EXPLAIN (FORMAT JSON, ANALYZE) {sql_for_plan}")
@@ -331,11 +342,15 @@ class PostgresAdapter(DatabaseAdapter):
     async def execute_sql_safe(
         self, sql: str, limit: int = 50
     ) -> tuple[bool, list[dict[str, Any]] | None, str | None]:
+        is_allowed, guard_error = validate_select_only_sql(sql)
+        if not is_allowed:
+            return False, None, guard_error
+
         sql_clean = strip_named_placeholders(sql)
         sql_clean = ensure_limit(sql_clean, limit)
         try:
             rows = await self._conn.fetch(sql_clean)
-            results = [dict(row) for row in rows[:limit]]
+            results = sanitize_result_rows([dict(row) for row in rows[:limit]])
             return True, results, None
         except asyncpg.exceptions.PostgresSyntaxError as e:
             return False, None, f"Syntax error: {str(e)}"
