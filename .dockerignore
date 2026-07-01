@@ -22,7 +22,7 @@ htmlcov/
 # Local secrets and env files
 .env
 .env.*
-!.env.example
+*.env
 
 # Benchmark outputs (mounted as volume in docker-compose)
 benchmark_results/

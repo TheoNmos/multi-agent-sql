@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 from typing import Any, ClassVar, override
 
@@ -14,9 +15,11 @@ from app.db.adapter import (
     strip_explain_prefix,
     strip_named_placeholders,
 )
+from app.db.sql_guard import validate_select_only_sql
 from app.db.value_sanitize import (
     fetch_table_sample_row,
     get_column_type,
+    sanitize_result_rows,
     sanitize_value_list,
 )
 
@@ -34,12 +37,11 @@ def _import_asyncmy() -> Any:
 
 def _import_asyncmy_errors() -> Any:
     try:
-        from asyncmy import errors  # type: ignore[import-not-found]
+        return _import_asyncmy().errors
     except ImportError as e:  # pragma: no cover
         raise ImportError(
             "asyncmy is required for MySQL connections. Install it with `pip install asyncmy`."
         ) from e
-    return errors
 
 
 class MySQLAdapter(DatabaseAdapter):
@@ -62,9 +64,9 @@ class MySQLAdapter(DatabaseAdapter):
         except AttributeError:
             close = getattr(self._conn, "close", None)
             if callable(close):
-                result = close()
-                if hasattr(result, "__await__"):
-                    await result
+                maybe_awaitable = close()
+                if inspect.isawaitable(maybe_awaitable):
+                    await maybe_awaitable
 
     @override
     def quote_identifier(self, name: str) -> str:
@@ -357,6 +359,10 @@ class MySQLAdapter(DatabaseAdapter):
 
     @override
     async def validate_sql(self, sql: str) -> tuple[bool, str | None]:
+        is_allowed, guard_error = validate_select_only_sql(sql)
+        if not is_allowed:
+            return False, guard_error
+
         sql_for_validation = strip_named_placeholders(sql)
         errors = _import_asyncmy_errors()
         try:
@@ -372,14 +378,17 @@ class MySQLAdapter(DatabaseAdapter):
     @override
     async def explain(self, sql: str) -> dict[str, Any] | None:
         sql_clean = strip_explain_prefix(sql)
+        is_allowed, guard_error = validate_select_only_sql(sql_clean)
+        if not is_allowed:
+            logfire.warning("Query plan rejected by read-only SQL guard", error=guard_error)
+            return None
+
         sql_for_plan = strip_named_placeholders(sql_clean)
         try:
             rows, _ = await self._run_cursor(f"EXPLAIN FORMAT=JSON {sql_for_plan}")
             if not rows:
                 return None
             first = rows[0]
-            if not isinstance(first, dict):
-                return None
             json_text = next(iter(first.values()), None)
             if not json_text:
                 return None
@@ -408,12 +417,16 @@ class MySQLAdapter(DatabaseAdapter):
     async def execute_sql_safe(
         self, sql: str, limit: int = 50
     ) -> tuple[bool, list[dict[str, Any]] | None, str | None]:
+        is_allowed, guard_error = validate_select_only_sql(sql)
+        if not is_allowed:
+            return False, None, guard_error
+
         sql_clean = strip_named_placeholders(sql)
         sql_clean = ensure_limit(sql_clean, limit)
         errors = _import_asyncmy_errors()
         try:
             rows, _ = await self._run_cursor(sql_clean)
-            return True, rows[:limit], None
+            return True, sanitize_result_rows(rows[:limit]), None
         except errors.ProgrammingError as e:
             return False, None, f"Syntax error: {str(e)}"
         except errors.Error as e:
