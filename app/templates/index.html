@@ -6,6 +6,23 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title data-i18n="page.title">Sistema Multiagente Text-to-SQL</title>
   <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      if (window.htmx) {
+        htmx.config.withCredentials = true;
+      }
+      const originalFetch = window.fetch.bind(window);
+      window.fetch = function (url, options = {}) {
+        options.credentials = options.credentials || "same-origin";
+        return originalFetch(url, options).then((response) => {
+          if (response.status === 401 && !String(url).includes("/api/auth/login")) {
+            window.location.href = "/login";
+          }
+          return response;
+        });
+      };
+    });
+  </script>
   <style>
     * {
       margin: 0;
@@ -64,6 +81,29 @@
 
     .lang-toggle:hover {
       background: #667eea;
+      color: white;
+    }
+
+    .header-user {
+      color: #555;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .logout-btn {
+      background: transparent;
+      color: #dc3545;
+      border: 2px solid #dc3545;
+      padding: 8px 12px;
+      border-radius: 999px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      white-space: nowrap;
+    }
+
+    .logout-btn:hover {
+      background: #dc3545;
       color: white;
     }
 
@@ -1235,6 +1275,10 @@
     <div class="header-bar">
       <h1 data-i18n="header.title">🔍 Agente SQL - Interface de Consulta em Linguagem Natural</h1>
       <div class="header-actions">
+        {% if current_user %}
+        <span class="header-user">{{ current_user.username }}</span>
+        <button class="logout-btn" type="button" onclick="logoutUser()">Sair</button>
+        {% endif %}
         <button class="prompts-btn lang-toggle" type="button" onclick="openPromptsModal()" id="prompts-btn"
           data-i18n="prompts.customize_button">Customize Prompts</button>
         <button class="lang-toggle" type="button" onclick="toggleLanguage()" id="lang-toggle-btn"
@@ -1495,6 +1539,14 @@
     const FEEDBACK_ENABLED = document.body.dataset.feedbackEnabled === "true";
     const UI_LANG_STORAGE_KEY = "uiLang";
     const SUPPORTED_UI_LANGS = ["pt-BR", "en-US"];
+
+    async function logoutUser() {
+      try {
+        await fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" });
+      } finally {
+        window.location.href = "/login";
+      }
+    }
 
     const I18N = {
       "pt-BR": {

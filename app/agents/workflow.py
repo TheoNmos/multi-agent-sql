@@ -71,6 +71,7 @@ async def run_new_pipeline(
     database: str | None = None,
     execution_id: str | None = None,
     session_id: str | None = None,
+    user_id: str | None = None,
 ) -> PipelineResult:
     """
     Run the multi-agent text-to-SQL pipeline.
@@ -118,12 +119,15 @@ async def run_new_pipeline(
     )
 
     # Initialize state with session_id
-    state = AgentState(raw_question=user_message, session_id=session_id)
+    state = AgentState(raw_question=user_message, session_id=session_id, user_id=user_id)
 
     # Load custom prompts from Redis
     from app.redis_orm import get_prompt_config
 
-    state.custom_prompts = await get_prompt_config()
+    if user_id:
+        state.custom_prompts = await get_prompt_config(user_id)
+    else:
+        state.custom_prompts = {}
 
     # Use provided DSN/DB or fallback to config
     from app.config import db_settings
@@ -252,18 +256,19 @@ async def run_new_pipeline(
         state.trace.mapper.all_tables_count = len(all_tables)
         logfire.info("Retrieved all tables", table_count=len(all_tables))
 
-        # Step 2.5: Prefetch sample rows for question-relevant tables (bounded on large schemas)
-        prefetch_targets = select_tables_for_sample_prefetch(
-            state.clarified_question or user_message,
-            all_tables,
-        )
-        state.scratch["prefetch_table_names"] = prefetch_targets
-        logfire.info(
-            "Step 2.5: Fetching sample rows for selected tables",
-            prefetch_count=len(prefetch_targets),
-            total_tables=len(all_tables),
-        )
-        sample_rows_dict = await prefetch_sample_rows(conn, all_tables, only_tables=prefetch_targets)
+        prefetch_targets = all_tables
+
+        if len(all_tables) > 50:
+            # Step 2.5: Prefetch sample rows for question-relevant tables (bounded on large schemas)
+            prefetch_targets = select_tables_for_sample_prefetch(state.clarified_question or user_message, all_tables)
+            state.scratch["prefetch_table_names"] = prefetch_targets
+            logfire.info(
+                "Step 2.5: Fetching sample rows for selected tables",
+                prefetch_count=len(prefetch_targets),
+                total_tables=len(all_tables),
+            )
+
+        sample_rows_dict = await prefetch_sample_rows(conn, prefetch_targets)
 
         state.scratch["sample_rows"] = sample_rows_dict
         logfire.info(
@@ -423,8 +428,7 @@ async def run_new_pipeline(
 
                     if not syntax_valid:
                         syntax_feedback = (
-                            f"Syntax error: {syntax_error or 'Unknown error'}. "
-                            "Fix SQL syntax before resubmitting."
+                            f"Syntax error: {syntax_error or 'Unknown error'}. Fix SQL syntax before resubmitting."
                         )
                         state.validator_output = ValidatorOutput(
                             is_valid=False,
@@ -512,7 +516,9 @@ async def run_new_pipeline(
                         )
 
                         if not validator_output.is_valid:
-                            last_error_message = validator_output.refinement_feedback or "Failed to generate valid query"
+                            last_error_message = (
+                                validator_output.refinement_feedback or "Failed to generate valid query"
+                            )
                             logfire.info(
                                 "Query invalid, retrying generation",
                                 attempt=generator_attempt + 1,

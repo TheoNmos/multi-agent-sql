@@ -11,8 +11,20 @@ from pydantic import BaseModel, Field
 from app.prompts import AGENT_IDS
 from app.redis_client import get_redis_client
 
-PROMPTS_CONFIG_KEY = "prompts:config"
+PROMPTS_CONFIG_KEY = "prompts:config"  # legacy global key (unused after auth)
 CONNECTION_TTL_SECONDS = 2 * 60 * 60  # 2 hours
+
+
+def _user_sessions_list_key(user_id: str) -> str:
+    return f"user:{user_id}:sessions:list"
+
+
+def _user_executions_list_key(user_id: str) -> str:
+    return f"user:{user_id}:executions:list"
+
+
+def _user_prompts_config_key(user_id: str) -> str:
+    return f"user:{user_id}:prompts:config"
 
 
 class ConnectionString(BaseModel):
@@ -28,6 +40,7 @@ class Session(BaseModel):
     """Session model for grouping query executions."""
 
     id: str = Field(default_factory=lambda: str(uuid4()))
+    user_id: str
     name: str | None = None  # Optional session name
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -38,6 +51,7 @@ class QueryExecution(BaseModel):
     """Query execution state model."""
 
     id: str = Field(default_factory=lambda: str(uuid4()))
+    user_id: str
     session_id: str  # Session this execution belongs to
     connection_id: str
     user_query: str
@@ -130,12 +144,16 @@ async def delete_connection_string(conn_id: str) -> bool:
     return deleted_count > 0
 
 
-async def _delete_execution_record(exec_id: str) -> bool:
+async def _delete_execution_record(exec_id: str, user_id: str | None = None) -> bool:
     """Delete an execution record from Redis without touching child/parent relationships."""
+    execution = await get_execution(exec_id)
     redis_client = await get_redis_client()
     key = f"execution:{exec_id}"
     deleted_count = cast(int, await redis_client.delete(key))
-    _ = await cast(Any, redis_client).srem("executions:list", exec_id)
+    if execution is not None:
+        _ = await cast(Any, redis_client).srem(_user_executions_list_key(execution.user_id), exec_id)
+    elif user_id is not None:
+        _ = await cast(Any, redis_client).srem(_user_executions_list_key(user_id), exec_id)
     return deleted_count > 0
 
 
@@ -149,28 +167,28 @@ async def _remove_execution_from_session(session_id: str, execution_id: str) -> 
     await save_session(session)
 
 
-async def delete_execution(exec_id: str) -> bool:
+async def delete_execution(exec_id: str, *, user_id: str | None = None) -> bool:
     """Delete a query execution and any versus child executions."""
-    execution = await get_execution(exec_id)
+    execution = await get_execution(exec_id, user_id=user_id)
     if execution is None:
         return False
 
     if execution.comparison_execution_ids:
         for child_id in execution.comparison_execution_ids.values():
-            child = await get_execution(child_id)
+            child = await get_execution(child_id, user_id=user_id)
             if child is not None:
-                await _delete_execution_record(child_id)
+                await _delete_execution_record(child_id, user_id=child.user_id)
                 await _remove_execution_from_session(child.session_id, child_id)
 
     session_id = execution.session_id
-    deleted = await _delete_execution_record(exec_id)
+    deleted = await _delete_execution_record(exec_id, user_id=execution.user_id)
     await _remove_execution_from_session(session_id, exec_id)
     return deleted
 
 
-async def delete_session(session_id: str) -> bool:
+async def delete_session(user_id: str, session_id: str) -> bool:
     """Delete a session and all of its executions."""
-    session = await get_session(session_id)
+    session = await get_session(session_id, user_id=user_id)
     if session is None:
         return False
 
@@ -180,16 +198,16 @@ async def delete_session(session_id: str) -> bool:
             continue
         if execution.parent_execution_id is not None:
             continue
-        await delete_execution(exec_id)
+        await delete_execution(exec_id, user_id=user_id)
 
     for exec_id in list(session.execution_ids):
         if await get_execution(exec_id) is not None:
-            await _delete_execution_record(exec_id)
+            await _delete_execution_record(exec_id, user_id=user_id)
 
     redis_client = await get_redis_client()
     key = f"session:{session_id}"
     deleted_count = cast(int, await redis_client.delete(key))
-    _ = await cast(Any, redis_client).srem("sessions:list", session_id)
+    _ = await cast(Any, redis_client).srem(_user_sessions_list_key(user_id), session_id)
     return deleted_count > 0
 
 
@@ -202,21 +220,24 @@ async def save_execution(exec: QueryExecution) -> str:
     key = f"execution:{exec.id}"
     exec.updated_at = datetime.now(UTC)
     await redis_client.set(key, exec.model_dump_json(), ex=86400)  # 24 hour TTL
-    _ = await cast(Any, redis_client).sadd("executions:list", exec.id)
+    _ = await cast(Any, redis_client).sadd(_user_executions_list_key(exec.user_id), exec.id)
     # Add execution to session
     await add_execution_to_session(exec.session_id, exec.id)
     logfire.info("Saved QueryExecution to Redis", extra={"exec_id": exec.id, "session_id": exec.session_id})
     return exec.id
 
 
-async def get_execution(exec_id: str) -> QueryExecution | None:
+async def get_execution(exec_id: str, *, user_id: str | None = None) -> QueryExecution | None:
     """Get query execution from Redis."""
     redis_client = await get_redis_client()
     key = f"execution:{exec_id}"
     data = await redis_client.get(key)
     if data is None:
         return None
-    return QueryExecution.model_validate_json(data)
+    execution = QueryExecution.model_validate_json(data)
+    if user_id is not None and execution.user_id != user_id:
+        return None
+    return execution
 
 
 async def update_execution_step(
@@ -330,10 +351,13 @@ async def update_execution_metrics(
     await save_execution(exec_obj)
 
 
-async def list_executions(limit: int = 100) -> list[QueryExecution]:
-    """List recent query executions from Redis."""
+async def list_executions(user_id: str, limit: int = 100) -> list[QueryExecution]:
+    """List recent query executions from Redis for a user."""
     redis_client = await get_redis_client()
-    exec_ids_set = cast(set[str], await cast(Any, redis_client).smembers("executions:list"))
+    exec_ids_set = cast(
+        set[str],
+        await cast(Any, redis_client).smembers(_user_executions_list_key(user_id)),
+    )
     exec_ids = list(exec_ids_set)[:limit] if exec_ids_set else []
     executions = []
     for exec_id in exec_ids:
@@ -345,9 +369,9 @@ async def list_executions(limit: int = 100) -> list[QueryExecution]:
     return executions
 
 
-async def list_executions_by_session(session_id: str) -> list[QueryExecution]:
+async def list_executions_by_session(user_id: str, session_id: str) -> list[QueryExecution]:
     """List all executions for a specific session."""
-    session = await get_session(session_id)
+    session = await get_session(session_id, user_id=user_id)
     if session is None:
         return []
     executions = []
@@ -369,25 +393,31 @@ async def save_session(session: Session) -> str:
     key = f"session:{session.id}"
     session.updated_at = datetime.now(UTC)
     await redis_client.set(key, session.model_dump_json(), ex=86400 * 7)  # 7 day TTL
-    _ = await cast(Any, redis_client).sadd("sessions:list", session.id)
+    _ = await cast(Any, redis_client).sadd(_user_sessions_list_key(session.user_id), session.id)
     logfire.info("Saved Session to Redis", extra={"session_id": session.id})
     return session.id
 
 
-async def get_session(session_id: str) -> Session | None:
+async def get_session(session_id: str, *, user_id: str | None = None) -> Session | None:
     """Get session from Redis."""
     redis_client = await get_redis_client()
     key = f"session:{session_id}"
     data = await redis_client.get(key)
     if data is None:
         return None
-    return Session.model_validate_json(data)
+    session = Session.model_validate_json(data)
+    if user_id is not None and session.user_id != user_id:
+        return None
+    return session
 
 
-async def list_sessions() -> list[Session]:
-    """List all sessions from Redis."""
+async def list_sessions(user_id: str) -> list[Session]:
+    """List all sessions from Redis for a user."""
     redis_client = await get_redis_client()
-    session_ids_set = cast(set[str], await cast(Any, redis_client).smembers("sessions:list"))
+    session_ids_set = cast(
+        set[str],
+        await cast(Any, redis_client).smembers(_user_sessions_list_key(user_id)),
+    )
     session_ids = list(session_ids_set) if session_ids_set else []
     sessions = []
     for session_id in session_ids:
@@ -417,10 +447,10 @@ async def add_execution_to_session(session_id: str, execution_id: str) -> None:
 # Prompt Config Operations
 
 
-async def get_prompt_config() -> dict[str, str]:
-    """Get custom prompt overrides from Redis. Returns only non-empty custom prompts."""
+async def get_prompt_config(user_id: str) -> dict[str, str]:
+    """Get custom prompt overrides from Redis for a user."""
     redis_client = await get_redis_client()
-    data = await redis_client.get(PROMPTS_CONFIG_KEY)
+    data = await redis_client.get(_user_prompts_config_key(user_id))
     if data is None:
         return {}
     try:
@@ -437,13 +467,14 @@ async def get_prompt_config() -> dict[str, str]:
         return {}
 
 
-async def save_prompt_config(agent_id: str, prompt: str) -> None:
+async def save_prompt_config(user_id: str, agent_id: str, prompt: str) -> None:
     """Save a custom prompt for an agent."""
     if agent_id not in AGENT_IDS:
         raise ValueError(f"Invalid agent_id: {agent_id}. Valid: {AGENT_IDS}")
     redis_client = await get_redis_client()
     config = {}
-    data = await redis_client.get(PROMPTS_CONFIG_KEY)
+    prompts_key = _user_prompts_config_key(user_id)
+    data = await redis_client.get(prompts_key)
     if data:
         try:
             config = json.loads(data)
@@ -452,17 +483,18 @@ async def save_prompt_config(agent_id: str, prompt: str) -> None:
         except (json.JSONDecodeError, TypeError):
             config = {}
     config[agent_id] = prompt
-    await redis_client.set(PROMPTS_CONFIG_KEY, json.dumps(config), ex=86400 * 365)  # 1 year TTL
-    logfire.info("Saved prompt config", extra={"agent_id": agent_id})
+    await redis_client.set(prompts_key, json.dumps(config), ex=86400 * 365)  # 1 year TTL
+    logfire.info("Saved prompt config", extra={"agent_id": agent_id, "user_id": user_id})
 
 
-async def reset_prompt_config(agent_id: str) -> None:
+async def reset_prompt_config(user_id: str, agent_id: str) -> None:
     """Reset an agent's prompt to default (remove custom override)."""
     if agent_id not in AGENT_IDS:
         raise ValueError(f"Invalid agent_id: {agent_id}. Valid: {AGENT_IDS}")
     redis_client = await get_redis_client()
     config = {}
-    data = await redis_client.get(PROMPTS_CONFIG_KEY)
+    prompts_key = _user_prompts_config_key(user_id)
+    data = await redis_client.get(prompts_key)
     if data:
         try:
             config = json.loads(data)
@@ -472,7 +504,7 @@ async def reset_prompt_config(agent_id: str) -> None:
             config = {}
     config.pop(agent_id, None)
     if config:
-        await redis_client.set(PROMPTS_CONFIG_KEY, json.dumps(config), ex=86400 * 365)
+        await redis_client.set(prompts_key, json.dumps(config), ex=86400 * 365)
     else:
-        await redis_client.delete(PROMPTS_CONFIG_KEY)
-    logfire.info("Reset prompt config", extra={"agent_id": agent_id})
+        await redis_client.delete(prompts_key)
+    logfire.info("Reset prompt config", extra={"agent_id": agent_id, "user_id": user_id})

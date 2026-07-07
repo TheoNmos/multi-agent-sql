@@ -63,3 +63,18 @@ class AnalyticsSettings(BaseSettings):
 
 
 analytics_settings = AnalyticsSettings()
+
+
+class AuthSettings(BaseSettings):
+    app_secret_key: str = "change-me-in-production-use-openssl-rand-base64-32"
+    auth_cookie_name: str = "session_token"
+    auth_session_ttl_hours: int = 168
+    auth_disabled: bool = False
+    auth_cookie_secure: bool | None = None  # None = auto (secure when not localhost)
+
+    class Config:
+        extra = "allow"
+        env_file = ".env"
+
+
+auth_settings = AuthSettings()

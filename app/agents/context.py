@@ -241,6 +241,9 @@ class AgentState(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
+    # User identity for per-user prompts and Redis scoping
+    user_id: str | None = None
+
     # Session tracking
     session_id: str | None = None
 
