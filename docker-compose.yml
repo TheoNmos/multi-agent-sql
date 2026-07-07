@@ -35,12 +35,15 @@ services:
     ports:
       - "8000:8000"
     environment:
-      # Database settings (pydantic-settings maps these case-insensitively)
+      # Database settings
       - DB_URL=postgresql://xiaolongli:postgres@db:5432
       - DB_NAME=bird_benchmark
       # Redis settings
       - REDIS_URL=redis://redis:6379
-      # API keys (set these in .env file or override here)
+      - ANALYTICS_DATABASE_URL=${ANALYTICS_DATABASE_URL}
+      - APP_SECRET_KEY=${APP_SECRET_KEY}
+      - AUTH_DISABLED=${AUTH_DISABLED:-false}
+      # API keys
       - OPENAI_API_KEY=${OPENAI_API_KEY:-somekey}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-somekey}
       - LOGFIRE_TOKEN=${LOGFIRE_TOKEN:-somekey}

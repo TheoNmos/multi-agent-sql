@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Login - Text-to-SQL</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .login-card {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      padding: 32px;
+      width: 100%;
+      max-width: 420px;
+    }
+
+    h1 {
+      color: #333;
+      margin-bottom: 8px;
+      font-size: 1.6em;
+    }
+
+    p {
+      color: #666;
+      margin-bottom: 24px;
+    }
+
+    .form-group {
+      margin-bottom: 16px;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 6px;
+      color: #444;
+      font-weight: 600;
+    }
+
+    input {
+      width: 100%;
+      padding: 12px;
+      border: 2px solid #e0e0e0;
+      border-radius: 8px;
+      font-size: 16px;
+    }
+
+    input:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+
+    button {
+      width: 100%;
+      padding: 12px;
+      background: #667eea;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 8px;
+    }
+
+    button:hover {
+      background: #5a6fd6;
+    }
+
+    .error {
+      color: #c0392b;
+      margin-top: 12px;
+      min-height: 20px;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="login-card">
+    <h1>Text-to-SQL</h1>
+    <p>Entre com suas credenciais para continuar.</p>
+    <form id="login-form">
+      <div class="form-group">
+        <label for="username">Usuário</label>
+        <input type="text" id="username" name="username" autocomplete="username" required />
+      </div>
+      <div class="form-group">
+        <label for="password">Senha</label>
+        <input type="password" id="password" name="password" autocomplete="current-password" required />
+      </div>
+      <button type="submit">Entrar</button>
+      <div class="error" id="login-error"></div>
+    </form>
+  </div>
+
+  <script>
+    document.getElementById("login-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const errorEl = document.getElementById("login-error");
+      errorEl.textContent = "";
+      const formData = new FormData(event.target);
+      try {
+        const response = await fetch("/api/auth/login", {
+          method: "POST",
+          body: formData,
+          credentials: "same-origin",
+        });
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          errorEl.textContent = data.detail || "Usuário ou senha inválidos";
+          return;
+        }
+        window.location.href = "/";
+      } catch (error) {
+        errorEl.textContent = "Não foi possível conectar ao servidor.";
+      }
+    });
+  </script>
+</body>
+
+</html>
