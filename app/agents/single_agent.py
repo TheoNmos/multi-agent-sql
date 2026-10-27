@@ -23,7 +23,7 @@ from app.agents.tools import (
 )
 from app.db.adapter import DatabaseAdapter
 from app.db.value_sanitize import prefetch_sample_rows
-from app.llm_models import gpt_5_mini_minimal
+from app.llm_models import gpt_6_luna
 from app.toon_utils import to_toon_block
 
 
@@ -129,7 +129,7 @@ def _build_single_agent_prompt(dialect: Literal["postgres", "mysql"]) -> str:
 
 single_agent = Agent[SingleAgentState, str](
     name="single_text_to_sql",
-    model=gpt_5_mini_minimal,
+    model=gpt_6_luna,
     deps_type=SingleAgentState,
     output_type=str,
 )

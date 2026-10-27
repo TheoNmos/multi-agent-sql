@@ -9,7 +9,7 @@ import logfire
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext
 
-from app.llm_models import gpt_5_mini_minimal
+from app.llm_models import gpt_6_luna
 from app.toon_utils import to_toon_block
 
 logger = logging.getLogger(__name__)
@@ -48,7 +48,7 @@ class AnalyzerOutput(BaseModel):
 
 analyzer = Agent[dict[str, Any], AnalyzerOutput](
     name="benchmark_analyzer",
-    model=gpt_5_mini_minimal,
+    model=gpt_6_luna,
     deps_type=dict,
     output_type=AnalyzerOutput,
 )
