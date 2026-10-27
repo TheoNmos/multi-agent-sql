@@ -33,15 +33,18 @@ gpt_5_mini_minimal = _or(
     model_settings=OpenAIChatModelSettings(openai_reasoning_effort="minimal"),
 )
 gpt_5 = gpt_5_mini  # backward-compat alias
+gpt_6_luna = _or("openai/gpt-6-luna")
 
 # ---------------------------------------------------------------------------
-# Multi-agent pipeline: per-role models
-#
-# Interpreter / mapper / validator → GPT-5 mini (minimal reasoning) for speed.
-# Generator → GPT-5 mini (default reasoning) for higher-quality SQL synthesis.
+# Default model for every pipeline role, the single agent, and benchmarks.
 # ---------------------------------------------------------------------------
 
-interpreter_model = gpt_5_mini_minimal
-mapper_model = gpt_5_mini_minimal
-generator_model = gemini_2_5_flash
-validator_model = gpt_5_mini_minimal
+interpreter_model = gpt_6_luna
+mapper_model = gpt_6_luna
+generator_model = gpt_6_luna
+validator_model = gpt_6_luna
+
+# Efficiency analysis uses dedicated aliases so its model choices can evolve
+# independently from both the text-to-SQL and single-agent pipelines.
+efficiency_generator_model = gpt_6_luna
+efficiency_validator_model = gpt_6_luna

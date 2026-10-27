@@ -9,7 +9,7 @@ from app.agents.llm_timeout import format_model_error
 from app.agents.single_agent import run_single_agent
 from app.agents.tools import clean_sql
 from app.db.connection import database_connect
-from app.llm_models import gpt_5_mini
+from app.llm_models import gpt_6_luna
 
 
 def _extract_sql(text: str | None) -> str | None:
@@ -65,7 +65,7 @@ async def run_single_agent_pipeline(
                 await update_execution_status(execution_id, "running")
                 await update_execution_metrics(
                     execution_id,
-                    model_name=gpt_5_mini.model_name,
+                    model_name=gpt_6_luna.model_name,
                     current_activity="Starting single-agent run",
                 )
             raw_sql, tool_calls, usage = await run_single_agent(

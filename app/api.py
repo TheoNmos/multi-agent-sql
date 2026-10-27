@@ -28,6 +28,7 @@ from app.auth.routes import router as auth_router
 from app.config import auth_settings, db_settings, feature_settings, settings
 from app.connections.store import delete_connection, get_connection, list_connections, save_connection
 from app.db.dialects import detect_dialect, split_url_and_database
+from app.llm_models import gpt_6_luna
 from app.prompts import AGENT_IDS, get_default_prompt
 from app.redis_orm import (
     QueryExecution,
@@ -829,7 +830,7 @@ async def run_single_pipeline_with_updates(
     try:
         await update_execution_metrics(
             exec_id,
-            model_name="openai/gpt-5-mini",
+            model_name=gpt_6_luna.model_name,
             current_activity="Starting single-agent run",
         )
         sql, _tool_calls, usage, error = await run_single_agent_pipeline(
@@ -904,7 +905,7 @@ async def run_pipeline_with_updates(
         await update_execution_status(exec_id, "running")
         await update_execution_metrics(
             exec_id,
-            model_name="openai/gpt-5-mini",
+            model_name=gpt_6_luna.model_name,
             current_activity="Starting multi-agent pipeline",
         )
 
